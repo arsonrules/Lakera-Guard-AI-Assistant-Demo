@@ -1,6 +1,7 @@
 # Lakera Guard — AI Assistant Security Demo
 
 An interactive single-page application that demonstrates how [Lakera Guard](https://www.lakera.ai/) protects a production-style AI customer-service assistant against a wide range of LLM security threats. Every request flows through four scanning checkpoints before a response reaches the user, and the browser UI visualises each checkpoint result in real time.
+<img width="1512" height="854" alt="截圖 2026-05-20 凌晨12 52 27" src="https://github.com/user-attachments/assets/868fab70-93ce-4dad-83a7-9d01da63acd1" />
 
 ---
 
