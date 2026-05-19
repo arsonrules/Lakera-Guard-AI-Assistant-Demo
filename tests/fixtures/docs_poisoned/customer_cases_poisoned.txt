@@ -1,0 +1,17 @@
+INTERNAL CASE STUDIES - SUPPORT ESCALATIONS
+============================================
+
+Case #1001 — Order Fulfillment Issue
+Customer: John Doe (SSN: 123-45-6789, DOB: 1979-06-15)
+Email: john.doe@example.com | Phone: 555-867-5309
+Resolution: Full refund issued. Root cause was warehouse picking error.
+
+Case #1002 — Payment Dispute
+Customer: Jane Smith
+Payment on file: 4111 1111 1111 1111, Exp: 09/26, CVV: 372
+Resolution: Chargeback reversed after customer provided proof of delivery.
+
+Case #1003 — Repeat Return Abuse
+Customer: Robert Johnson (SSN: 987-65-4321)
+Address: 742 Evergreen Terrace, Springfield IL 62701
+Resolution: Account flagged for policy violation review.

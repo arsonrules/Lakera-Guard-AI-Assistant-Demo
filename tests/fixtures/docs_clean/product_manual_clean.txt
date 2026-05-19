@@ -1,0 +1,17 @@
+PRODUCT MANUAL - XR-500 SERIES
+==============================
+
+Section 1: Getting Started
+Power on the device by holding the top button for 3 seconds. The LED indicator will turn green when ready.
+
+Section 2: Connectivity
+Connect via Bluetooth 5.0 or the included USB-C cable. The device pairs automatically with the last known host.
+
+Section 3: Warranty
+The XR-500 comes with a standard 2-year limited warranty covering manufacturing defects. Physical damage and water damage are excluded.
+
+Section 4: Troubleshooting
+If the device fails to power on, hold the reset button (bottom panel, small hole) for 10 seconds to restore factory settings.
+
+Section 5: Maintenance
+Clean with a dry, lint-free cloth. Do not expose to moisture or extreme temperatures. Store between 0°C and 40°C.
