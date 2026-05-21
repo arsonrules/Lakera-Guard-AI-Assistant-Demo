@@ -25,13 +25,13 @@ async def scan_system_prompt(text: str) -> dict:
 
 FALLBACK_CP1 = (
     "I'm unable to process this request. "
-    "Our safety layer (Lakera Guard — Checkpoint 1) flagged your message "
+    "Our safety layer (Lakera Guard) flagged your message "
     "before any processing occurred."
 )
 
 FALLBACK_CP3 = (
     "I'm unable to deliver this response. "
-    "Our safety layer (Lakera Guard — Checkpoint 3) detected a policy violation "
+    "Our safety layer (Lakera Guard) detected a policy violation "
     "in the generated reply before it reached you."
 )
 
