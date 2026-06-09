@@ -9,7 +9,7 @@ CATEGORIES = [
         "id": "safe",
         "owaspId": None,
         "owaspName": "Safe Baselines",
-        "label": "✅ SAFE",
+        "label": "SAFE",
         "color": "safe",
         "description": (
             "Clean, legitimate customer service queries. "
