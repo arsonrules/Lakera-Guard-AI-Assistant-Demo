@@ -1,0 +1,16 @@
+.env
+.git
+.gitignore
+.venv
+venv
+env
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.claude
+.idea
+.vscode
+.DS_Store
+tests/fixtures/docs_custom/*.txt

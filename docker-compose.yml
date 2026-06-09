@@ -2,9 +2,12 @@ services:
   app:
     build: .
     ports:
-      - "8000:8000"
+      # Demo has no authentication — bind to loopback only, not the whole LAN.
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     volumes:
       - ./tests/fixtures:/app/tests/fixtures:ro
+      # Custom doc uploads need a writable directory.
+      - ./tests/fixtures/docs_custom:/app/tests/fixtures/docs_custom
     restart: unless-stopped

@@ -1,11 +1,15 @@
+import logging
 import pathlib
 import re
+import urllib.parse
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger("lakera_demo")
 
 from backend import chat
 from backend.llm import SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT
@@ -139,11 +143,36 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Lakera Guard Demo", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    # CSRF guard: browsers attach Origin to cross-site POST/DELETE; reject mismatches.
+    # Non-browser clients (curl, tests) send no Origin and are unaffected.
+    if request.method in ("POST", "DELETE"):
+        origin = request.headers.get("origin")
+        host = request.headers.get("host")
+        if origin and host and urllib.parse.urlsplit(origin).netloc != host:
+            return JSONResponse(status_code=403, content={"detail": "Cross-origin request rejected."})
+
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src https://fonts.gstatic.com; img-src 'self' data:; "
+        "connect-src 'self'; object-src 'none'; frame-ancestors 'none'; "
+        "base-uri 'self'; form-action 'self'",
+    )
+    return response
+
+
 # ── Request / Response models ────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
-    message: str
-    simulate_output: str | None = None
+    message: str = Field(max_length=16_000)
+    simulate_output: str | None = Field(default=None, max_length=16_000)
 
 
 class DocModeRequest(BaseModel):
@@ -151,7 +180,7 @@ class DocModeRequest(BaseModel):
 
 
 class SystemPromptRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(max_length=16_000)
 
 
 # ── API routes ───────────────────────────────────────────────────────────────
@@ -166,8 +195,12 @@ async def api_chat(req: ChatRequest):
             system_prompt=_custom_system_prompt,
         )
         return result
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    except Exception:
+        logger.exception("Chat pipeline failed")
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred while processing the request.",
+        )
 
 
 @app.get("/api/system-prompt")
@@ -299,6 +332,8 @@ async def api_list_custom_docs():
 @app.delete("/api/docs/custom/{filename}")
 async def api_delete_custom_doc(filename: str):
     safe_name = pathlib.Path(filename).name  # strip any path components
+    if not safe_name.lower().endswith(".txt"):
+        raise HTTPException(400, "Only .txt files can be deleted.")
     path = CUSTOM_DOCS_DIR / safe_name
     if not path.exists() or not path.is_file():
         raise HTTPException(404, "File not found.")
