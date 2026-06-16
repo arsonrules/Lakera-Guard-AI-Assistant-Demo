@@ -1564,7 +1564,7 @@
         'os.statFalsePos': 'False positives',
         'os.statDetection': 'Detection rate',
         'os.failed': 'Test run failed',
-        'os.reportTitle': 'Lakera Guard — One-Shot Security Test Report',
+        'os.reportTitle': 'AI Guardrails — One-Shot Security Test Report',
       },
       cat: {}, scn: {},
     },
@@ -1784,7 +1784,7 @@
         'os.statFalsePos': '誤判',
         'os.statDetection': '偵測率',
         'os.failed': '測試執行失敗',
-        'os.reportTitle': 'Lakera Guard — 一鍵安全測試報告',
+        'os.reportTitle': 'AI 防護機制 — 一鍵安全測試報告',
       },
       cat: {
         safe: { name: '安全基準', description: '乾淨、合法的客服查詢。可作為參考 — 三個 Lakera 檢查點都應通過。' },
@@ -2069,7 +2069,7 @@
         'os.statFalsePos': '误判',
         'os.statDetection': '检测率',
         'os.failed': '测试运行失败',
-        'os.reportTitle': 'Lakera Guard — 一键安全测试报告',
+        'os.reportTitle': 'AI 防护机制 — 一键安全测试报告',
       },
       cat: {
         safe: { name: '安全基准', description: '干净、合法的客服查询。可作为参考 — 三个 Lakera 检查点都应通过。' },
@@ -2354,7 +2354,7 @@
         'os.statFalsePos': '誤検知',
         'os.statDetection': '検出率',
         'os.failed': 'テスト実行に失敗しました',
-        'os.reportTitle': 'Lakera Guard — ワンショット セキュリティ テスト レポート',
+        'os.reportTitle': 'AI ガードレール — ワンショット セキュリティ テスト レポート',
       },
       cat: {
         safe: { name: '安全なベースライン', description: 'クリーンで正当なカスタマーサービスの問い合わせ。参考用 — 3 つの Lakera チェックポイントはすべて通過するはずです。' },
@@ -3957,8 +3957,23 @@
   .sv-high{color:var(--block);border-color:var(--block);} .sv-medium{color:var(--redact);border-color:var(--redact);}
   .sv-low,.sv-info{color:var(--brand);border-color:var(--brand);} .sv-good,.sv-secure{color:var(--pass);border-color:var(--pass);}
   footer{margin-top:20px;color:var(--muted);font-size:0.74rem;}
+  .rpt-head{display:flex;align-items:center;gap:12px;margin-bottom:6px;}
+  .rpt-logo{width:40px;height:40px;background:#fff;border-radius:10px;display:grid;place-items:center;flex-shrink:0;box-shadow:0 0 0 1px rgba(0,0,0,0.1);}
+  .rpt-logo svg{width:30px;height:30px;display:block;} .rpt-head h1{margin:0;}
 </style></head><body>
-<h1>🛡 ${esc(t('os.reportTitle'))}</h1>
+<div class="rpt-head">
+  <span class="rpt-logo" aria-label="Check Point">
+    <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" role="img">
+      <circle cx="17" cy="23" r="14" fill="#E6007E"/>
+      <g fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round">
+        <circle cx="13.5" cy="25.5" r="4.4"/><line x1="16.6" y1="22.4" x2="23" y2="16"/>
+      </g>
+      <circle cx="23.5" cy="15.5" r="2.6" fill="#fff"/>
+      <circle cx="30.5" cy="9.5" r="5" fill="#1A1A1A"/>
+    </svg>
+  </span>
+  <h1>${esc(t('os.reportTitle'))}</h1>
+</div>
 <div class="meta">Generated ${esc(when)} · Provider <code>${esc(SHORT_PROVIDER[llm.provider] || llm.provider || '—')}</code>
   · Model <code>${esc(llm.model || '—')}</code> · Endpoint <code>${esc(llm.base_url || '—')}</code></div>
 ${s.compared ? `<div class="compare">
