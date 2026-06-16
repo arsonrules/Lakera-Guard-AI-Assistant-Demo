@@ -4,10 +4,22 @@ services:
     ports:
       # Demo has no authentication — bind to loopback only, not the whole LAN.
       - "127.0.0.1:8000:8000"
+    # .env is optional — keys can be configured entirely from the UI. If present
+    # at startup it seeds the config; required:false lets the app boot without it.
     env_file:
-      - .env
+      - path: .env
+        required: false
     volumes:
       - ./tests/fixtures:/app/tests/fixtures:ro
       # Custom doc uploads need a writable directory.
       - ./tests/fixtures/docs_custom:/app/tests/fixtures/docs_custom
+      # Persist UI "Save to .env" back to the host so it loads on next start.
+      # The host file must exist before `up` (a bind mount of a missing file
+      # would create a directory); `touch .env` first if starting fresh.
+      - ./.env:/app/.env
+    # Lets the container reach an LLM server running on the host (LM Studio,
+    # Ollama, oMLX) via http://host.docker.internal:<port>/v1. Docker Desktop
+    # provides this automatically; this mapping also makes it work on Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
