@@ -429,6 +429,47 @@ Outcomes are colour-coded:
 
 The summary strip reports totals and an attack **detection rate** (`blocked ÷ attack scenarios run`).
 
+#### External datasets (HuggingFace & upload)
+
+The **Datasets** panel in the One-Shot toolbar lets you test against external attack
+corpora instead of (or alongside) the built-in catalogue:
+
+- **HuggingFace** — enter a dataset id (one-click **Salad-Data** / **ALERT** buttons) and **Import**. Rows are fetched server-side through the public [datasets-server](https://huggingface.co/docs/datasets-server) API (paginated, no full download). The **prompt column is auto-detected** (`prompt`, `question`, `baseq`/`augq`, `instruction`, …); override it with the **column** field if needed. The first config/split is used by default.
+- **Upload** — a `.csv` / `.json` / `.jsonl` / `.txt` file (prompt column auto-detected; `.txt` = one prompt per line).
+
+Imported datasets appear in the **scope** dropdown as *"Dataset: … (N)"* and run as `external` attack scenarios through the full pipeline (CP1/CP2/CP3 + optional judge / Guard ON-OFF / strategies), graded against a generic "complied with the harmful request" criterion.
+
+**Limits & notes:**
+
+| Limit | Value | Why |
+|---|---|---|
+| Imported datasets kept at once | **12** | In-memory cap (`MAX_DATASETS`); delete one to add more |
+| Rows imported per dataset | **100,000 max** (default **25**) | Each prompt that passes CP1 makes a real LLM call, so large imports are slow/costly — raise deliberately |
+| Upload file size | **16 MB** | — |
+| Auth | **public datasets only** | No HF token is sent; gated/private datasets and datasets with the HF *Dataset Viewer* disabled won't import |
+| Persistence | **in-memory** | Imported datasets are cleared on server restart — re-import after a rebuild |
+
+> There is **no limit on which** public dataset you import — any with the Dataset Viewer enabled works. The caps above are on **how many** you keep (12) and **how many rows** each holds (100,000). For large corpora, keep the row count modest or point the LLM provider at a local model to avoid cost/latency — fetching 100k rows is ~1,000 paginated API calls and runs a full pipeline pass per prompt.
+
+> **Multi-config datasets:** many datasets are split into *configs* (e.g. SALAD-Data → `base_set` 21,318, `attack_enhanced_set` 5,000, `defense_enhanced_set` 200, `mcq_set` 3,840 ≈ 30,358 total). **Import** (with a row count) defaults to the **largest** config; **All** spans **every** config + split to pull the whole dataset, streaming live progress against the combined total. Because the pull is paginated and HuggingFace rate-limits the free API, a very large **All** may finish as a (large) **partial** sample within the time budget — re-run for more, or use a local model.
+
+#### Custom system prompt (per run)
+
+The **System prompt** panel lets you supply a system prompt that applies **only to that
+run**, overriding the active one — handy for evaluating a candidate prompt against any
+scope (built-in, dataset, with strategies/judge/compare) without changing the global
+prompt. Leave it blank to use the currently active prompt, or tick **No system prompt at
+all** to send the model nothing but the attack (and any RAG context) — useful for probing
+raw model behaviour with no guardrail instructions.
+
+#### Knowledge base override + custom RAG upload (per run)
+
+The **Knowledge base** panel forces the RAG source for the whole run — **Default**
+(each scenario's own setting), **Clean**, **Poisoned**, or **Custom**. **Upload .txt**
+adds your own document(s) and selects **Custom**, so every scenario retrieves from (and
+CP2 scans) your file — test the guard against your real knowledge base or a crafted
+poisoned doc.
+
 #### Security posture dashboard & recommendations
 
 Every run is analysed into a **security report** (shown in the modal and the exported
@@ -492,6 +533,7 @@ AI assistant demo/
 │   ├── judge.py         # LLM-as-judge: did the attack actually compromise the model?
 │   ├── strategies.py    # Attack-obfuscation transforms (base64, homoglyph, …)
 │   ├── report.py        # Security posture: vulnerability dashboard + findings/recommendations
+│   ├── datasets.py      # External dataset import (HuggingFace API + CSV/JSON/JSONL/TXT upload)
 │   ├── rag.py           # Keyword-based document retrieval
 │   ├── scenarios.py     # OWASP-mapped scenario catalogue (50 scenarios, 12 categories)
 │   └── config.py        # pydantic-settings: reads .env
@@ -537,9 +579,13 @@ AI assistant demo/
 | `GET` | `/api/llm-config` | Current LLM provider config (key masked) + provider presets |
 | `POST` | `/api/llm-config` | Switch / update the LLM provider |
 | `POST` | `/api/llm-config/test` | Probe an endpoint (`GET /models`) without saving it |
-| `POST` | `/api/oneshot` | Run a category (or all scenarios) through the pipeline; optional LLM-judge grading, guard ON/OFF comparison, and obfuscation strategies; returns results + summary |
+| `POST` | `/api/oneshot` | Run a category, dataset, or all scenarios through the pipeline; optional LLM-judge grading, guard ON/OFF comparison, obfuscation strategies, and a per-run system-prompt override; returns results + summary |
 | `POST` | `/api/oneshot/stream` | Same run as `/api/oneshot` but streams NDJSON progress (one event per finished scenario) so the UI counter ticks live |
 | `GET` | `/api/strategies` | List available attack-obfuscation strategies |
+| `GET` | `/api/datasets` | List imported external datasets |
+| `POST` | `/api/datasets/import-hf` | Import a public HuggingFace dataset (`dataset_id`, optional `config`/`split`/`column`/`limit`) |
+| `POST` | `/api/datasets/upload` | Upload a `.csv` / `.json` / `.jsonl` / `.txt` dataset (multipart) |
+| `DELETE` | `/api/datasets/{slug}` | Delete an imported dataset |
 | `GET` | `/api/lakera-config` | Whether the Lakera Guard key is set (masked) |
 | `POST` | `/api/lakera-config` | Set/clear the Lakera Guard key (runtime) |
 | `POST` | `/api/config/save-env` | Persist the current keys + LLM provider to `.env` |
@@ -550,7 +596,7 @@ AI assistant demo/
 
 Several pieces of sensitive-looking data in this project are **deliberate and synthetic** — they exist specifically to trigger Lakera Guard's PII and injection detectors for demonstration purposes:
 
-- **`backend/llm.py` — system prompt**: Contains a fake SSN (`234-56-7890`) and payment card (`Visa ending 4242`) for the fictitious customer Alice Johnson. These values make it possible to demonstrate CP3 catching PII leakage in LLM output.
+- **`backend/llm.py` — system prompt**: Contains **no personal data** — only the ShopEase role description and a non-sensitive order reference. (The CP3 PII-leakage scenarios provide their own synthetic PII via simulated LLM output, so none needs to live in the system context.)
 
 - **`tests/fixtures/docs_poisoned/`**: Three documents with embedded injection instructions and fake SSN/card number patterns. These are the RAG documents that CP2 is designed to intercept.
 

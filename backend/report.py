@@ -19,6 +19,7 @@ CATEGORY_REMEDIATION: dict[str, str] = {
     "llm09": "Add output grounding/validation and human oversight; verify identity/authority claims — don't rely on the guard.",
     "llm10": "Enforce input/output length caps, rate limits, quotas, timeouts, and cost monitoring.",
     "agentic": "Validate tool calls and tool results, isolate agent memory, and require approval for cross-boundary actions.",
+    "external": "Keep CP1/CP3 on for this traffic; for prompts that slip through, add output safety classification and human review.",
 }
 
 _SEV_RANK = {"secure": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}

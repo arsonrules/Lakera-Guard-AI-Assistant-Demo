@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lakera_demo")
 
-from backend import chat, judge, llm, rag, report, strategies
+from backend import chat, datasets, judge, llm, rag, report, strategies
 from backend.config import ENV_PATH, settings
 from backend.llm import SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT
 from backend.scenarios import CATEGORIES
@@ -50,6 +50,19 @@ _llm_config: dict = _init_llm_config()
 
 # Runtime-configurable Lakera Guard key (seeded from .env if present, else set in UI).
 _lakera_key: str = settings.lakera_guard_api_key or ""
+
+# Imported external attack datasets (HuggingFace / uploaded), keyed by slug.
+# Each value: {slug, name, source, count, column, rows:[{prompt, category}]}.
+_datasets: dict[str, dict] = {}
+MAX_DATASETS = 12
+
+
+def _slugify(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:48] or "dataset"
+    base, n = slug, 2
+    while slug in _datasets:
+        slug = f"{base}-{n}"; n += 1
+    return slug
 
 
 def _mask(key: str) -> str:
@@ -261,10 +274,30 @@ class OneShotRequest(BaseModel):
     # Obfuscation strategies to also run each attack through (base64, homoglyph, …),
     # to probe guard robustness. Each adds one variant row per attack scenario.
     strategies: list[str] = Field(default_factory=list, max_length=12)
+    # Run an imported external dataset (slug) instead of the built-in catalogue.
+    dataset: str | None = Field(default=None, max_length=60)
+    # Optional per-run system prompt override. Blank/None → use the active prompt.
+    system_prompt: str | None = Field(default=None, max_length=16_000)
+    # Run with NO system prompt at all (overrides system_prompt / the active one).
+    no_system_prompt: bool = False
+    # Force a knowledge base for the whole run: "clean" | "poisoned" | "custom".
+    # None → use each scenario's own docMode (datasets default to "clean").
+    doc_mode: str | None = Field(default=None, max_length=20)
 
 
 class LakeraKeyRequest(BaseModel):
     api_key: str = Field(max_length=400)
+
+
+class HFImportRequest(BaseModel):
+    dataset_id: str = Field(max_length=120)
+    config: str | None = Field(default=None, max_length=120)
+    split: str | None = Field(default=None, max_length=60)
+    column: str | None = Field(default=None, max_length=80)
+    category_column: str | None = Field(default=None, max_length=80)
+    limit: int = Field(default=25, ge=1, le=datasets.MAX_ROWS)
+    # Import every row (capped at MAX_ROWS); ignores `limit` when true.
+    all: bool = False
 
 
 # ── API routes ───────────────────────────────────────────────────────────────
@@ -475,6 +508,148 @@ async def api_save_env():
     }
 
 
+# ── External attack datasets (HuggingFace / upload) ───────────────────────────
+
+def _public_dataset(d: dict) -> dict:
+    return {"slug": d["slug"], "name": d["name"], "source": d["source"],
+            "count": d["count"], "column": d.get("column")}
+
+
+def _store_dataset(name: str, source: str, column: str | None, rows: list[dict]) -> dict:
+    if len(_datasets) >= MAX_DATASETS:
+        raise HTTPException(400, f"Dataset slot limit reached ({MAX_DATASETS}). Delete one first.")
+    slug = _slugify(name)
+    _datasets[slug] = {
+        "slug": slug, "name": name, "source": source,
+        "count": len(rows), "column": column, "rows": rows,
+    }
+    return _datasets[slug]
+
+
+@app.get("/api/datasets")
+async def api_list_datasets():
+    return [_public_dataset(d) for d in _datasets.values()]
+
+
+@app.post("/api/datasets/import-hf")
+async def api_import_hf(req: HFImportRequest):
+    limit = datasets.MAX_ROWS if req.all else req.limit
+    try:
+        result = await datasets.fetch_hf(
+            req.dataset_id, config=req.config, split=req.split,
+            column=req.column, category_column=req.category_column,
+            limit=limit, all_configs=req.all,
+        )
+    except datasets.DatasetError as exc:
+        raise HTTPException(400, str(exc))
+    except httpx.RequestError as exc:
+        raise HTTPException(502, f"Could not reach HuggingFace: {type(exc).__name__}.")
+    name = f"{req.dataset_id} [{result['config']}/{result['split']}]"
+    d = _store_dataset(name, "huggingface", result["column"], result["rows"])
+    return {**_public_dataset(d), "available": result["available"],
+            "category_column": result["category_column"],
+            "partial": result.get("partial", False),
+            "requested": result.get("requested"), "total": result.get("total"),
+            "sample": [r["prompt"][:140] for r in result["rows"][:3]]}
+
+
+# Budget for a streamed "import all": stop with a partial result after this many
+# seconds so a heavily rate-limited dataset never runs indefinitely. Generous,
+# since the NDJSON stream keeps the connection alive and shows live progress —
+# the user can close the modal to abort. Large datasets may still end partial.
+IMPORT_ALL_BUDGET = 900.0
+
+
+@app.post("/api/datasets/import-hf/stream")
+async def api_import_hf_stream(req: HFImportRequest):
+    """
+    Streaming HuggingFace import (NDJSON). Emits a progress line per page so the
+    connection stays alive on long "import all" pulls (a single multi-minute
+    request gets dropped by browsers/proxies → "Failed to fetch"):
+      {"type":"progress","fetched":N,"total":M}
+      {"type":"done", <dataset>, "partial":bool, "total":M}
+      {"type":"error","detail":"…"}
+    """
+    limit = datasets.MAX_ROWS if req.all else req.limit
+    budget = IMPORT_ALL_BUDGET if req.all else None
+
+    async def gen():
+        q: asyncio.Queue = asyncio.Queue()
+
+        async def on_progress(fetched, total):
+            await q.put(("progress", fetched, total))
+
+        async def runner():
+            try:
+                result = await datasets.fetch_hf(
+                    req.dataset_id, config=req.config, split=req.split,
+                    column=req.column, category_column=req.category_column,
+                    limit=limit, all_configs=req.all,
+                    on_progress=on_progress, time_budget=budget,
+                )
+                await q.put(("done", result))
+            except datasets.DatasetError as exc:
+                await q.put(("error", str(exc)))
+            except httpx.RequestError as exc:
+                await q.put(("error", f"Could not reach HuggingFace: {type(exc).__name__}."))
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Dataset import failed")
+                await q.put(("error", f"{type(exc).__name__}: {exc}"))
+
+        task = asyncio.create_task(runner())
+        # Immediate first byte, then a heartbeat at least every few seconds so the
+        # connection never goes silent during the initial config probing or a long
+        # rate-limit backoff (silence → idle timeout → "network error").
+        yield json.dumps({"type": "start"}) + "\n"
+        try:
+            while True:
+                try:
+                    kind, *payload = await asyncio.wait_for(q.get(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    yield json.dumps({"type": "ping"}) + "\n"   # keep-alive heartbeat
+                    continue
+                if kind == "progress":
+                    yield json.dumps({"type": "progress", "fetched": payload[0], "total": payload[1]}) + "\n"
+                elif kind == "error":
+                    yield json.dumps({"type": "error", "detail": payload[0]}) + "\n"
+                    break
+                else:  # done
+                    result = payload[0]
+                    name = f"{req.dataset_id} [{result['config']}/{result['split']}]"
+                    d = _store_dataset(name, "huggingface", result["column"], result["rows"])
+                    yield json.dumps({"type": "done", **_public_dataset(d),
+                                      "partial": result.get("partial", False),
+                                      "requested": result.get("requested"),
+                                      "total": result.get("total")}) + "\n"
+                    break
+        finally:
+            task.cancel()
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+@app.post("/api/datasets/upload")
+async def api_upload_dataset(file: UploadFile = File(...), column: str | None = None):
+    content = await file.read()
+    try:
+        result = datasets.parse_upload(file.filename or "upload.txt", content, column)
+    except datasets.DatasetError as exc:
+        raise HTTPException(400, str(exc))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, f"Could not parse file: {exc}")
+    name = file.filename or "uploaded dataset"
+    d = _store_dataset(name, "upload", result["column"], result["rows"])
+    return {**_public_dataset(d), "sample": [r["prompt"][:140] for r in result["rows"][:3]]}
+
+
+@app.delete("/api/datasets/{slug}")
+async def api_delete_dataset(slug: str):
+    if slug not in _datasets:
+        raise HTTPException(404, "Dataset not found.")
+    _datasets.pop(slug)
+    return {"deleted": slug}
+
+
 @app.get("/api/system-prompt")
 async def api_get_system_prompt():
     if _custom_system_prompt is None:
@@ -556,6 +731,31 @@ async def api_strategies():
 
 
 # ── One-shot batch testing ───────────────────────────────────────────────────
+
+def _dataset_rows(slug: str) -> list[dict]:
+    """Turn an imported dataset's prompts into one-shot attack-scenario rows."""
+    d = _datasets.get(slug)
+    if not d:
+        raise HTTPException(404, "Dataset not found — re-import it.")
+    rows: list[dict] = []
+    for i, item in enumerate(d["rows"], 1):
+        rows.append({
+            "id": f"{slug}-{i}",
+            "label": (item["prompt"][:60] + ("…" if len(item["prompt"]) > 60 else "")),
+            "category_id": "external",
+            "owasp_id": None,
+            "owasp_name": item.get("category") or d["name"],
+            "color": "attack",          # external safety datasets are attack prompts
+            "prompt": item["prompt"],
+            "doc_mode": "clean",
+            "simulate_output": None,
+            "description": f"From {d['name']}",
+            "success_criteria": judge.criteria_for("external"),
+            "strategy": None,
+            "strategy_label": None,
+        })
+    return rows
+
 
 def _flatten_scenarios(category_id: str | None, include_safe: bool) -> list[dict]:
     """Collect scenarios (with their category metadata) for a one-shot run."""
@@ -667,7 +867,8 @@ async def _grade_attack(prompt: str, category_id: str, override: str | None, raw
             "error": verdict.get("error"), "latency_ms": verdict.get("latency_ms") or 0}
 
 
-async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare: bool) -> dict:
+async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare: bool,
+                   system_prompt: str | None = None) -> dict:
     async with sem:
         base = {
             "id": row["id"], "label": row["label"],
@@ -689,7 +890,7 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                 message=row["prompt"],
                 doc_mode=row["doc_mode"],
                 simulate_output=row["simulate_output"],
-                system_prompt=_custom_system_prompt,
+                system_prompt=system_prompt,
                 llm_config=_llm_config,
                 lakera_key=_lakera_key,
             )
@@ -733,7 +934,7 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                 off = await chat.process_unguarded(
                     message=row["prompt"], doc_mode=row["doc_mode"],
                     simulate_output=row["simulate_output"],
-                    system_prompt=_custom_system_prompt, llm_config=_llm_config,
+                    system_prompt=system_prompt, llm_config=_llm_config,
                 )
                 off_raw = off.get("raw_response") or ""
                 g = await _grade_attack(row["prompt"], row["category_id"],
@@ -776,9 +977,18 @@ def _prepare_oneshot_rows(req: OneShotRequest) -> list[dict]:
     """Flatten + expand scenarios and stamp a stable display order on each row."""
     if not _lakera_key:
         raise HTTPException(400, LAKERA_NOT_SET_MSG)
-    rows = _flatten_scenarios(req.category_id, req.include_safe)
+    rows = _dataset_rows(req.dataset) if req.dataset else \
+        _flatten_scenarios(req.category_id, req.include_safe)
     if not rows:
         raise HTTPException(400, "No scenarios match the requested selection.")
+    # Optional knowledge-base override: force every scenario's RAG source.
+    if req.doc_mode:
+        if req.doc_mode not in ("clean", "poisoned", "custom"):
+            raise HTTPException(400, "doc_mode must be 'clean', 'poisoned', or 'custom'.")
+        if req.doc_mode == "custom" and not any(CUSTOM_DOCS_DIR.glob("*.txt")):
+            raise HTTPException(400, "No custom RAG documents uploaded yet — upload one first.")
+        for r in rows:
+            r["doc_mode"] = req.doc_mode
     rows = _expand_with_strategies(rows, req.strategies)
     for i, r in enumerate(rows):
         r["order"] = i
@@ -848,13 +1058,27 @@ def _oneshot_summary(results: list[dict], req: OneShotRequest) -> dict:
     return summary
 
 
+def _oneshot_system_prompt(req: OneShotRequest) -> str | None:
+    """
+    Resolve the system prompt for a run:
+      no_system_prompt → "" (explicit: send none)
+      override given   → use it
+      else             → the globally active prompt (default or custom)
+    """
+    if req.no_system_prompt:
+        return ""
+    sp = (req.system_prompt or "").strip()
+    return sp or _custom_system_prompt
+
+
 @app.post("/api/oneshot")
 async def api_oneshot(req: OneShotRequest):
     rows = _prepare_oneshot_rows(req)
     do_judge = req.judge or req.compare
+    sp = _oneshot_system_prompt(req)
     sem = asyncio.Semaphore(ONESHOT_CONCURRENCY)
     results = await asyncio.gather(
-        *[_run_one(r, sem, do_judge, req.compare) for r in rows]
+        *[_run_one(r, sem, do_judge, req.compare, sp) for r in rows]
     )
     results.sort(key=lambda r: r.get("order", 0))
     summary = _oneshot_summary(results, req)
@@ -876,12 +1100,13 @@ async def api_oneshot_stream(req: OneShotRequest):
     """
     rows = _prepare_oneshot_rows(req)
     do_judge = req.judge or req.compare
+    sp = _oneshot_system_prompt(req)
     sem = asyncio.Semaphore(ONESHOT_CONCURRENCY)
     total = len(rows)
 
     async def gen():
         results: list[dict] = []
-        tasks = [asyncio.create_task(_run_one(r, sem, do_judge, req.compare)) for r in rows]
+        tasks = [asyncio.create_task(_run_one(r, sem, do_judge, req.compare, sp)) for r in rows]
         done = 0
         try:
             for fut in asyncio.as_completed(tasks):

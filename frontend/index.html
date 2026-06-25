@@ -780,6 +780,27 @@
     }
     .os-strats-list input { accent-color: var(--brand); }
 
+    /* Datasets panel */
+    .os-ds-panel { margin-top: 8px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); min-width: 420px; }
+    .os-ds-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .os-ds-label { font-family: 'Lexend', sans-serif; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); flex-basis: 100%; }
+    .os-ds-panel input[type=text] { flex: 1 1 160px; min-width: 0; padding: 7px 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; border-radius: var(--radius-sm); }
+    .os-ds-panel input[type=number] { width: 64px; padding: 7px 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; border-radius: var(--radius-sm); }
+    .os-ds-examples { display: flex; align-items: center; gap: 8px; font-size: 0.74rem; color: var(--muted); margin-bottom: 10px; }
+    .os-ds-list { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+    .os-ds-item { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
+    .os-ds-item .nm { flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .os-ds-item .ct { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--muted); }
+    .os-ds-del { display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid var(--block-br); background: var(--block-bg); color: var(--block); font-size: 0.64rem; font-weight: 600; cursor: pointer; border-radius: 6px; }
+    .os-ds-allnote { font-size: 0.72rem; line-height: 1.5; color: var(--redact); background: var(--redact-bg); border: 1px solid var(--redact-br); border-radius: var(--radius-sm); padding: 7px 10px; margin-bottom: 10px; }
+
+    /* One-shot system-prompt override */
+    .os-sp-panel { margin-top: 8px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); min-width: 380px; display: flex; flex-direction: column; gap: 8px; }
+    .os-sp-hint { font-size: 0.74rem; color: var(--muted); line-height: 1.5; }
+    #os-sp-text { width: 100%; padding: 9px 11px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; line-height: 1.5; border-radius: var(--radius-sm); resize: vertical; outline: none; }
+    #os-sp-text:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-bg); }
+    .os-sp-panel .sp-btn { align-self: flex-start; }
+
     /* Variant column + evasion highlight */
     .os-variant {
       font-family: 'JetBrains Mono', monospace; font-size: 0.66rem;
@@ -1313,6 +1334,64 @@
         <summary data-i18n-title="os.stratsTitle" title="Also test obfuscated variants of each attack to probe guard robustness"><span data-i18n="os.strategies">Strategies</span> <span id="os-strats-count"></span></summary>
         <div class="os-strats-list" id="os-strats-list"></div>
       </details>
+      <details class="os-strats" id="os-ds">
+        <summary><span data-i18n="ds.title">Datasets</span> <span class="os-strats-count" id="os-ds-count"></span></summary>
+        <div class="os-ds-panel">
+          <div class="os-ds-row">
+            <span class="os-ds-label" data-i18n="ds.hfLabel">HuggingFace dataset</span>
+            <input type="text" id="os-ds-id" spellcheck="false" placeholder="owner/name" />
+            <input type="number" id="os-ds-limit" value="25" min="1" max="100000" title="Rows" />
+            <input type="text" id="os-ds-col" spellcheck="false" data-i18n-placeholder="ds.colPlaceholder" placeholder="column (auto)" />
+            <button class="sp-btn primary" onclick="importHfDataset(false)" data-i18n="ds.import">Import</button>
+            <button class="sp-btn" onclick="importHfDataset(true)" data-i18n-title="ds.allTitle" title="Import every row (up to 100,000)" data-i18n="ds.importAll">All</button>
+          </div>
+          <div class="os-ds-examples">
+            <span data-i18n="ds.examples">Examples:</span>
+            <button class="sp-btn" onclick="fillHf('OpenSafetyLab/Salad-Data')">Salad-Data</button>
+            <button class="sp-btn" onclick="fillHf('Babelscape/ALERT')">ALERT</button>
+          </div>
+          <div class="os-ds-allnote" data-i18n="ds.allNote">⚠ “All” pulls the whole dataset (up to 100k) — it's paginated and can take a few minutes; HuggingFace may rate-limit, in which case a partial sample is kept.</div>
+          <div class="os-ds-row">
+            <span class="os-ds-label" data-i18n="ds.uploadLabel">Upload (.csv/.json/.jsonl/.txt)</span>
+            <label class="sp-btn" style="cursor:pointer;"><svg class="ic"><use href="#i-upload"></use></svg> <span data-i18n="ds.upload">Upload file</span>
+              <input type="file" id="os-ds-file" accept=".csv,.json,.jsonl,.txt" style="display:none" onchange="uploadDataset(event)" />
+            </label>
+          </div>
+          <div class="os-ds-list" id="os-ds-list"></div>
+          <div class="cp0-result" id="os-ds-status"></div>
+        </div>
+      </details>
+      <details class="os-strats" id="os-sp">
+        <summary><span data-i18n="ossp.title">System prompt</span> <span class="os-strats-count" id="os-sp-count"></span></summary>
+        <div class="os-sp-panel">
+          <div class="os-sp-hint" data-i18n="ossp.hint">Optional — overrides the active system prompt for this run only. Leave blank to use the current one.</div>
+          <label class="os-judge-toggle" style="align-self:flex-start">
+            <input type="checkbox" id="os-sp-none" onchange="onOsSpNone()" />
+            <span data-i18n="ossp.none">No system prompt at all</span>
+          </label>
+          <textarea id="os-sp-text" rows="4" oninput="onOsSpInput()" data-i18n-placeholder="ossp.placeholder" placeholder="Paste a system prompt to test scenarios against…"></textarea>
+          <button class="sp-btn" onclick="clearOsSp()" data-i18n="ossp.clear">Clear</button>
+        </div>
+      </details>
+      <details class="os-strats" id="os-kb">
+        <summary><span data-i18n="oskb.title">Knowledge base</span> <span class="os-strats-count" id="os-kb-count"></span></summary>
+        <div class="os-ds-panel">
+          <div class="os-ds-row">
+            <span class="os-ds-label" data-i18n="oskb.label">RAG knowledge base for this run</span>
+            <select id="os-kb-mode" onchange="onKbModeChange()">
+              <option value="" data-i18n="oskb.default">Default (per scenario)</option>
+              <option value="clean" data-i18n="oskb.clean">Clean</option>
+              <option value="poisoned" data-i18n="oskb.poisoned">Poisoned</option>
+              <option value="custom" data-i18n="oskb.custom">Custom (uploaded)</option>
+            </select>
+            <label class="sp-btn" style="cursor:pointer;"><svg class="ic"><use href="#i-upload"></use></svg> <span data-i18n="oskb.upload">Upload .txt</span>
+              <input type="file" id="os-kb-file" accept=".txt" style="display:none" onchange="uploadOsKbDoc(event)" />
+            </label>
+          </div>
+          <div class="os-ds-list" id="os-kb-list"></div>
+          <div class="cp0-result" id="os-kb-status"></div>
+        </div>
+      </details>
       <button class="sp-btn primary" id="os-run-btn" onclick="runOneShot()"><svg class="ic"><use href="#i-play"></use></svg> <span data-i18n="os.run">Run Test</span></button>
       <span class="os-running" id="os-running" style="display:none"><svg class="ic" style="animation:spin 1s linear infinite"><use href="#i-loader"></use></svg><span id="os-progress"></span></span>
       <span style="flex:1"></span>
@@ -1328,6 +1407,10 @@
 <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 
 <script>
+  // Resolve API calls against the page origin so they work regardless of the
+  // document's base URL (some embeds/proxies break relative URL resolution,
+  // causing "Failed to parse URL from /api/…").
+  const API = window.location.origin;
   let currentDocMode = 'clean';
   let isBusy = false;
   let guardEnabled = true;   // live Lakera on/off for the chat
@@ -1478,6 +1561,41 @@
         'os.idle': 'Pick a scope and run the test to see how Lakera Guard handles every scenario.',
         'os.scopeAll': 'All categories',
         'os.scopeCategory': 'Category: {name}',
+        'os.scopeDataset': 'Dataset: {name} ({count})',
+        'ds.title': 'Datasets',
+        'ds.hfLabel': 'HuggingFace dataset',
+        'ds.colPlaceholder': 'column (auto)',
+        'ds.import': 'Import',
+        'ds.examples': 'Examples:',
+        'ds.uploadLabel': 'Upload (.csv / .json / .jsonl / .txt)',
+        'ds.upload': 'Upload file',
+        'ds.rows': 'rows',
+        'ds.needId': 'Enter a dataset id (owner/name).',
+        'ds.importing': 'Importing from HuggingFace…',
+        'ds.importingAll': 'Importing all rows from HuggingFace… (this can take a few minutes)',
+        'ds.importingProgress': 'Importing… {n} / {total} rows',
+        'ds.allConfirm': 'Import the ENTIRE dataset (up to 100,000 rows)?\n\nThis is paginated and can take several minutes, and HuggingFace may rate-limit large pulls (a partial sample is kept if so).',
+        'ds.allNote': '⚠ “All” pulls the whole dataset (up to 100k) — it’s paginated and can take a few minutes; HuggingFace may rate-limit, in which case a partial sample is kept.',
+        'ds.partial': 'Imported {count} rows (partial — HuggingFace rate-limited the full pull of ~{total}). Re-run later for more.',
+        'ds.importAll': 'All',
+        'ds.allTitle': 'Import every row (up to 100,000)',
+        'ds.uploading': 'Uploading…',
+        'ds.imported': 'Imported {count} prompts (column “{col}”)',
+        'ds.importFailed': 'Import failed',
+        'ossp.title': 'System prompt',
+        'ossp.hint': 'Optional — overrides the active system prompt for this run only. Leave blank to use the current one.',
+        'ossp.placeholder': 'Paste a system prompt to test scenarios against…',
+        'ossp.clear': 'Clear',
+        'ossp.custom': 'custom',
+        'ossp.none': 'No system prompt at all',
+        'ossp.noneShort': 'none',
+        'oskb.title': 'Knowledge base',
+        'oskb.label': 'RAG knowledge base for this run',
+        'oskb.default': 'Default (per scenario)',
+        'oskb.clean': 'Clean',
+        'oskb.poisoned': 'Poisoned',
+        'oskb.custom': 'Custom (uploaded)',
+        'oskb.upload': 'Upload .txt',
         'os.colScenario': 'Scenario',
         'os.colOwasp': 'OWASP',
         'os.colExpected': 'Expected',
@@ -1698,6 +1816,41 @@
         'os.idle': '選擇範圍並執行測試，檢視 Lakera Guard 如何處理每個情境。',
         'os.scopeAll': '所有類別',
         'os.scopeCategory': '類別：{name}',
+        'os.scopeDataset': '資料集：{name}（{count}）',
+        'ds.title': '資料集',
+        'ds.hfLabel': 'HuggingFace 資料集',
+        'ds.colPlaceholder': '欄位（自動）',
+        'ds.import': '匯入',
+        'ds.examples': '範例：',
+        'ds.uploadLabel': '上傳（.csv / .json / .jsonl / .txt）',
+        'ds.upload': '上傳檔案',
+        'ds.rows': '筆',
+        'ds.needId': '請輸入資料集 ID（owner/name）。',
+        'ds.importing': '正在從 HuggingFace 匯入…',
+        'ds.importingAll': '正在從 HuggingFace 匯入全部資料…（可能需要幾分鐘）',
+        'ds.importingProgress': '匯入中… {n} / {total} 筆',
+        'ds.allConfirm': '匯入整個資料集（最多 100,000 筆）？\n\n此操作會分頁進行，可能需要數分鐘；HuggingFace 可能對大量請求限流（若如此將保留部分樣本）。',
+        'ds.allNote': '⚠「全部」會匯入整個資料集（最多 10 萬筆）— 分頁進行，可能需要幾分鐘；HuggingFace 可能限流，屆時將保留部分樣本。',
+        'ds.partial': '已匯入 {count} 筆（部分 — HuggingFace 對約 {total} 筆的完整匯入限流）。稍後可重試以取得更多。',
+        'ds.importAll': '全部',
+        'ds.allTitle': '匯入所有資料列（最多 100,000）',
+        'ds.uploading': '上傳中…',
+        'ds.imported': '已匯入 {count} 筆提示（欄位「{col}」）',
+        'ds.importFailed': '匯入失敗',
+        'ossp.title': '系統提示詞',
+        'ossp.hint': '可選 — 僅為此次執行覆寫使用中的系統提示詞。留空則使用目前的提示詞。',
+        'ossp.placeholder': '貼上要用於測試情境的系統提示詞…',
+        'ossp.clear': '清除',
+        'ossp.custom': '自訂',
+        'ossp.none': '完全不使用系統提示詞',
+        'ossp.noneShort': '無',
+        'oskb.title': '知識庫',
+        'oskb.label': '此次執行的 RAG 知識庫',
+        'oskb.default': '預設（依情境）',
+        'oskb.clean': '乾淨',
+        'oskb.poisoned': '受污染',
+        'oskb.custom': '自訂（已上傳）',
+        'oskb.upload': '上傳 .txt',
         'os.colScenario': '情境',
         'os.colOwasp': 'OWASP',
         'os.colExpected': '預期',
@@ -1983,6 +2136,41 @@
         'os.idle': '选择范围并运行测试，查看 Lakera Guard 如何处理每个场景。',
         'os.scopeAll': '所有类别',
         'os.scopeCategory': '类别：{name}',
+        'os.scopeDataset': '数据集：{name}（{count}）',
+        'ds.title': '数据集',
+        'ds.hfLabel': 'HuggingFace 数据集',
+        'ds.colPlaceholder': '列（自动）',
+        'ds.import': '导入',
+        'ds.examples': '示例：',
+        'ds.uploadLabel': '上传（.csv / .json / .jsonl / .txt）',
+        'ds.upload': '上传文件',
+        'ds.rows': '条',
+        'ds.needId': '请输入数据集 ID（owner/name）。',
+        'ds.importing': '正在从 HuggingFace 导入…',
+        'ds.importingAll': '正在从 HuggingFace 导入全部数据…（可能需要几分钟）',
+        'ds.importingProgress': '导入中… {n} / {total} 条',
+        'ds.allConfirm': '导入整个数据集（最多 100,000 条）？\n\n此操作会分页进行，可能需要数分钟；HuggingFace 可能对大量请求限流（若如此将保留部分样本）。',
+        'ds.allNote': '⚠「全部」会导入整个数据集（最多 10 万条）— 分页进行，可能需要几分钟；HuggingFace 可能限流，届时将保留部分样本。',
+        'ds.partial': '已导入 {count} 条（部分 — HuggingFace 对约 {total} 条的完整导入限流）。稍后可重试以获取更多。',
+        'ds.importAll': '全部',
+        'ds.allTitle': '导入所有数据行（最多 100,000）',
+        'ds.uploading': '上传中…',
+        'ds.imported': '已导入 {count} 条提示（列「{col}」）',
+        'ds.importFailed': '导入失败',
+        'ossp.title': '系统提示词',
+        'ossp.hint': '可选 — 仅为此次运行覆盖使用中的系统提示词。留空则使用当前提示词。',
+        'ossp.placeholder': '粘贴用于测试场景的系统提示词…',
+        'ossp.clear': '清除',
+        'ossp.custom': '自定义',
+        'ossp.none': '完全不使用系统提示词',
+        'ossp.noneShort': '无',
+        'oskb.title': '知识库',
+        'oskb.label': '此次运行的 RAG 知识库',
+        'oskb.default': '默认（按场景）',
+        'oskb.clean': '干净',
+        'oskb.poisoned': '受污染',
+        'oskb.custom': '自定义（已上传）',
+        'oskb.upload': '上传 .txt',
         'os.colScenario': '场景',
         'os.colOwasp': 'OWASP',
         'os.colExpected': '预期',
@@ -2268,6 +2456,41 @@
         'os.idle': '範囲を選んでテストを実行し、Lakera Guard が各シナリオをどう処理するか確認します。',
         'os.scopeAll': 'すべてのカテゴリ',
         'os.scopeCategory': 'カテゴリ：{name}',
+        'os.scopeDataset': 'データセット：{name}（{count}）',
+        'ds.title': 'データセット',
+        'ds.hfLabel': 'HuggingFace データセット',
+        'ds.colPlaceholder': '列（自動）',
+        'ds.import': 'インポート',
+        'ds.examples': '例：',
+        'ds.uploadLabel': 'アップロード（.csv / .json / .jsonl / .txt）',
+        'ds.upload': 'ファイルをアップロード',
+        'ds.rows': '件',
+        'ds.needId': 'データセット ID（owner/name）を入力してください。',
+        'ds.importing': 'HuggingFace からインポート中…',
+        'ds.importingAll': 'HuggingFace から全行をインポート中…（数分かかる場合があります）',
+        'ds.importingProgress': 'インポート中… {n} / {total} 件',
+        'ds.allConfirm': 'データセット全体（最大 100,000 行）をインポートしますか？\n\nページング処理のため数分かかることがあり、HuggingFace が大量取得をレート制限する場合があります（その場合は一部のみ保持）。',
+        'ds.allNote': '⚠「すべて」はデータセット全体（最大 10 万行）を取得します — ページング処理で数分かかる場合があり、HuggingFace がレート制限すると一部サンプルのみ保持します。',
+        'ds.partial': '{count} 行をインポート（部分 — 約 {total} 行の全取得が HuggingFace にレート制限されました）。後でもう一度実行してください。',
+        'ds.importAll': 'すべて',
+        'ds.allTitle': 'すべての行をインポート（最大 100,000）',
+        'ds.uploading': 'アップロード中…',
+        'ds.imported': '{count} 件のプロンプトをインポート（列「{col}」）',
+        'ds.importFailed': 'インポートに失敗しました',
+        'ossp.title': 'システムプロンプト',
+        'ossp.hint': '任意 — この実行のみ有効なシステムプロンプトを上書きします。空欄なら現在のものを使用。',
+        'ossp.placeholder': 'シナリオのテストに使うシステムプロンプトを貼り付け…',
+        'ossp.clear': 'クリア',
+        'ossp.custom': 'カスタム',
+        'ossp.none': 'システムプロンプトを一切使わない',
+        'ossp.noneShort': 'なし',
+        'oskb.title': 'ナレッジベース',
+        'oskb.label': 'この実行の RAG ナレッジベース',
+        'oskb.default': 'デフォルト（シナリオごと）',
+        'oskb.clean': 'クリーン',
+        'oskb.poisoned': '汚染',
+        'oskb.custom': 'カスタム（アップロード済み）',
+        'oskb.upload': '.txt をアップロード',
         'os.colScenario': 'シナリオ',
         'os.colOwasp': 'OWASP',
         'os.colExpected': '想定',
@@ -2530,7 +2753,7 @@
 
   // ── Load category scenarios ─────────────────────────────────────────────
   async function loadCategoryScenarios() {
-    const res = await fetch('/api/scenario-categories');
+    const res = await fetch(API + '/api/scenario-categories');
     allCategories = await res.json();
 
     const pillsContainer = document.getElementById('category-pills');
@@ -2603,7 +2826,7 @@
   }
 
   async function loadDefaultPrompt() {
-    const res = await fetch('/api/system-prompt');
+    const res = await fetch(API + '/api/system-prompt');
     const d = await res.json();
     document.getElementById('sp-textarea').value = d.prompt;
   }
@@ -2634,7 +2857,7 @@
     resultEl.className = 'cp0-result show';
     resultEl.innerHTML = icon('clock') + '<span>' + t('cp0.scanning') + '</span>';
 
-    const res = await fetch('/api/system-prompt', {
+    const res = await fetch(API + '/api/system-prompt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt }),
@@ -2645,7 +2868,7 @@
   }
 
   async function resetSystemPrompt() {
-    await fetch('/api/system-prompt', { method: 'DELETE' });
+    await fetch(API + '/api/system-prompt', { method: 'DELETE' });
     document.getElementById('sp-textarea').value = '';
     document.getElementById('cp0-result').className = 'cp0-result';
     updateSpModeBadge('default');
@@ -2710,7 +2933,7 @@
 
   async function setDocMode(mode) {
     if (currentDocMode === mode) return;
-    const res = await fetch('/api/docs-mode', {
+    const res = await fetch(API + '/api/docs-mode', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode }),
     });
@@ -2745,7 +2968,7 @@
   }
 
   async function loadCustomDocs() {
-    const res = await fetch('/api/docs/custom');
+    const res = await fetch(API + '/api/docs/custom');
     const files = await res.json();
     renderFileList(files);
   }
@@ -2810,7 +3033,7 @@
     const formData = new FormData();
     formData.append('file', file);
 
-    const res = await fetch('/api/docs/upload', { method: 'POST', body: formData });
+    const res = await fetch(API + '/api/docs/upload', { method: 'POST', body: formData });
     const data = await res.json();
     if (!res.ok) {
       showCdocsStatus('error', data.detail || t('cdocs.uploadFailed'));
@@ -2821,7 +3044,7 @@
   }
 
   async function deleteCustomDoc(filename) {
-    const res = await fetch(`/api/docs/custom/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    const res = await fetch(API + `/api/docs/custom/${encodeURIComponent(filename)}`, { method: 'DELETE' });
     const data = await res.json();
     if (!res.ok) {
       showCdocsStatus('error', data.detail || t('cdocs.deleteFailed'));
@@ -2837,7 +3060,7 @@
 
   async function activateCustomMode() {
     showCdocsStatus('loading', t('cdocs.activating'));
-    const res = await fetch('/api/docs-mode', {
+    const res = await fetch(API + '/api/docs-mode', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode: 'custom' }),
     });
@@ -2926,7 +3149,7 @@
     try {
       const body = { message, guard_enabled: guardEnabled };
       if (simulateOutput) body.simulate_output = simulateOutput;
-      const res = await fetch('/api/chat', {
+      const res = await fetch(API + '/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
@@ -3103,7 +3326,7 @@
   let lakeraKeySet = false;
   async function loadLakeraConfig() {
     try {
-      const d = await (await fetch('/api/lakera-config')).json();
+      const d = await (await fetch(API + '/api/lakera-config')).json();
       lakeraKeySet = !!d.api_key_set;
       const inp = document.getElementById('lakera-key');
       inp.placeholder = lakeraKeySet
@@ -3118,7 +3341,7 @@
     if (!key) { showLlmStatus('error', t('llm.lakeraNeeded')); return; }
     showLlmStatus('loading', t('llm.saving'));
     try {
-      const res = await fetch('/api/lakera-config', {
+      const res = await fetch(API + '/api/lakera-config', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ api_key: key }),
       });
@@ -3137,7 +3360,7 @@
   async function saveToEnv() {
     showLlmStatus('loading', t('llm.savingEnv'));
     try {
-      const res = await fetch('/api/config/save-env', { method: 'POST' });
+      const res = await fetch(API + '/api/config/save-env', { method: 'POST' });
       const d = await res.json();
       if (!res.ok) { showLlmStatus('error', d.detail || t('llm.saveEnvFailed')); return; }
       showLlmStatus('success', t('llm.savedEnv', { keys: (d.keys || []).join(', ') }));
@@ -3154,7 +3377,7 @@
   }
 
   async function loadLlmConfig() {
-    const res = await fetch('/api/llm-config');
+    const res = await fetch(API + '/api/llm-config');
     const d = await res.json();
     llmPresets = d.presets || {};
     currentLlmCfg = d.config;
@@ -3250,7 +3473,7 @@
   async function loadModels() {
     showLlmStatus('loading', t('llm.loadingModels'));
     try {
-      const res = await fetch('/api/llm-config/test', {
+      const res = await fetch(API + '/api/llm-config/test', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(readLlmForm()),
       });
@@ -3303,7 +3526,7 @@
   async function testLlmConnection() {
     showLlmStatus('loading', t('llm.testing'));
     try {
-      const res = await fetch('/api/llm-config/test', {
+      const res = await fetch(API + '/api/llm-config/test', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(readLlmForm()),
       });
@@ -3339,7 +3562,7 @@
       if (!form.model) {
         showLlmStatus('loading', t('llm.loadingModels'));
         try {
-          const probe = await fetch('/api/llm-config/test', {
+          const probe = await fetch(API + '/api/llm-config/test', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(form),
           });
@@ -3350,7 +3573,7 @@
           }
         } catch { /* fall through — backend will return a clear error */ }
       }
-      const res = await fetch('/api/llm-config', {
+      const res = await fetch(API + '/api/llm-config', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
@@ -3391,6 +3614,7 @@
 
   // ── One-shot batch testing ──────────────────────────────────────────────
   function openOneShot() {
+    loadDatasets();   // refresh imported datasets → also rebuilds scope options
     buildScopeOptions();
     document.getElementById('oneshot-overlay').classList.add('open');
   }
@@ -3417,6 +3641,13 @@
       opt.textContent = t('os.scopeCategory', { name: (cat.owaspId ? cat.owaspId + ' ' : '') + catName(cat) });
       sel.appendChild(opt);
     });
+    // Imported external datasets.
+    (importedDatasets || []).forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = 'ds:' + d.slug;
+      opt.textContent = t('os.scopeDataset', { name: d.name, count: d.count });
+      sel.appendChild(opt);
+    });
     // Default to the currently selected category, if any.
     if (prev) sel.value = prev;
     else if (currentCategory) sel.value = currentCategory.id;
@@ -3426,7 +3657,7 @@
   let allStrategies = [];
   async function loadStrategies() {
     try {
-      const res = await fetch('/api/strategies');
+      const res = await fetch(API + '/api/strategies');
       allStrategies = await res.json();
     } catch { allStrategies = []; }
     const list = document.getElementById('os-strats-list');
@@ -3446,7 +3677,183 @@
     document.getElementById('os-strats-count').textContent = n ? `(${n})` : '';
   }
 
+  // ── External datasets (HuggingFace / upload) ──────────────────────────────
+  let importedDatasets = [];
+  function fillHf(id) { document.getElementById('os-ds-id').value = id; }
+
+  async function loadDatasets() {
+    try { importedDatasets = await (await fetch(API + '/api/datasets')).json(); }
+    catch { importedDatasets = []; }
+    renderDatasetList();
+    document.getElementById('os-ds-count').textContent =
+      importedDatasets.length ? `(${importedDatasets.length})` : '';
+    buildScopeOptions();
+  }
+
+  function renderDatasetList() {
+    const el = document.getElementById('os-ds-list');
+    el.innerHTML = '';
+    importedDatasets.forEach(d => {
+      const row = document.createElement('div');
+      row.className = 'os-ds-item';
+      row.innerHTML = `<span class="nm" title="${esc(d.name)}">${esc(d.name)}</span>`
+        + `<span class="ct">${esc(d.count)} ${esc(t('ds.rows'))}</span>`
+        + `<button class="os-ds-del">${esc(t('cdocs.del'))}</button>`;
+      row.querySelector('.os-ds-del').onclick = () => deleteDataset(d.slug);
+      el.appendChild(row);
+    });
+  }
+
+  function osDsStatus(type, text) {
+    const el = document.getElementById('os-ds-status');
+    let ic = type === 'success' ? 'check' : (type === 'loading' ? 'clock' : 'x');
+    el.className = 'cp0-result ' + (type === 'success' ? 'passed ' : (type === 'error' ? 'blocked ' : '')) + 'show';
+    el.innerHTML = icon(ic); const s = document.createElement('span'); s.textContent = text; el.appendChild(s);
+    if (type === 'success') setTimeout(() => { el.className = 'cp0-result'; }, 4000);
+  }
+
+  async function importHfDataset(all) {
+    const id = document.getElementById('os-ds-id').value.trim();
+    if (!id) { osDsStatus('error', t('ds.needId')); return; }
+    // Notification hint: "All" can be a long, paginated, rate-limited pull.
+    if (all && typeof confirm === 'function' && !confirm(t('ds.allConfirm'))) return;
+    const limit = parseInt(document.getElementById('os-ds-limit').value) || 25;
+    const column = document.getElementById('os-ds-col').value.trim() || null;
+    osDsStatus('loading', all ? t('ds.importingAll') : t('ds.importing'));
+    try {
+      // Streamed NDJSON: progress per page keeps the connection alive on long
+      // pulls (a single multi-minute request gets dropped → "Failed to fetch").
+      const res = await fetch(API + '/api/datasets/import-hf/stream', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataset_id: id, limit, column, all: !!all }),
+      });
+      if (!res.ok) {
+        let detail = t('ds.importFailed');
+        try { detail = (await res.json()).detail || detail; } catch { /* non-JSON */ }
+        osDsStatus('error', detail); return;
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '', done = null, errMsg = null;
+      while (true) {
+        const { value, done: streamDone } = await reader.read();
+        if (streamDone) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+          if (!line) continue;
+          let m; try { m = JSON.parse(line); } catch { continue; }
+          if (m.type === 'progress') {
+            osDsStatus('loading', t('ds.importingProgress', { n: m.fetched, total: m.total || '?' }));
+          } else if (m.type === 'error') { errMsg = m.detail; }
+          else if (m.type === 'done') { done = m; }
+        }
+      }
+      if (errMsg) { osDsStatus('error', errMsg); return; }
+      if (!done) { osDsStatus('error', t('ds.importFailed')); return; }
+      await loadDatasets();
+      if (done.partial) {
+        osDsStatus('error', t('ds.partial', { count: done.count, total: done.total || '?' }));
+      } else {
+        osDsStatus('success', t('ds.imported', { count: done.count, col: done.column }));
+      }
+    } catch (err) { osDsStatus('error', t('ds.importFailed') + ' — ' + err.message); }
+  }
+
+  async function uploadDataset(event) {
+    const file = event.target.files[0]; event.target.value = '';
+    if (!file) return;
+    osDsStatus('loading', t('ds.uploading'));
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const res = await fetch(API + '/api/datasets/upload', { method: 'POST', body: fd });
+      const d = await res.json();
+      if (!res.ok) { osDsStatus('error', d.detail || t('ds.importFailed')); return; }
+      await loadDatasets();
+      osDsStatus('success', t('ds.imported', { count: d.count, col: d.column }));
+    } catch (err) { osDsStatus('error', t('ds.importFailed') + ' — ' + err.message); }
+  }
+
+  async function deleteDataset(slug) {
+    try {
+      await fetch(API + '/api/datasets/' + encodeURIComponent(slug), { method: 'DELETE' });
+      await loadDatasets();
+    } catch { /* ignore */ }
+  }
+
+  // ── One-shot system-prompt override ───────────────────────────────────────
+  function onOsSpInput() {
+    const none = document.getElementById('os-sp-none').checked;
+    const set = document.getElementById('os-sp-text').value.trim().length > 0;
+    document.getElementById('os-sp-count').textContent =
+      none ? '(' + t('ossp.noneShort') + ')' : (set ? '(' + t('ossp.custom') + ')' : '');
+  }
+  function onOsSpNone() {
+    // "No system prompt" disables the override textarea.
+    document.getElementById('os-sp-text').disabled = document.getElementById('os-sp-none').checked;
+    onOsSpInput();
+  }
+  function clearOsSp() {
+    document.getElementById('os-sp-text').value = '';
+    onOsSpInput();
+  }
+
+  // ── One-shot knowledge base (RAG) override ────────────────────────────────
+  function onKbModeChange() {
+    const m = document.getElementById('os-kb-mode').value;
+    document.getElementById('os-kb-count').textContent = m ? '(' + m + ')' : '';
+    if (m === 'custom') loadOsKbDocs();
+  }
+  async function loadOsKbDocs() {
+    let files = [];
+    try { files = await (await fetch(API + '/api/docs/custom')).json(); } catch { /* ignore */ }
+    const el = document.getElementById('os-kb-list'); el.innerHTML = '';
+    files.forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'os-ds-item';
+      row.innerHTML = `<span class="nm" title="${esc(f.filename)}">${esc(f.filename)}</span>`
+        + `<span class="ct">${(f.size_bytes/1024).toFixed(1)} KB</span>`
+        + `<button class="os-ds-del">${esc(t('cdocs.del'))}</button>`;
+      row.querySelector('.os-ds-del').onclick = () => deleteOsKbDoc(f.filename);
+      el.appendChild(row);
+    });
+  }
+  function osKbStatus(type, text) {
+    const el = document.getElementById('os-kb-status');
+    const ic = type === 'success' ? 'check' : (type === 'loading' ? 'clock' : 'x');
+    el.className = 'cp0-result ' + (type === 'success' ? 'passed ' : (type === 'error' ? 'blocked ' : '')) + 'show';
+    el.innerHTML = icon(ic); const s = document.createElement('span'); s.textContent = text; el.appendChild(s);
+    if (type === 'success') setTimeout(() => { el.className = 'cp0-result'; }, 4000);
+  }
+  async function uploadOsKbDoc(event) {
+    const file = event.target.files[0]; event.target.value = '';
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.txt')) { osKbStatus('error', t('cdocs.onlyTxt')); return; }
+    osKbStatus('loading', t('cdocs.uploading'));
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const res = await fetch(API + '/api/docs/upload', { method: 'POST', body: fd });
+      const d = await res.json();
+      if (!res.ok) { osKbStatus('error', d.detail || t('cdocs.uploadFailed')); return; }
+      document.getElementById('os-kb-mode').value = 'custom';   // auto-select custom
+      onKbModeChange();
+      await loadOsKbDocs();
+      osKbStatus('success', t('cdocs.uploaded', { name: d.filename, kb: (d.size_bytes/1024).toFixed(1) }));
+    } catch (err) { osKbStatus('error', t('cdocs.uploadFailed') + ' — ' + err.message); }
+  }
+  async function deleteOsKbDoc(filename) {
+    try { await fetch(API + '/api/docs/custom/' + encodeURIComponent(filename), { method: 'DELETE' }); }
+    catch { /* ignore */ }
+    await loadOsKbDocs();
+  }
+
   function scopeScenarioCount(scopeId) {
+    if (scopeId && scopeId.startsWith('ds:')) {
+      const d = importedDatasets.find(x => 'ds:' + x.slug === scopeId);
+      return d ? d.count : 0;
+    }
+    if (!scopeId) return allCategories.reduce((n, c) => n + c.scenarios.length, 0);
     if (!scopeId) return allCategories.reduce((n, c) => n + c.scenarios.length, 0);
     const c = allCategories.find(x => x.id === scopeId);
     return c ? c.scenarios.length : 0;
@@ -3473,9 +3880,21 @@
       const compareOn = document.getElementById('os-compare').checked;
       const judgeOn = document.getElementById('os-judge').checked || compareOn;
       const strats = selectedStrategies();
-      const res = await fetch('/api/oneshot/stream', {
+      const isDataset = scope && scope.startsWith('ds:');
+      const osSp = document.getElementById('os-sp-text').value.trim();
+      const noSp = document.getElementById('os-sp-none').checked;
+      const kbMode = document.getElementById('os-kb-mode').value || null;
+      const reqBody = {
+        include_safe: true, judge: judgeOn, compare: compareOn, strategies: strats,
+        category_id: isDataset ? null : (scope || null),
+        dataset: isDataset ? scope.slice(3) : null,
+        system_prompt: noSp ? null : (osSp || null),
+        no_system_prompt: noSp,
+        doc_mode: kbMode,
+      };
+      const res = await fetch(API + '/api/oneshot/stream', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category_id: scope || null, include_safe: true, judge: judgeOn, compare: compareOn, strategies: strats }),
+        body: JSON.stringify(reqBody),
       });
       if (!res.ok) {
         let detail = t('os.failed');
