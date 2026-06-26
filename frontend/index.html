@@ -994,6 +994,17 @@
     .rs-redacted    { color: var(--redact); border-color: var(--redact-br); background: var(--redact-bg); }
     .rs-not_reached { color: var(--skip);   border-color: var(--skip-br);   background: var(--skip-bg); }
     .os-detail-none { color: var(--muted); font-size: 0.8rem; font-style: italic; }
+    /* Run configuration panel */
+    .os-runcfg { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel); padding: 12px 14px; margin-bottom: 16px; }
+    .os-runcfg-title { font-family: 'Lexend', sans-serif; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+    .os-runcfg-item { margin-bottom: 10px; }
+    .os-runcfg-item h4 { font-family: 'Lexend', sans-serif; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--heading); margin-bottom: 5px; }
+    .os-runcfg-tag { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 0.66rem; padding: 2px 8px; border: 1px solid; border-radius: 999px; margin-bottom: 5px; }
+    .os-runcfg-tag.used { color: var(--pass); border-color: var(--pass-br); background: var(--pass-bg); }
+    .os-runcfg-tag.none { color: var(--skip); border-color: var(--skip-br); background: var(--skip-bg); }
+    .os-runcfg pre { font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; line-height: 1.5; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; margin: 4px 0 0; }
+    .os-runcfg-doc { margin-top: 6px; }
+
     /* Checkpoint legend */
     .os-legend {
       border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -1380,6 +1391,7 @@
             <span class="os-ds-label" data-i18n="oskb.label">RAG knowledge base for this run</span>
             <select id="os-kb-mode" onchange="onKbModeChange()">
               <option value="" data-i18n="oskb.default">Default (per scenario)</option>
+              <option value="none" data-i18n="oskb.none">None (no RAG file)</option>
               <option value="clean" data-i18n="oskb.clean">Clean</option>
               <option value="poisoned" data-i18n="oskb.poisoned">Poisoned</option>
               <option value="custom" data-i18n="oskb.custom">Custom (uploaded)</option>
@@ -1596,6 +1608,14 @@
         'oskb.poisoned': 'Poisoned',
         'oskb.custom': 'Custom (uploaded)',
         'oskb.upload': 'Upload .txt',
+        'oskb.none': 'None (no RAG file)',
+        'os.rcTitle': 'Run configuration',
+        'os.rcSysPrompt': 'System prompt',
+        'os.rcKb': 'Knowledge base (RAG)',
+        'os.rcUsed': 'Used',
+        'os.rcNoSp': 'Not used — no system prompt for this run',
+        'os.rcNoKb': 'Not used — no RAG file for this run',
+        'os.rcPerScenario': 'per scenario (see each row)',
         'os.colScenario': 'Scenario',
         'os.colOwasp': 'OWASP',
         'os.colExpected': 'Expected',
@@ -1851,6 +1871,14 @@
         'oskb.poisoned': '受污染',
         'oskb.custom': '自訂（已上傳）',
         'oskb.upload': '上傳 .txt',
+        'oskb.none': '無（不使用 RAG 檔案）',
+        'os.rcTitle': '執行設定',
+        'os.rcSysPrompt': '系統提示詞',
+        'os.rcKb': '知識庫（RAG）',
+        'os.rcUsed': '已使用',
+        'os.rcNoSp': '未使用 — 本次執行沒有系統提示詞',
+        'os.rcNoKb': '未使用 — 本次執行沒有 RAG 檔案',
+        'os.rcPerScenario': '依情境（見各列）',
         'os.colScenario': '情境',
         'os.colOwasp': 'OWASP',
         'os.colExpected': '預期',
@@ -2171,6 +2199,14 @@
         'oskb.poisoned': '受污染',
         'oskb.custom': '自定义（已上传）',
         'oskb.upload': '上传 .txt',
+        'oskb.none': '无（不使用 RAG 文件）',
+        'os.rcTitle': '运行配置',
+        'os.rcSysPrompt': '系统提示词',
+        'os.rcKb': '知识库（RAG）',
+        'os.rcUsed': '已使用',
+        'os.rcNoSp': '未使用 — 本次运行没有系统提示词',
+        'os.rcNoKb': '未使用 — 本次运行没有 RAG 文件',
+        'os.rcPerScenario': '按场景（见各行）',
         'os.colScenario': '场景',
         'os.colOwasp': 'OWASP',
         'os.colExpected': '预期',
@@ -2491,6 +2527,14 @@
         'oskb.poisoned': '汚染',
         'oskb.custom': 'カスタム（アップロード済み）',
         'oskb.upload': '.txt をアップロード',
+        'oskb.none': 'なし（RAG ファイルを使わない）',
+        'os.rcTitle': '実行設定',
+        'os.rcSysPrompt': 'システムプロンプト',
+        'os.rcKb': 'ナレッジベース（RAG）',
+        'os.rcUsed': '使用',
+        'os.rcNoSp': '未使用 — この実行ではシステムプロンプトなし',
+        'os.rcNoKb': '未使用 — この実行では RAG ファイルなし',
+        'os.rcPerScenario': 'シナリオごと（各行を参照）',
         'os.colScenario': 'シナリオ',
         'os.colOwasp': 'OWASP',
         'os.colExpected': '想定',
@@ -4056,6 +4100,39 @@
   };
   const sevLabel = lvl => t(SEV_KEY[lvl] || 'os.sevInfo');
 
+  // Run configuration: exactly which system prompt + RAG knowledge base were used.
+  function runConfigHtml(rc) {
+    if (!rc) return '';
+    const sp = rc.system_prompt || {}, kb = rc.knowledge_base || {};
+    let h = '<div class="os-runcfg"><div class="os-runcfg-title">' + esc(t('os.rcTitle')) + '</div>';
+
+    // System prompt
+    h += '<div class="os-runcfg-item"><h4>' + esc(t('os.rcSysPrompt')) + '</h4>';
+    if (sp.used) {
+      h += `<span class="os-runcfg-tag used">${esc(t('os.rcUsed'))} · ${esc(sp.source || '')}</span>`
+        + `<pre>${esc(sp.text || '')}</pre>`;
+    } else {
+      h += `<span class="os-runcfg-tag none">${esc(t('os.rcNoSp'))}</span>`;
+    }
+    h += '</div>';
+
+    // Knowledge base (RAG)
+    h += '<div class="os-runcfg-item"><h4>' + esc(t('os.rcKb')) + '</h4>';
+    if (!kb.used) {
+      h += `<span class="os-runcfg-tag none">${esc(t('os.rcNoKb'))}</span>`;
+    } else if (kb.mode === 'per-scenario') {
+      h += `<span class="os-runcfg-tag used">${esc(t('os.rcUsed'))} · ${esc(t('os.rcPerScenario'))}</span>`;
+    } else {
+      h += `<span class="os-runcfg-tag used">${esc(t('os.rcUsed'))} · ${esc(kb.mode)}</span>`;
+      (kb.documents || []).forEach(d => {
+        h += `<div class="os-runcfg-doc"><span class="os-rag-name">${esc(d.filename)}</span>`
+          + `<pre>${esc(d.content || '')}</pre></div>`;
+      });
+    }
+    h += '</div></div>';
+    return h;
+  }
+
   // Vulnerability dashboard + findings/recommendations narrative.
   function securitySectionHtml(sec) {
     if (!sec) return '';
@@ -4139,7 +4216,8 @@
       html += '</div>';
     }
 
-    // Security posture: dashboard + findings/recommendations.
+    // Run configuration (system prompt + RAG used) then security posture.
+    html += runConfigHtml(s.run_config);
     html += securitySectionHtml(s.security);
 
     html += checkpointLegendHtml();
@@ -4271,6 +4349,26 @@
     const strat = (s.strategies_used && s.strategies_used.length);
     const sec = s.security;
     const colspan = 6 + (judged ? 1 : 0) + (strat ? 1 : 0);
+    // Run configuration block (system prompt + RAG used) for the HTML report.
+    let runcfgHtml = '';
+    if (s.run_config) {
+      const sp = s.run_config.system_prompt || {}, kb = s.run_config.knowledge_base || {};
+      runcfgHtml = `<div class="sec"><h2>${esc(t('os.rcTitle'))}</h2>`
+        + `<div class="dt"><h4>${esc(t('os.rcSysPrompt'))}</h4>`
+        + (sp.used
+            ? `<div class="none">${esc(t('os.rcUsed'))} · ${esc(sp.source || '')}</div><pre>${esc(sp.text || '')}</pre>`
+            : `<div class="none">${esc(t('os.rcNoSp'))}</div>`)
+        + `</div><div class="dt"><h4>${esc(t('os.rcKb'))}</h4>`;
+      if (!kb.used) runcfgHtml += `<div class="none">${esc(t('os.rcNoKb'))}</div>`;
+      else if (kb.mode === 'per-scenario') runcfgHtml += `<div class="none">${esc(t('os.rcUsed'))} · ${esc(t('os.rcPerScenario'))}</div>`;
+      else {
+        runcfgHtml += `<div class="none">${esc(t('os.rcUsed'))} · ${esc(kb.mode)}</div>`;
+        (kb.documents || []).forEach(dc => {
+          runcfgHtml += `<div class="ragdoc"><span class="ragname">${esc(dc.filename)}</span><pre>${esc(dc.content || '')}</pre></div>`;
+        });
+      }
+      runcfgHtml += `</div></div>`;
+    }
     const rows = d.results.map(r => {
       const m = OUTCOME_META[r.outcome] || OUTCOME_META.error;
       const exp = r.expected === 'block' ? t('os.expectBlock') : t('os.expectAllow');
@@ -4417,6 +4515,7 @@ ${strat ? `<div class="cards">
   <div class="card"><div class="n">${esc(s.variants)}</div><div class="l">${esc(t('os.statVariants'))}</div></div>
   <div class="card ${s.evasions ? 'bad' : 'good'}"><div class="n">${esc(s.evasions)}</div><div class="l">${esc(t('os.statEvasions'))}</div></div>
 </div>` : ''}
+${runcfgHtml}
 ${sec ? `<div class="sec">
   <div class="posture sv-${esc(sec.posture.level)}"><span class="lvl sv-${esc(sec.posture.level)}">${esc(sevLabel(sec.posture.level))}</span> ${esc(sec.posture.headline)}</div>
   <h2>${esc(t('os.secFindings'))}</h2>

@@ -983,8 +983,8 @@ def _prepare_oneshot_rows(req: OneShotRequest) -> list[dict]:
         raise HTTPException(400, "No scenarios match the requested selection.")
     # Optional knowledge-base override: force every scenario's RAG source.
     if req.doc_mode:
-        if req.doc_mode not in ("clean", "poisoned", "custom"):
-            raise HTTPException(400, "doc_mode must be 'clean', 'poisoned', or 'custom'.")
+        if req.doc_mode not in ("clean", "poisoned", "custom", "none"):
+            raise HTTPException(400, "doc_mode must be 'clean', 'poisoned', 'custom', or 'none'.")
         if req.doc_mode == "custom" and not any(CUSTOM_DOCS_DIR.glob("*.txt")):
             raise HTTPException(400, "No custom RAG documents uploaded yet — upload one first.")
         for r in rows:
@@ -1055,7 +1055,47 @@ def _oneshot_summary(results: list[dict], req: OneShotRequest) -> dict:
     # ── Security posture: dashboard + findings/recommendations ────────────────
     summary["security"] = report.build(results, summary, req)
 
+    # ── Run configuration: exactly which system prompt + RAG were used ────────
+    summary["run_config"] = _run_config(req)
+
     return summary
+
+
+def _run_config(req: OneShotRequest) -> dict:
+    """
+    Document what the run actually used so the report can show it:
+      • the system prompt (and its text), or that none was used;
+      • the RAG knowledge base (and its document contents), or that none was used;
+      • when neither override is set, both defaults are in effect (and shown).
+    """
+    # System prompt
+    if req.no_system_prompt:
+        sysp = {"used": False}
+    else:
+        text = _oneshot_system_prompt(req) or llm.SYSTEM_PROMPT  # default → built-in text
+        if (req.system_prompt or "").strip():
+            source = "per-run override"
+        elif _custom_system_prompt:
+            source = "active custom prompt"
+        else:
+            source = "built-in default"
+        sysp = {"used": True, "source": source,
+                "text": text[:4000] + ("…" if len(text) > 4000 else "")}
+
+    # Knowledge base (RAG)
+    mode = req.doc_mode or "per-scenario"
+    if mode == "none":
+        kb = {"used": False, "mode": "none"}
+    elif mode == "per-scenario":
+        kb = {"used": True, "mode": "per-scenario"}  # content shown per scenario row
+    else:
+        docs = rag.list_docs(mode)
+        kb = {"used": bool(docs), "mode": mode, "documents": [
+            {"filename": d["filename"],
+             "content": d["content"][:RAG_PREVIEW_CHARS] + ("…" if len(d["content"]) > RAG_PREVIEW_CHARS else "")}
+            for d in docs
+        ]}
+    return {"system_prompt": sysp, "knowledge_base": kb}
 
 
 def _oneshot_system_prompt(req: OneShotRequest) -> str | None:

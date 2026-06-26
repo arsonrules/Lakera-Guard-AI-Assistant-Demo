@@ -465,10 +465,20 @@ raw model behaviour with no guardrail instructions.
 #### Knowledge base override + custom RAG upload (per run)
 
 The **Knowledge base** panel forces the RAG source for the whole run — **Default**
-(each scenario's own setting), **Clean**, **Poisoned**, or **Custom**. **Upload .txt**
-adds your own document(s) and selects **Custom**, so every scenario retrieves from (and
-CP2 scans) your file — test the guard against your real knowledge base or a crafted
-poisoned doc.
+(each scenario's own setting), **None** (no RAG file at all), **Clean**, **Poisoned**, or
+**Custom**. **Upload .txt** adds your own document(s) and selects **Custom**, so every
+scenario retrieves from (and CP2 scans) your file — test the guard against your real
+knowledge base or a crafted poisoned doc.
+
+#### Run configuration in the report
+
+Every run records exactly what fed the model, shown in a **Run configuration** panel
+(modal + HTML report):
+
+- **System prompt** — *Used* (with its source — built-in default, active custom, or per-run override — **and the full text**) or *Not used* when **No system prompt** is selected.
+- **Knowledge base (RAG)** — *Used* with the **document contents** for the chosen mode (clean/poisoned/custom), *per scenario* when no override is set (content is in each row's reveal), or *Not used* when **None** is selected.
+
+So if you leave both at their defaults, the report makes clear a system prompt **and** a RAG knowledge base were in effect — and shows precisely what they were.
 
 #### Security posture dashboard & recommendations
 
