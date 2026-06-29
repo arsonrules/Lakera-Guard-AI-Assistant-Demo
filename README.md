@@ -456,6 +456,23 @@ a `dangerous` tag) appear in the click-to-reveal panel and the HTML report.
 Requires a function-calling-capable provider (OpenRouter/Claude/GPT); local models
 without tool support simply won't call anything.
 
+#### Dynamic generation (adaptive attacker)
+
+Static payloads only test what you thought of. The **Adaptive (auto-generated)**
+category runs an **attacker LLM** that iteratively refines its prompt to achieve a
+goal, learning from each refusal, until the guarded target is compromised or a
+**round budget** runs out (set *Adaptive rounds* in the Limits panel, or
+`--max-rounds` / `max_rounds` in the CLI/suite; default 4). The judge (plus any
+assertions) is the per-round stop condition; the attacker runs out-of-band of
+Lakera using the configured **judge** model.
+
+The reveal shows every round (attacker prompt → target reply → per-round outcome)
+and the headline: *compromised at round N* or *held all N rounds* — i.e. how many
+adaptive attempts the guard + model survived. Each round costs an attacker call +
+the guarded pipeline + a judge call, so keep the budget modest. A well-aligned
+attacker model may decline to red-team; if so its reply is still sent (the target
+refuses) and the run degrades to "held" rather than failing.
+
 #### Guard ON vs OFF: how much risk does Lakera remove?
 
 Tick **Guard ON vs OFF** (implies the judge) to run every attack twice — once
