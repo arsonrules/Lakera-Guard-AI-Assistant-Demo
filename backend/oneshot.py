@@ -20,6 +20,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import copy
+import csv
+import io
 import json
 import os
 import pathlib
@@ -314,6 +316,30 @@ def render_diff(diff: dict) -> str:
     return "\n".join(lines)
 
 
+CSV_COLUMNS = ["id", "label", "owasp_id", "category_id", "expected", "outcome",
+               "blocked", "model_outcome", "risk", "strategy", "total_latency_ms",
+               "judge_reason", "assertions_matched"]
+
+
+def results_to_csv(results: list[dict]) -> str:
+    """Flatten per-scenario results to CSV (one row per result) for spreadsheets/CI."""
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+    w.writeheader()
+    for r in results:
+        checks = r.get("assertions") or []
+        w.writerow({
+            "id": r.get("id"), "label": r.get("label"), "owasp_id": r.get("owasp_id"),
+            "category_id": r.get("category_id"), "expected": r.get("expected"),
+            "outcome": r.get("outcome"), "blocked": r.get("blocked"),
+            "model_outcome": r.get("model_outcome"), "risk": r.get("risk"),
+            "strategy": r.get("strategy") or "", "total_latency_ms": r.get("total_latency_ms"),
+            "judge_reason": (r.get("judge") or {}).get("reason", "") if r.get("judge") else "",
+            "assertions_matched": sum(1 for c in checks if c.get("matched")),
+        })
+    return buf.getvalue()
+
+
 def render_md(out: dict) -> str:
     s = out["summary"]
     sec = s.get("security", {})
@@ -368,6 +394,7 @@ def build_parser() -> argparse.ArgumentParser:
     gate.add_argument("--max-false-positives", type=int)
     out = ap.add_argument_group("output")
     out.add_argument("--out", help="write the full JSON report to this path")
+    out.add_argument("--csv", help="write per-scenario results as CSV to this path")
     out.add_argument("--format", choices=["text", "md"], default="text", help="stdout summary format")
     out.add_argument("--dry-run", action="store_true", help="validate + print the plan, no API calls")
     out.add_argument("--quiet", action="store_true", help="suppress the stdout summary")
@@ -417,6 +444,8 @@ def main(argv: list[str] | None = None) -> int:
         print(render_md(out) if args.format == "md" else render_text(out))
     if args.out:
         pathlib.Path(args.out).write_text(json.dumps(out_payload, indent=2), encoding="utf-8")
+    if args.csv:
+        pathlib.Path(args.csv).write_text(results_to_csv(out["results"]), encoding="utf-8")
 
     # Nothing actually got evaluated → execution error, not a gate verdict.
     if summary["errors"] and (summary["blocked"] + summary["not_blocked"]) == 0:

@@ -101,6 +101,20 @@ def _summary(**kw):
     return base
 
 
+def test_results_to_csv():
+    from backend.oneshot import CSV_COLUMNS, results_to_csv
+    rows = [{"id": "A", "label": "x", "owasp_id": "LLM01:2025", "category_id": "llm01",
+             "expected": "block", "outcome": "not_blocked", "blocked": False,
+             "model_outcome": "compromised", "risk": "breach", "strategy": "base64",
+             "total_latency_ms": 12, "judge": {"reason": "leaked"},
+             "assertions": [{"matched": True}, {"matched": False}]}]
+    text = results_to_csv(rows)
+    lines = text.strip().splitlines()
+    assert lines[0] == ",".join(CSV_COLUMNS)
+    assert lines[1].split(",")[0] == "A"
+    assert lines[1].rstrip().endswith("1")        # assertions_matched = 1
+
+
 def test_gate_passes_when_clean():
     gate = {"min_detection": 0.9, "max_breaches": 0, "max_effective_evasions": 0}
     ok, fails = evaluate_gate(_summary(), gate)

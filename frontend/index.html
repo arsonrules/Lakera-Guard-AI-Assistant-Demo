@@ -1468,6 +1468,7 @@
       <span style="flex:1"></span>
       <button class="sp-btn" id="os-export-html" onclick="exportReport('html')" disabled><svg class="ic"><use href="#i-download"></use></svg> <span data-i18n="os.exportHtml">HTML Report</span></button>
       <button class="sp-btn" id="os-export-json" onclick="exportReport('json')" disabled><svg class="ic"><use href="#i-clipboard"></use></svg> <span data-i18n="os.exportJson">JSON</span></button>
+      <button class="sp-btn" id="os-export-csv" onclick="exportReport('csv')" disabled><svg class="ic"><use href="#i-clipboard"></use></svg> <span data-i18n="os.exportCsv">CSV</span></button>
     </div>
     <div class="modal-body" id="os-body">
       <div class="os-empty" data-i18n="os.idle">Pick a scope and run the test to see how Lakera Guard handles every scenario.</div>
@@ -1629,6 +1630,7 @@
         'os.running': 'Running {done}/{total}…',
         'os.exportHtml': 'HTML Report',
         'os.exportJson': 'JSON',
+        'os.exportCsv': 'CSV',
         'os.idle': 'Pick a scope and run the test to see how Lakera Guard handles every scenario.',
         'os.scopeAll': 'All categories',
         'os.scopeCategory': 'Category: {name}',
@@ -1933,6 +1935,7 @@
         'os.running': '執行中 {done}/{total}…',
         'os.exportHtml': 'HTML 報告',
         'os.exportJson': 'JSON',
+        'os.exportCsv': 'CSV',
         'os.idle': '選擇範圍並執行測試，檢視 Lakera Guard 如何處理每個情境。',
         'os.scopeAll': '所有類別',
         'os.scopeCategory': '類別：{name}',
@@ -2302,6 +2305,7 @@
         'os.running': '运行中 {done}/{total}…',
         'os.exportHtml': 'HTML 报告',
         'os.exportJson': 'JSON',
+        'os.exportCsv': 'CSV',
         'os.idle': '选择范围并运行测试，查看 Lakera Guard 如何处理每个场景。',
         'os.scopeAll': '所有类别',
         'os.scopeCategory': '类别：{name}',
@@ -2671,6 +2675,7 @@
         'os.running': '実行中 {done}/{total}…',
         'os.exportHtml': 'HTML レポート',
         'os.exportJson': 'JSON',
+        'os.exportCsv': 'CSV',
         'os.idle': '範囲を選んでテストを実行し、Lakera Guard が各シナリオをどう処理するか確認します。',
         'os.scopeAll': 'すべてのカテゴリ',
         'os.scopeCategory': 'カテゴリ：{name}',
@@ -4319,6 +4324,7 @@
       renderOneShotResults(d);
       document.getElementById('os-export-html').disabled = false;
       document.getElementById('os-export-json').disabled = false;
+      document.getElementById('os-export-csv').disabled = false;
       const histBtn = document.getElementById('hist-save-btn');
       if (histBtn) histBtn.disabled = false;
     } catch (err) {
@@ -4761,9 +4767,30 @@
     if (format === 'json') {
       downloadBlob(`lakera-oneshot-${stamp}.json`, 'application/json',
         JSON.stringify(lastOneShot, null, 2));
+    } else if (format === 'csv') {
+      downloadBlob(`lakera-oneshot-${stamp}.csv`, 'text/csv', buildCsv(lastOneShot));
     } else {
       downloadBlob(`lakera-oneshot-${stamp}.html`, 'text/html', buildHtmlReport(lastOneShot));
     }
+  }
+
+  // Per-scenario results as CSV (mirrors backend.oneshot.results_to_csv).
+  function buildCsv(d) {
+    const cols = ['id', 'label', 'owasp_id', 'category_id', 'expected', 'outcome',
+      'blocked', 'model_outcome', 'risk', 'strategy', 'total_latency_ms',
+      'judge_reason', 'assertions_matched'];
+    const csvEsc = v => {
+      const s = v == null ? '' : String(v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const lines = [cols.join(',')];
+    (d.results || []).forEach(r => {
+      const matched = (r.assertions || []).filter(c => c.matched).length;
+      lines.push([r.id, r.label, r.owasp_id, r.category_id, r.expected, r.outcome,
+        r.blocked, r.model_outcome, r.risk, r.strategy || '', r.total_latency_ms,
+        (r.judge && r.judge.reason) || '', matched].map(csvEsc).join(','));
+    });
+    return lines.join('\n');
   }
 
   function buildHtmlReport(d) {
