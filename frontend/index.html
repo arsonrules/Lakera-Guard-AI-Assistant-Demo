@@ -1389,6 +1389,8 @@
             <input type="number" id="os-max" value="100" min="1" max="1000" data-i18n-title="os.maxScenariosTitle" title="Cap on base scenarios. Larger datasets are sampled down to this." />
             <span class="os-ds-label" data-i18n="os.concurrency">Concurrency</span>
             <input type="number" id="os-conc" value="4" min="1" max="16" data-i18n-title="os.concurrencyTitle" title="Parallel scenario workers (1–16)." />
+            <span class="os-ds-label" data-i18n="os.maxRounds">Adaptive rounds</span>
+            <input type="number" id="os-rounds" value="4" min="1" max="10" data-i18n-title="os.maxRoundsTitle" title="Round budget for dynamic (adaptive attacker) scenarios (1–10)." />
           </div>
           <div class="os-ds-allnote" data-i18n="os.limitsNote">Datasets bigger than “Max scenarios” are randomly sampled. A run may execute at most 2000 rows including obfuscation variants.</div>
         </div>
@@ -1732,6 +1734,8 @@
         'os.maxScenariosTitle': 'Cap on base scenarios. Larger datasets are sampled down to this.',
         'os.concurrency': 'Concurrency',
         'os.concurrencyTitle': 'Parallel scenario workers (1–16).',
+        'os.maxRounds': 'Adaptive rounds',
+        'os.maxRoundsTitle': 'Round budget for dynamic (adaptive attacker) scenarios (1–10).',
         'os.limitsNote': 'Datasets bigger than “Max scenarios” are randomly sampled. A run may execute at most 2000 rows including obfuscation variants.',
         'judge.useSeparate': 'Use a separate judge model',
         'judge.hint': 'Grade attacks with a stronger model so a weak target isn\'t judging its own output. Used only by the one-shot judge.',
@@ -1745,6 +1749,10 @@
         'os.assertNoMatch': 'no match',
         'os.detailTools': 'Tool calls attempted (sandbox — not executed)',
         'os.toolDangerous': 'dangerous',
+        'os.detailDynamic': 'Adaptive attacker rounds',
+        'os.dynCompromised': 'Compromised at round {n} of {total}',
+        'os.dynHeld': 'Held all {n} round(s)',
+        'os.dynRound': 'Round {n} — attacker',
         'os.detailTurns': 'Conversation ({n} turns)',
         'os.turnUser': 'Turn {n} — user',
         'os.turnAssistant': 'assistant',
@@ -2039,6 +2047,8 @@
         'os.maxScenariosTitle': '基礎場景數上限；超量的資料集會抽樣縮減至此。',
         'os.concurrency': '並行數',
         'os.concurrencyTitle': '並行執行的場景數（1–16）。',
+        'os.maxRounds': '自適應回合',
+        'os.maxRoundsTitle': '動態（自適應攻擊）場景的回合上限（1–10）。',
         'os.limitsNote': '超過「場景數上限」的資料集會隨機抽樣。單次執行含混淆變體最多 2000 列。',
         'judge.useSeparate': '使用獨立的評審模型',
         'judge.hint': '用更強的模型評判攻擊，避免弱模型評判自己的輸出。僅用於 one-shot 評審。',
@@ -2052,6 +2062,10 @@
         'os.assertNoMatch': '未命中',
         'os.detailTools': '嘗試呼叫的工具（沙箱 — 未實際執行）',
         'os.toolDangerous': '危險',
+        'os.detailDynamic': '自適應攻擊回合',
+        'os.dynCompromised': '於第 {n}/{total} 回合被攻破',
+        'os.dynHeld': '撐過全部 {n} 回合',
+        'os.dynRound': '第 {n} 回合 — 攻擊者',
         'os.detailTurns': '對話（{n} 輪）',
         'os.turnUser': '第 {n} 輪 — 使用者',
         'os.turnAssistant': '助手',
@@ -2411,6 +2425,8 @@
         'os.maxScenariosTitle': '基础场景数上限；超量的数据集会抽样缩减至此。',
         'os.concurrency': '并发数',
         'os.concurrencyTitle': '并行执行的场景数（1–16）。',
+        'os.maxRounds': '自适应回合',
+        'os.maxRoundsTitle': '动态（自适应攻击）场景的回合上限（1–10）。',
         'os.limitsNote': '超过「场景数上限」的数据集会随机抽样。单次执行含混淆变体最多 2000 条。',
         'judge.useSeparate': '使用独立的评审模型',
         'judge.hint': '用更强的模型评判攻击，避免弱模型评判自己的输出。仅用于 one-shot 评审。',
@@ -2424,6 +2440,10 @@
         'os.assertNoMatch': '未命中',
         'os.detailTools': '尝试调用的工具（沙箱 — 未实际执行）',
         'os.toolDangerous': '危险',
+        'os.detailDynamic': '自适应攻击回合',
+        'os.dynCompromised': '于第 {n}/{total} 回合被攻破',
+        'os.dynHeld': '撑过全部 {n} 回合',
+        'os.dynRound': '第 {n} 回合 — 攻击者',
         'os.detailTurns': '对话（{n} 轮）',
         'os.turnUser': '第 {n} 轮 — 用户',
         'os.turnAssistant': '助手',
@@ -2783,6 +2803,8 @@
         'os.maxScenariosTitle': '基本シナリオ数の上限。これを超えるデータセットはサンプリングされます。',
         'os.concurrency': '並列数',
         'os.concurrencyTitle': '並列実行するシナリオ数（1〜16）。',
+        'os.maxRounds': '適応ラウンド',
+        'os.maxRoundsTitle': '動的（適応型攻撃）シナリオのラウンド上限（1〜10）。',
         'os.limitsNote': '「最大シナリオ数」を超えるデータセットはランダムにサンプリングされます。1回の実行は難読化バリアントを含め最大2000行です。',
         'judge.useSeparate': '別の評価モデルを使用',
         'judge.hint': '弱いモデルが自身の出力を評価しないよう、より強力なモデルで攻撃を評価します。one-shot 評価のみで使用。',
@@ -2796,6 +2818,10 @@
         'os.assertNoMatch': '一致なし',
         'os.detailTools': '呼び出そうとしたツール（サンドボックス — 未実行）',
         'os.toolDangerous': '危険',
+        'os.detailDynamic': '適応型攻撃ラウンド',
+        'os.dynCompromised': 'ラウンド {n}/{total} で突破',
+        'os.dynHeld': '全 {n} ラウンドを防御',
+        'os.dynRound': 'ラウンド {n} — 攻撃者',
         'os.detailTurns': '会話（{n} ターン）',
         'os.turnUser': 'ターン {n} — ユーザー',
         'os.turnAssistant': 'アシスタント',
@@ -4282,6 +4308,7 @@
       const kbMode = document.getElementById('os-kb-mode').value || null;
       const maxScen = parseInt(document.getElementById('os-max').value, 10);
       const conc = parseInt(document.getElementById('os-conc').value, 10);
+      const rounds = parseInt(document.getElementById('os-rounds').value, 10);
       const reqBody = {
         include_safe: true, judge: judgeOn, compare: compareOn, strategies: strats,
         category_id: isDataset ? null : (scope || null),
@@ -4291,6 +4318,7 @@
         doc_mode: kbMode,
         max_scenarios: (Number.isFinite(maxScen) && maxScen > 0) ? Math.min(maxScen, 1000) : 100,
         concurrency: (Number.isFinite(conc) && conc > 0) ? Math.min(conc, 16) : null,
+        max_rounds: (Number.isFinite(rounds) && rounds > 0) ? Math.min(rounds, 10) : 4,
       };
       const res = await fetch(API + '/api/oneshot/stream', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4701,6 +4729,23 @@
     return h + '</div>';
   }
 
+  // Adaptive-attacker rounds (shared by the modal reveal + HTML report).
+  function dynamicHtml(r) {
+    const d = r.dynamic;
+    if (!d) return '';
+    const head = d.compromised_round
+      ? t('os.dynCompromised', { n: d.compromised_round, total: d.rounds_used })
+      : t('os.dynHeld', { n: d.rounds_used });
+    let h = `<div><h4>${esc(t('os.detailDynamic'))}</h4><div class="os-detail-none">${esc(head)}</div>`;
+    (d.transcript || []).forEach(tn => {
+      h += `<div class="os-turn"><b>${esc(t('os.dynRound', { n: tn.turn }))}</b><pre>${esc(tn.user || '')}</pre>`;
+      if (tn.assistant) h += `<b>${esc(t('os.turnAssistant'))}</b><pre>${esc(tn.assistant)}</pre>`;
+      const tag = tn.blocked_at ? t('os.turnBlocked', { cp: String(tn.blocked_at).toUpperCase() }) : (tn.outcome || '');
+      h += `<div class="os-detail-none">${esc(tag)}</div></div>`;
+    });
+    return h + '</div>';
+  }
+
   // Deterministic assertion results (shared by the modal reveal + HTML report).
   function assertionsHtml(r) {
     const a = r.assertions || [];
@@ -4720,16 +4765,17 @@
       const ev = r.evaded ? ' — ' + t('os.evadedNote') : '';
       h += `<div class="os-detail-none">${esc(t('os.detailStrategy', { s: r.strategy_label }) + ev)}</div>`;
     }
-    h += turnsHtml(r);   // multi-turn transcript (empty for single-shot)
-    if (!r.turns) {
+    h += turnsHtml(r);     // multi-turn transcript (empty for single-shot)
+    h += dynamicHtml(r);   // adaptive-attacker rounds (empty unless dynamic)
+    if (!r.turns && !r.dynamic) {
       h += `<div><h4>${esc(t('os.detailPrompt'))}${r.strategy ? ' (' + esc(r.strategy_label) + ')' : ''}</h4><pre>${esc(r.prompt || '')}</pre></div>`;
     }
     if (r.simulate_output) {
       h += `<div><h4>${esc(t('os.detailSimOutput'))}</h4><pre>${esc(r.simulate_output)}</pre></div>`;
     }
     // Model's actual response + the judge's verdict (when judging ran). For
-    // multi-turn rows the final reply is already shown in the transcript above.
-    if (r.model_response && !r.turns) {
+    // multi-turn / dynamic rows the replies are already shown in the transcript.
+    if (r.model_response && !r.turns && !r.dynamic) {
       h += `<div><h4>${esc(t('os.detailModelResponse'))}</h4><pre>${esc(r.model_response)}</pre></div>`;
     }
     if (r.judge && (r.judge.reason || r.judge.error)) {
@@ -4877,10 +4923,11 @@
       const rag = r.rag || [];
       let detail = '';
       if (r.strategy) detail += `<div class="dt"><h4>${esc(t('os.detailStrategy', { s: r.strategy_label }))}</h4></div>`;
-      detail += turnsHtml(r);   // multi-turn transcript (empty for single-shot)
-      if (!r.turns) detail += `<div class="dt"><h4>${esc(t('os.detailPrompt'))}</h4><pre>${esc(r.prompt || '')}</pre></div>`;
+      detail += turnsHtml(r);     // multi-turn transcript (empty for single-shot)
+      detail += dynamicHtml(r);   // adaptive-attacker rounds (empty unless dynamic)
+      if (!r.turns && !r.dynamic) detail += `<div class="dt"><h4>${esc(t('os.detailPrompt'))}</h4><pre>${esc(r.prompt || '')}</pre></div>`;
       if (r.simulate_output) detail += `<div class="dt"><h4>${esc(t('os.detailSimOutput'))}</h4><pre>${esc(r.simulate_output)}</pre></div>`;
-      if (r.model_response && !r.turns) detail += `<div class="dt"><h4>${esc(t('os.detailModelResponse'))}</h4><pre>${esc(r.model_response)}</pre></div>`;
+      if (r.model_response && !r.turns && !r.dynamic) detail += `<div class="dt"><h4>${esc(t('os.detailModelResponse'))}</h4><pre>${esc(r.model_response)}</pre></div>`;
       if (r.judge && (r.judge.reason || r.judge.error)) {
         const reason = r.judge.error ? (t('os.judgeError') + ' ' + r.judge.error) : r.judge.reason;
         detail += `<div class="dt"><h4>${esc(t('os.detailJudge'))}</h4><pre>${esc((mm ? t(mm.key) + ' — ' : '') + reason)}</pre></div>`;
