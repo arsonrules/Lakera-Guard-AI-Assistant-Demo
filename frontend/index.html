@@ -648,7 +648,9 @@
 
     /* ── LLM provider panel ── */
     .llm-panel { max-height: 0; }
-    .llm-panel.open { max-height: 460px; }
+    /* Tall enough for the optional judge section; scrolls within the viewport
+       if the content (judge fields expanded) exceeds the cap. */
+    .llm-panel.open { max-height: min(760px, 85vh); overflow-y: auto; }
     #llm-mode-badge.custom { color: var(--brand); border-color: var(--brand-br); background: var(--brand-bg); }
     #llm-mode-badge.needs-key { color: var(--block); border-color: var(--block-br); background: var(--block-bg); }
     #guard-toggle.guard-on  { color: var(--pass);  border-color: var(--pass-br);  background: var(--pass-bg); }
