@@ -47,7 +47,8 @@ DEFAULTS: dict = {
     "scope": {"category": None, "include_safe": True, "dataset": None,
               "max_scenarios": 100, "seed": None},
     "options": {"judge": True, "compare": False, "strategies": [], "doc_mode": None,
-                "system_prompt": None, "no_system_prompt": False, "concurrency": None},
+                "system_prompt": None, "no_system_prompt": False, "concurrency": None,
+                "max_rounds": 4},
     "llm": {"provider": "openrouter", "base_url": None, "model": None},
     # Optional independent judge model. All-null → judge with the target model.
     "judge_llm": {"provider": None, "base_url": None, "model": None},
@@ -114,6 +115,8 @@ def build_effective_config(args: argparse.Namespace) -> dict:
         o["doc_mode"] = args.doc_mode
     if args.concurrency is not None:
         o["concurrency"] = args.concurrency
+    if args.max_rounds is not None:
+        o["max_rounds"] = args.max_rounds
     for key, val in (("provider", args.provider), ("base_url", args.base_url),
                      ("model", args.model)):
         if val is not None:
@@ -195,6 +198,7 @@ def build_request(cfg: dict) -> OneShotRequest:
             judge=o["judge"], compare=o["compare"], strategies=o["strategies"] or [],
             doc_mode=o["doc_mode"], system_prompt=o["system_prompt"],
             no_system_prompt=o["no_system_prompt"], concurrency=o["concurrency"],
+            max_rounds=o["max_rounds"],
         )
     except ValidationError as exc:
         raise ConfigError(f"invalid run configuration: {exc.errors()[0].get('msg', exc)}")
@@ -378,6 +382,7 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("--strategies", help="comma-separated obfuscation strategies")
     o.add_argument("--doc-mode", choices=["clean", "poisoned", "custom", "none"])
     o.add_argument("--concurrency", type=int)
+    o.add_argument("--max-rounds", type=int, help="round budget for dynamic scenarios (1–10)")
     p = ap.add_argument_group("provider")
     p.add_argument("--provider")
     p.add_argument("--base-url")

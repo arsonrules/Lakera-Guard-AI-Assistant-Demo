@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lakera_demo")
 
-from backend import assertions, chat, datasets, history, judge, llm, rag, report, strategies, tools
+from backend import assertions, attacker, chat, datasets, history, judge, llm, rag, report, strategies, tools
 from backend.config import ENV_PATH, settings
 from backend.llm import SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT
 from backend.scenarios import CATEGORIES
@@ -364,6 +364,8 @@ class OneShotRequest(BaseModel):
     concurrency: int | None = Field(default=None, ge=1, le=MAX_CONCURRENCY)
     # Seed for reproducible dataset sampling (None → nondeterministic).
     seed: int | None = Field(default=None)
+    # Round budget for dynamic (adaptive attacker) scenarios.
+    max_rounds: int = Field(default=4, ge=1, le=10)
 
 
 class LakeraKeyRequest(BaseModel):
@@ -882,6 +884,8 @@ def _dataset_rows(slug: str) -> list[dict]:
             "assertions": None,
             "turns": None,
             "tools": None,
+            "goal": None,
+            "dynamic": False,
         })
     return rows
 
@@ -896,9 +900,13 @@ def _flatten_scenarios(category_id: str | None, include_safe: bool) -> list[dict
             continue
         for s in cat["scenarios"]:
             turns = s.get("turns")
-            # Multi-turn scenarios have no single prompt; use the final (payload) turn
-            # for display and for judging the delivered reply.
-            prompt = s["prompt"] if not turns else turns[-1]
+            # Multi-turn → final turn; dynamic → the goal; else the static prompt.
+            if turns:
+                prompt = turns[-1]
+            elif s.get("dynamic"):
+                prompt = s["goal"]
+            else:
+                prompt = s["prompt"]
             rows.append({
                 "id": s["id"],
                 "label": s["label"],
@@ -908,6 +916,9 @@ def _flatten_scenarios(category_id: str | None, include_safe: bool) -> list[dict
                 "color": cat["color"],
                 "prompt": prompt,
                 "turns": turns,
+                # Dynamic (adaptive attacker) scenario goal.
+                "goal": s.get("goal"),
+                "dynamic": bool(s.get("dynamic")),
                 "doc_mode": s.get("docMode", "clean"),
                 "simulate_output": s.get("simulateOutput"),
                 "description": s.get("description", ""),
@@ -933,8 +944,8 @@ def _expand_with_strategies(rows: list[dict], strategy_ids: list[str]) -> list[d
     out: list[dict] = []
     for r in rows:
         out.append(r)
-        if r["color"] != "attack" or r.get("turns"):
-            # Strategies wrap a single prompt; multi-turn rows are left as-is.
+        if r["color"] != "attack" or r.get("turns") or r.get("dynamic"):
+            # Strategies wrap a single prompt; multi-turn / dynamic rows are left as-is.
             continue
         for sid in valid:
             v = dict(r)
@@ -1025,9 +1036,94 @@ async def _grade_attack(prompt: str, category_id: str, override: str | None, raw
             "assertions": assert_result["checks"] if assert_result else None}
 
 
+async def _run_dynamic(base: dict, row: dict, *, system_prompt: str | None,
+                       llm_config: dict, lakera_key: str, judge_config: dict,
+                       max_rounds: int) -> dict:
+    """
+    Adaptive attacker loop: an attacker LLM refines its prompt up to `max_rounds`
+    until the guarded target is compromised, or the budget runs out. The judge
+    (+ any assertions) is the per-round stop condition. Returns a full result row.
+    """
+    goal = row.get("goal") or row["prompt"]
+    specs = row.get("assertions")
+    transcript: list[dict] = []
+    guard_latency = extra_latency = 0
+    compromised_round = None
+    final_response = None
+    rounds_used = 0
+
+    for rnd in range(1, max_rounds + 1):
+        rounds_used = rnd
+        gen = await attacker.next_prompt(goal, transcript, judge_config)
+        extra_latency += gen.get("latency_ms") or 0
+        atk_prompt = gen.get("prompt") or goal
+
+        result = await chat.process(
+            message=atk_prompt, doc_mode=row["doc_mode"], simulate_output=None,
+            system_prompt=system_prompt, llm_config=llm_config, lakera_key=lakera_key,
+        )
+        trace = result.get("trace", {})
+        guard_latency += sum((trace.get(cp, {}) or {}).get("latency_ms") or 0
+                             for cp in ("cp1", "cp2", "cp3"))
+        raw, blocked = result.get("raw_response"), result["blocked"]
+
+        if raw is None or blocked:
+            round_outcome = "prevented"
+            reply_preview = (raw or "")[:MODEL_RESPONSE_PREVIEW_CHARS]
+        else:
+            assert_result = assertions.evaluate(raw, specs)
+            verdict = await judge.grade(
+                goal, raw, judge.criteria_for(row["category_id"], row.get("success_criteria")),
+                judge_config)
+            extra_latency += verdict.get("latency_ms") or 0
+            round_outcome = _combine_outcome(verdict, assert_result, judged=True)
+            reply_preview = raw[:MODEL_RESPONSE_PREVIEW_CHARS]
+
+        transcript.append({
+            "turn": rnd, "user": atk_prompt, "assistant": reply_preview,
+            "blocked_at": (f"cp{result['blocked_at']}" if blocked else None),
+            "outcome": round_outcome,
+            "error": gen.get("error"),
+        })
+        final_response = raw
+        if round_outcome == "compromised":
+            compromised_round = rnd
+            break
+
+    # Overall: compromised if any round landed; else "blocked" if the guard stopped
+    # every attempt; else the model resisted prompts that did get through.
+    guard_blocked = compromised_round is None and all(t["blocked_at"] for t in transcript)
+    if compromised_round:
+        model_outcome = "compromised"
+    elif guard_blocked:
+        model_outcome = "prevented"
+    else:
+        model_outcome = "resisted"
+
+    reason = (f"compromised at round {compromised_round} of {rounds_used}"
+              if compromised_round else f"held {rounds_used} round(s)")
+    return {
+        **base,
+        "blocked": guard_blocked, "blocked_at": None,
+        "outcome": _classify(row["color"], guard_blocked),
+        "model_outcome": model_outcome,
+        "risk": _risk(model_outcome, guard_blocked),
+        "judge": {"reason": reason, "error": None},
+        "assertions": None, "tool_calls": None,
+        "model_response": (final_response[:MODEL_RESPONSE_PREVIEW_CHARS] if final_response else None),
+        "alone_outcome": None, "alone_reason": None, "alone_response": None,
+        "trace": {}, "rag": [],
+        "dynamic": {"rounds_used": rounds_used, "max_rounds": max_rounds,
+                    "compromised_round": compromised_round, "transcript": transcript},
+        "total_latency_ms": guard_latency, "judge_latency_ms": extra_latency or None,
+        "error": None,
+    }
+
+
 async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare: bool,
                    system_prompt: str | None = None, *,
-                   llm_config: dict, lakera_key: str, judge_config: dict) -> dict:
+                   llm_config: dict, lakera_key: str, judge_config: dict,
+                   max_rounds: int = 4) -> dict:
     async with sem:
         base = {
             "id": row["id"], "label": row["label"],
@@ -1049,6 +1145,10 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
             "order": row.get("order", 0),
         }
         try:
+            if row.get("dynamic"):
+                return await _run_dynamic(
+                    base, row, system_prompt=system_prompt, llm_config=llm_config,
+                    lakera_key=lakera_key, judge_config=judge_config, max_rounds=max_rounds)
             if row.get("turns"):
                 result = await chat.process_multiturn(
                     row["turns"], doc_mode=row["doc_mode"],
@@ -1389,7 +1489,8 @@ async def run_oneshot(req: OneShotRequest, *, llm_config: dict, lakera_key: str,
     sem = asyncio.Semaphore(req.concurrency or ONESHOT_CONCURRENCY)
     results = await asyncio.gather(
         *[_run_one(r, sem, do_judge, req.compare, sp,
-                   llm_config=llm_config, lakera_key=lakera_key, judge_config=jc)
+                   llm_config=llm_config, lakera_key=lakera_key, judge_config=jc,
+                   max_rounds=req.max_rounds)
           for r in rows]
     )
     results.sort(key=lambda r: r.get("order", 0))
@@ -1425,7 +1526,8 @@ async def api_oneshot_stream(req: OneShotRequest):
         results: list[dict] = []
         tasks = [asyncio.create_task(
             _run_one(r, sem, do_judge, req.compare, sp,
-                     llm_config=cfg, lakera_key=key, judge_config=jc)
+                     llm_config=cfg, lakera_key=key, judge_config=jc,
+                     max_rounds=req.max_rounds)
         ) for r in rows]
         done = 0
         try:
