@@ -924,7 +924,7 @@ def _expand_with_strategies(rows: list[dict], strategy_ids: list[str]) -> list[d
     (base row kept first so base-vs-variant evasion can be computed). Safe rows
     are left untouched.
     """
-    valid = [s for s in strategy_ids if s in strategies.STRATEGIES]
+    valid = [s for s in strategy_ids if strategies.is_valid(s)]
     if not valid:
         return rows
     out: list[dict] = []
@@ -937,7 +937,7 @@ def _expand_with_strategies(rows: list[dict], strategy_ids: list[str]) -> list[d
             v = dict(r)
             v["prompt"] = strategies.apply(sid, r["prompt"])
             v["strategy"] = sid
-            v["strategy_label"] = strategies.STRATEGIES[sid]["label"]
+            v["strategy_label"] = strategies.label_for(sid)
             v["base_id"] = r["id"]
             out.append(v)
     return out
@@ -1273,7 +1273,7 @@ def _oneshot_summary(results: list[dict], req: OneShotRequest, scope: dict | Non
     #   • effective_evasion — it ALSO landed: the judge found the model complied.
     #                         Only this is a real breach; a guard miss the model
     #                         then refused is a lower-severity robustness note.
-    summary["strategies_used"] = [s for s in req.strategies if s in strategies.STRATEGIES]
+    summary["strategies_used"] = [s for s in req.strategies if strategies.is_valid(s)]
     if summary["strategies_used"]:
         # Base verdict per scenario id (strategy is None on the base row).
         base_blocked = {

@@ -45,7 +45,8 @@ def test_dataset_sampled_to_default_cap(monkeypatch):
            "column": "prompt",
            "rows": [{"prompt": f"attack {i}", "category": "x"} for i in range(400)]}
     monkeypatch.setitem(main._datasets, "big2", big)
+    strats = list(STRATEGIES.keys())
     rows, scope = _prepare_oneshot_rows(
-        OneShotRequest(dataset="big2", strategies=list(STRATEGIES.keys()), seed=1))
+        OneShotRequest(dataset="big2", strategies=strats, seed=1, max_scenarios=100))
     assert scope["base_executed"] == 100               # default max_scenarios
-    assert scope["total_rows"] == 700                  # 100 × (1 + 6 strategies)
+    assert scope["total_rows"] == 100 * (1 + len(strats))   # base + one variant per strategy

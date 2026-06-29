@@ -40,3 +40,33 @@ def test_leetspeak_substitutes():
 
 def test_unknown_strategy_is_passthrough():
     assert strategies.apply("does-not-exist", "hello") == "hello"
+
+
+def test_reverse_contains_reversed_payload():
+    out = strategies.apply("reverse", "attack now")
+    assert "won kcatta" in out
+
+
+def test_zero_width_is_invisible_but_changes_bytes():
+    out = strategies.apply("zero_width", "secret")
+    assert out.replace("​", "") == "secret"     # reads the same to a human/model
+    assert out != "secret"                            # different byte stream
+
+
+def test_morse_encodes():
+    out = strategies.apply("morse", "sos")
+    assert "... --- ..." in out
+
+
+def test_composition_chains_left_to_right():
+    # 'leetspeak+base64' leets the text, then Base64-wraps it.
+    chained = strategies.apply("leetspeak+base64", "elite")
+    enc = chained.strip().splitlines()[-1]
+    assert base64.b64decode(enc).decode() == "31173"  # leetspeak('elite')
+
+
+def test_is_valid_and_label_for():
+    assert strategies.is_valid("base64")
+    assert strategies.is_valid("homoglyph+base64")
+    assert not strategies.is_valid("homoglyph+nope")
+    assert strategies.label_for("homoglyph+base64") == "Homoglyph+Base64"
