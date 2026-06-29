@@ -1,0 +1,40 @@
+name: Red-team guardrail gate
+
+# Runs the headless one-shot suite as a CI gate. A violated threshold
+# (e.g. a real breach, or detection below the floor) fails the job.
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"   # nightly regression at 03:00 UTC
+
+jobs:
+  redteam:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+
+      # Offline unit tests first (no secrets needed).
+      - run: python -m pytest tests/unit -q
+
+      # Validate the suite without spending any API calls.
+      - run: python -m backend.oneshot --suite suite.yaml --dry-run
+
+      # The actual gated run. Secrets come from repository/Actions secrets.
+      - name: Red-team gate
+        env:
+          LAKERA_GUARD_API_KEY: ${{ secrets.LAKERA_GUARD_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          python -m backend.oneshot --suite suite.yaml \
+            --out report.json --format md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: redteam-report
+          path: report.json
