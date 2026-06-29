@@ -118,6 +118,48 @@ def _auth_headers(provider: str, api_key: str) -> dict:
     return headers
 
 
+def build_messages(history: list[dict], context_docs: list[str],
+                   system_prompt: str | None) -> list[dict]:
+    """
+    Assemble the OpenAI-style message list: optional system prompt, optional RAG
+    context (as a system message), then the conversation `history` (user/assistant
+    turns). `history` is typically a single user message for one-shot, or a full
+    multi-turn conversation for Crescendo-style scenarios.
+    """
+    # None → built-in default prompt; "" → no system prompt at all; other → verbatim.
+    sys_content = SYSTEM_PROMPT if system_prompt is None else system_prompt
+    messages: list[dict] = []
+    if sys_content:
+        messages.append({"role": "system", "content": sys_content})
+    if context_docs:
+        joined = "\n\n---\n\n".join(context_docs)
+        messages.append({"role": "system",
+                         "content": f"Relevant knowledge base articles:\n\n{joined}"})
+    messages.extend(history)
+    return messages
+
+
+async def complete_chat(
+    messages: list[dict],
+    *,
+    provider: str,
+    base_url: str,
+    api_key: str,
+    model: str,
+) -> str:
+    """Post a fully-assembled message list and return the assistant's text."""
+    endpoint = f"{_normalize_base_url(base_url)}/chat/completions"
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            endpoint,
+            headers=_auth_headers(provider, api_key),
+            json={"model": model, "messages": messages},
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
+
+
 async def complete(
     user_message: str,
     context_docs: list[str],
@@ -128,33 +170,10 @@ async def complete(
     model: str,
     system_prompt: str | None = None,
 ) -> str:
-    # None  → built-in default prompt; ""  → no system prompt at all (explicit);
-    # other → use it verbatim.
-    sys_content = SYSTEM_PROMPT if system_prompt is None else system_prompt
-    messages: list[dict] = []
-    if sys_content:
-        messages.append({"role": "system", "content": sys_content})
-
-    if context_docs:
-        joined = "\n\n---\n\n".join(context_docs)
-        messages.append({
-            "role": "system",
-            "content": f"Relevant knowledge base articles:\n\n{joined}",
-        })
-
-    messages.append({"role": "user", "content": user_message})
-
-    endpoint = f"{_normalize_base_url(base_url)}/chat/completions"
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            endpoint,
-            headers=_auth_headers(provider, api_key),
-            json={"model": model, "messages": messages},
-            timeout=60.0,
-        )
-        resp.raise_for_status()
-
-    return resp.json()["choices"][0]["message"]["content"]
+    messages = build_messages([{"role": "user", "content": user_message}],
+                              context_docs, system_prompt)
+    return await complete_chat(messages, provider=provider, base_url=base_url,
+                               api_key=api_key, model=model)
 
 
 async def test_connection(

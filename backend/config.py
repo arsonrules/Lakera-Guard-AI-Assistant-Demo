@@ -19,6 +19,15 @@ class Settings(BaseSettings):
     llm_api_key: str = ""    # blank → fall back to openrouter_api_key (back-compat)
     llm_model: str = ""      # blank → use openrouter_model / preset default
 
+    # ── Independent LLM-as-judge provider (optional) ──────────────────────────
+    # When set, the one-shot judge uses THIS provider/model instead of the target
+    # model, so a weak local target isn't grading its own output. All blank → the
+    # judge falls back to the target llm_* config above.
+    judge_provider: str = ""
+    judge_base_url: str = ""
+    judge_api_key: str = ""
+    judge_model: str = ""
+
     # Back-compat with the original OpenRouter-only configuration.
     openrouter_api_key: str = ""
     openrouter_model: str = "anthropic/claude-3-opus"
