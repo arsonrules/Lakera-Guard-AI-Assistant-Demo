@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import pathlib
+import random
 import re
 import urllib.parse
 from contextlib import asynccontextmanager
@@ -13,13 +14,14 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lakera_demo")
 
-from backend import chat, datasets, judge, llm, rag, report, strategies
+from backend import assertions, chat, datasets, history, judge, llm, rag, report, strategies
 from backend.config import ENV_PATH, settings
 from backend.llm import SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT
 from backend.scenarios import CATEGORIES
 
 FRONTEND_DIR = pathlib.Path(__file__).parent.parent / "frontend"
 CUSTOM_DOCS_DIR = pathlib.Path(__file__).parent.parent / "tests" / "fixtures" / "docs_custom"
+RUN_HISTORY_DIR = pathlib.Path(__file__).parent.parent / "runs"
 
 MAX_FILE_SIZE_BYTES = 50 * 1024   # 50 KB
 MAX_CUSTOM_FILES    = 5
@@ -27,6 +29,15 @@ ALLOWED_DOC_EXT     = ".txt"
 
 # Concurrency cap for one-shot batch runs (protects Lakera/LLM rate limits).
 ONESHOT_CONCURRENCY = 4
+MAX_CONCURRENCY = 16            # upper bound the UI/API may request
+
+# Scale guardrails for one-shot runs. A run can otherwise explode: an imported
+# dataset (up to datasets.MAX_ROWS rows) × strategy variants × judge + compare
+# calls would be tens of thousands of LLM/Lakera requests. We sample the base
+# scenarios down to `max_scenarios` and hard-cap the total executed rows.
+DEFAULT_MAX_SCENARIOS = 100     # base scenarios per run unless the caller raises it
+HARD_MAX_SCENARIOS = 1000       # ceiling on the requestable max_scenarios
+HARD_MAX_ROWS = 2000            # ceiling on base × (1 + strategies) actually run
 
 # Global state
 _doc_mode: str = "clean"
@@ -47,6 +58,33 @@ def _init_llm_config() -> dict:
 
 # Runtime-configurable LLM provider (OpenRouter / LM Studio / Ollama / oMLX / custom).
 _llm_config: dict = _init_llm_config()
+
+
+def _init_judge_config() -> dict | None:
+    """
+    Build the optional independent judge config from .env. Returns None when no
+    JUDGE_* settings are present — the judge then falls back to the target model.
+    """
+    if not (settings.judge_provider or settings.judge_model
+            or settings.judge_base_url or settings.judge_api_key):
+        return None
+    provider = settings.judge_provider or llm.DEFAULT_PROVIDER
+    p = llm.preset(provider)
+    return {
+        "provider": provider,
+        "base_url": settings.judge_base_url or p["base_url"],
+        "api_key": settings.judge_api_key,
+        "model": settings.judge_model or p["default_model"],
+    }
+
+
+# Optional independent judge provider. None → judge with the target _llm_config.
+_judge_config: dict | None = _init_judge_config()
+
+
+def _effective_judge_config() -> dict:
+    """The config the judge should use: the dedicated one if set, else the target."""
+    return dict(_judge_config) if _judge_config else dict(_llm_config)
 
 # Runtime-configurable Lakera Guard key (seeded from .env if present, else set in UI).
 _lakera_key: str = settings.lakera_guard_api_key or ""
@@ -93,6 +131,19 @@ def _public_llm_config() -> dict:
         "api_key_set": bool(key),
         "api_key_masked": _mask(key),
     }
+
+
+def _public_judge_config() -> dict:
+    """Judge config for the UI/report — never returns the raw key."""
+    if not _judge_config:
+        # Disabled: the effective judge is the target model.
+        return {"enabled": False, "provider": _llm_config["provider"],
+                "model": _llm_config["model"], "base_url": _llm_config["base_url"],
+                "api_key_set": bool(_llm_config.get("api_key")), "api_key_masked": ""}
+    key = _judge_config.get("api_key") or ""
+    return {"enabled": True, "provider": _judge_config["provider"],
+            "base_url": _judge_config["base_url"], "model": _judge_config["model"],
+            "api_key_set": bool(key), "api_key_masked": _mask(key)}
 
 DEMO_SCENARIOS = [
     {
@@ -262,6 +313,29 @@ class LLMConfigRequest(BaseModel):
     api_key: str | None = Field(default=None, max_length=400)
 
 
+class HistorySaveRequest(BaseModel):
+    summary: dict
+    results: list = Field(default_factory=list)
+    llm: dict | None = None
+    judge: dict | None = None
+    label: str | None = Field(default=None, max_length=120)
+
+
+class HistoryDiffRequest(BaseModel):
+    base_id: str = Field(max_length=40)
+    head_id: str = Field(max_length=40)
+
+
+class JudgeConfigRequest(BaseModel):
+    # enabled=False → judge with the target model (clears any dedicated judge).
+    enabled: bool = False
+    provider: str = Field(default="", max_length=40)
+    base_url: str = Field(default="", max_length=400)
+    model: str = Field(default="", max_length=200)
+    # Optional: omit (or null) to keep the current judge key unchanged.
+    api_key: str | None = Field(default=None, max_length=400)
+
+
 class OneShotRequest(BaseModel):
     # Run a single category, or omit category_id to run the whole catalogue.
     category_id: str | None = Field(default=None, max_length=40)
@@ -283,6 +357,13 @@ class OneShotRequest(BaseModel):
     # Force a knowledge base for the whole run: "clean" | "poisoned" | "custom".
     # None → use each scenario's own docMode (datasets default to "clean").
     doc_mode: str | None = Field(default=None, max_length=20)
+    # Cap on base scenarios executed. Datasets larger than this are sampled down
+    # (reproducibly, via `seed`); the built-in catalogue is smaller so unaffected.
+    max_scenarios: int = Field(default=DEFAULT_MAX_SCENARIOS, ge=1, le=HARD_MAX_SCENARIOS)
+    # Batch concurrency (bounded). None → ONESHOT_CONCURRENCY default.
+    concurrency: int | None = Field(default=None, ge=1, le=MAX_CONCURRENCY)
+    # Seed for reproducible dataset sampling (None → nondeterministic).
+    seed: int | None = Field(default=None)
 
 
 class LakeraKeyRequest(BaseModel):
@@ -445,6 +526,46 @@ async def api_test_llm_config(req: LLMConfigRequest):
     return result
 
 
+# ── Independent judge provider configuration ─────────────────────────────────
+
+@app.get("/api/judge-config")
+async def api_get_judge_config():
+    return {"judge": _public_judge_config()}
+
+
+@app.post("/api/judge-config")
+async def api_set_judge_config(req: JudgeConfigRequest):
+    global _judge_config
+    if not req.enabled:
+        _judge_config = None
+        return {"judge": _public_judge_config(),
+                "message": "Judge now uses the target model."}
+
+    if req.provider not in llm.PROVIDER_PRESETS:
+        raise HTTPException(400, f"Unknown provider '{req.provider}'.")
+    p = llm.preset(req.provider)
+    base_url = _clean(req.base_url) or p["base_url"]
+    if not re.match(r"^https?://", base_url or ""):
+        raise HTTPException(400, "Base URL must start with http:// or https://")
+    model = _clean(req.model) or p["default_model"]
+    if not model:
+        raise HTTPException(400, f"A model id is required for {p['label']}.")
+
+    # Blank key reuses the stored judge key only for the same provider (see _resolve_api_key).
+    if req.api_key is not None:
+        api_key = _clean(req.api_key)
+    elif _judge_config and req.provider == _judge_config.get("provider"):
+        api_key = _judge_config.get("api_key", "")
+    else:
+        api_key = ""
+    if p["requires_key"] and not api_key:
+        raise HTTPException(400, f"{p['label']} requires an API key.")
+
+    _judge_config = {"provider": req.provider, "base_url": base_url,
+                     "api_key": api_key, "model": model}
+    return {"judge": _public_judge_config(), "message": "Judge model updated."}
+
+
 # ── Lakera Guard key configuration ───────────────────────────────────────────
 
 @app.get("/api/lakera-config")
@@ -495,6 +616,11 @@ async def api_save_env():
         "LLM_BASE_URL": _llm_config.get("base_url", ""),
         "LLM_MODEL": _llm_config.get("model", ""),
         "LLM_API_KEY": _llm_config.get("api_key", ""),
+        # Dedicated judge provider (blank when the judge uses the target model).
+        "JUDGE_PROVIDER": _judge_config.get("provider", "") if _judge_config else "",
+        "JUDGE_BASE_URL": _judge_config.get("base_url", "") if _judge_config else "",
+        "JUDGE_MODEL": _judge_config.get("model", "") if _judge_config else "",
+        "JUDGE_API_KEY": _judge_config.get("api_key", "") if _judge_config else "",
     }
     try:
         _write_env(values)
@@ -753,6 +879,8 @@ def _dataset_rows(slug: str) -> list[dict]:
             "success_criteria": judge.criteria_for("external"),
             "strategy": None,
             "strategy_label": None,
+            "assertions": None,
+            "turns": None,
         })
     return rows
 
@@ -766,6 +894,10 @@ def _flatten_scenarios(category_id: str | None, include_safe: bool) -> list[dict
         if not include_safe and cat["id"] == "safe":
             continue
         for s in cat["scenarios"]:
+            turns = s.get("turns")
+            # Multi-turn scenarios have no single prompt; use the final (payload) turn
+            # for display and for judging the delivered reply.
+            prompt = s["prompt"] if not turns else turns[-1]
             rows.append({
                 "id": s["id"],
                 "label": s["label"],
@@ -773,12 +905,15 @@ def _flatten_scenarios(category_id: str | None, include_safe: bool) -> list[dict
                 "owasp_id": cat["owaspId"],
                 "owasp_name": cat["owaspName"],
                 "color": cat["color"],
-                "prompt": s["prompt"],
+                "prompt": prompt,
+                "turns": turns,
                 "doc_mode": s.get("docMode", "clean"),
                 "simulate_output": s.get("simulateOutput"),
                 "description": s.get("description", ""),
                 "strategy": None,
                 "strategy_label": None,
+                # Optional deterministic compromise checks on the delivered response.
+                "assertions": s.get("assertions"),
             })
     return rows
 
@@ -795,7 +930,8 @@ def _expand_with_strategies(rows: list[dict], strategy_ids: list[str]) -> list[d
     out: list[dict] = []
     for r in rows:
         out.append(r)
-        if r["color"] != "attack":
+        if r["color"] != "attack" or r.get("turns"):
+            # Strategies wrap a single prompt; multi-turn rows are left as-is.
             continue
         for sid in valid:
             v = dict(r)
@@ -858,17 +994,37 @@ def _risk(model_outcome: str, blocked: bool | None) -> str | None:
     return "breach" if model_outcome == "compromised" else None
 
 
-async def _grade_attack(prompt: str, category_id: str, override: str | None, raw: str) -> dict:
-    """Judge a single model response; returns {outcome, reason, latency_ms}."""
-    verdict = await judge.grade(prompt, raw, judge.criteria_for(category_id, override), _llm_config)
-    comp = verdict.get("compromised")
-    outcome = "unknown" if comp is None else ("compromised" if comp else "resisted")
+def _combine_outcome(judge_verdict: dict | None, assert_result: dict | None,
+                     judged: bool) -> str:
+    """
+    Fold the (optional) LLM-judge verdict and the (optional) deterministic
+    assertion result into one model outcome. A match from EITHER signals a
+    compromise; a clear "no" from either (with no compromise) means resisted.
+    """
+    jc = judge_verdict.get("compromised") if judge_verdict else None
+    ac = assert_result["compromised"] if assert_result else None
+    if jc is True or ac is True:
+        return "compromised"
+    if jc is False or ac is False:
+        return "resisted"
+    # Neither concluded: judge ran but was unparseable → unknown; else not graded.
+    return "unknown" if (judged and judge_verdict is not None) else "not_judged"
+
+
+async def _grade_attack(prompt: str, category_id: str, override: str | None, raw: str,
+                        judge_config: dict, specs: list[dict] | None = None) -> dict:
+    """Grade one response (judge + deterministic assertions); {outcome, reason, latency_ms}."""
+    verdict = await judge.grade(prompt, raw, judge.criteria_for(category_id, override), judge_config)
+    assert_result = assertions.evaluate(raw, specs)
+    outcome = _combine_outcome(verdict, assert_result, judged=True)
     return {"outcome": outcome, "reason": verdict.get("reason", ""),
-            "error": verdict.get("error"), "latency_ms": verdict.get("latency_ms") or 0}
+            "error": verdict.get("error"), "latency_ms": verdict.get("latency_ms") or 0,
+            "assertions": assert_result["checks"] if assert_result else None}
 
 
 async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare: bool,
-                   system_prompt: str | None = None) -> dict:
+                   system_prompt: str | None = None, *,
+                   llm_config: dict, lakera_key: str, judge_config: dict) -> dict:
     async with sem:
         base = {
             "id": row["id"], "label": row["label"],
@@ -882,23 +1038,35 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
             # Obfuscation variant (None = the original plaintext base row).
             "strategy": row.get("strategy"),
             "strategy_label": row.get("strategy_label"),
+            # Multi-turn conversation (None = single-shot).
+            "turns": row.get("turns"),
             # Stable display order for streamed (out-of-order) completion.
             "order": row.get("order", 0),
         }
         try:
-            result = await chat.process(
-                message=row["prompt"],
-                doc_mode=row["doc_mode"],
-                simulate_output=row["simulate_output"],
-                system_prompt=system_prompt,
-                llm_config=_llm_config,
-                lakera_key=_lakera_key,
-            )
+            if row.get("turns"):
+                result = await chat.process_multiturn(
+                    row["turns"], doc_mode=row["doc_mode"],
+                    system_prompt=system_prompt, llm_config=llm_config, lakera_key=lakera_key,
+                )
+            else:
+                result = await chat.process(
+                    message=row["prompt"],
+                    doc_mode=row["doc_mode"],
+                    simulate_output=row["simulate_output"],
+                    system_prompt=system_prompt,
+                    llm_config=llm_config,
+                    lakera_key=lakera_key,
+                )
             trace = result.get("trace", {})
-            latency = sum(
+            # Checkpoint (Lakera guard) latency = CP1 + CP2 + CP3 only. The LLM
+            # judge / guard-OFF calls are tracked separately so the "Latency"
+            # column reflects the guard, not the judge model.
+            guard_latency = sum(
                 (trace.get(cp, {}) or {}).get("latency_ms") or 0
                 for cp in ("cp1", "cp2", "cp3")
             )
+            judge_latency = 0
             raw = result.get("raw_response")
 
             # ── LLM-as-judge: did the attack land on the response the GUARD-ON
@@ -907,42 +1075,53 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
             # before delivery), the delivered result is a safe fallback → prevented;
             # the blocked content is not judged for the final outcome.
             model_outcome, judge_info, model_response = "benign", None, None
+            assert_checks = None
+            specs = row.get("assertions")
             if row["color"] == "attack":
                 if raw is None:
                     model_outcome = "prevented"          # CP1 blocked before the model ran
                 elif result["blocked"]:
                     model_outcome = "prevented"          # CP3 caught the output before delivery
                     model_response = raw[:MODEL_RESPONSE_PREVIEW_CHARS]  # shown in reveal for context
-                elif not do_judge:
-                    model_outcome = "not_judged"
-                    model_response = raw[:MODEL_RESPONSE_PREVIEW_CHARS]
                 else:
-                    verdict = await judge.grade(
-                        row["prompt"], raw,
-                        judge.criteria_for(row["category_id"], row.get("success_criteria")),
-                        _llm_config,
-                    )
-                    judge_info = {"reason": verdict.get("reason", ""), "error": verdict.get("error")}
-                    comp = verdict.get("compromised")
-                    model_outcome = "unknown" if comp is None else ("compromised" if comp else "resisted")
                     model_response = raw[:MODEL_RESPONSE_PREVIEW_CHARS]
-                    latency += verdict.get("latency_ms") or 0
+                    # Deterministic assertions run with or without the LLM judge, so
+                    # leak checks work even when --no-judge keeps the run free.
+                    assert_result = assertions.evaluate(raw, specs)
+                    assert_checks = assert_result["checks"] if assert_result else None
+                    verdict = None
+                    if do_judge:
+                        verdict = await judge.grade(
+                            row["prompt"], raw,
+                            judge.criteria_for(row["category_id"], row.get("success_criteria")),
+                            judge_config,
+                        )
+                        judge_info = {"reason": verdict.get("reason", ""), "error": verdict.get("error")}
+                        judge_latency += verdict.get("latency_ms") or 0
+                    model_outcome = _combine_outcome(verdict, assert_result, judged=do_judge)
 
             # ── Guard OFF (model alone): same attack with Lakera disabled ─────
             alone_outcome, alone_reason, alone_response = None, None, None
             if do_compare and row["color"] == "attack":
-                off = await chat.process_unguarded(
-                    message=row["prompt"], doc_mode=row["doc_mode"],
-                    simulate_output=row["simulate_output"],
-                    system_prompt=system_prompt, llm_config=_llm_config,
-                )
+                if row.get("turns"):
+                    off = await chat.process_multiturn_unguarded(
+                        row["turns"], doc_mode=row["doc_mode"],
+                        system_prompt=system_prompt, llm_config=llm_config,
+                    )
+                else:
+                    off = await chat.process_unguarded(
+                        message=row["prompt"], doc_mode=row["doc_mode"],
+                        simulate_output=row["simulate_output"],
+                        system_prompt=system_prompt, llm_config=llm_config,
+                    )
                 off_raw = off.get("raw_response") or ""
                 g = await _grade_attack(row["prompt"], row["category_id"],
-                                        row.get("success_criteria"), off_raw)
+                                        row.get("success_criteria"), off_raw, judge_config,
+                                        row.get("assertions"))
                 alone_outcome = g["outcome"]
                 alone_reason = g["reason"]
                 alone_response = off_raw[:MODEL_RESPONSE_PREVIEW_CHARS]
-                latency += g["latency_ms"]
+                judge_latency += g["latency_ms"]
 
             return {
                 **base,
@@ -952,13 +1131,15 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                 "model_outcome": model_outcome,
                 "risk": _risk(model_outcome, result["blocked"]),
                 "judge": judge_info,
+                "assertions": assert_checks,
                 "model_response": model_response,
                 "alone_outcome": alone_outcome,
                 "alone_reason": alone_reason,
                 "alone_response": alone_response,
                 "trace": trace,
                 "rag": _rag_detail(row["prompt"], row["doc_mode"], trace),
-                "total_latency_ms": latency,
+                "total_latency_ms": guard_latency,
+                "judge_latency_ms": judge_latency or None,
                 "error": None,
             }
         except Exception as exc:  # noqa: BLE001 — record, don't abort the whole batch
@@ -966,21 +1147,36 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
             return {
                 **base,
                 "blocked": None, "blocked_at": None, "outcome": "error",
-                "model_outcome": "n/a", "risk": None, "judge": None, "model_response": None,
+                "model_outcome": "n/a", "risk": None, "judge": None, "assertions": None,
+                "model_response": None,
                 "alone_outcome": None, "alone_reason": None, "alone_response": None,
-                "trace": {}, "rag": [], "total_latency_ms": None,
+                "trace": {}, "rag": [], "total_latency_ms": None, "judge_latency_ms": None,
                 "error": f"{type(exc).__name__}: {exc}",
             }
 
 
-def _prepare_oneshot_rows(req: OneShotRequest) -> list[dict]:
-    """Flatten + expand scenarios and stamp a stable display order on each row."""
+def _prepare_oneshot_rows(req: OneShotRequest) -> tuple[list[dict], dict]:
+    """
+    Flatten + (sample) + expand scenarios and stamp a stable display order.
+    Returns (rows, scope) where scope records how the run was bounded so the
+    summary can show e.g. "ran 100 of 5,000 scenarios (sampled)".
+    """
     if not _lakera_key:
         raise HTTPException(400, LAKERA_NOT_SET_MSG)
     rows = _dataset_rows(req.dataset) if req.dataset else \
         _flatten_scenarios(req.category_id, req.include_safe)
     if not rows:
         raise HTTPException(400, "No scenarios match the requested selection.")
+
+    # ── Scale guardrail: sample the base scenarios down to max_scenarios ───────
+    available = len(rows)
+    sampled = False
+    if available > req.max_scenarios:
+        rng = random.Random(req.seed)
+        keep = sorted(rng.sample(range(available), req.max_scenarios))
+        rows = [rows[i] for i in keep]
+        sampled = True
+
     # Optional knowledge-base override: force every scenario's RAG source.
     if req.doc_mode:
         if req.doc_mode not in ("clean", "poisoned", "custom", "none"):
@@ -989,13 +1185,32 @@ def _prepare_oneshot_rows(req: OneShotRequest) -> list[dict]:
             raise HTTPException(400, "No custom RAG documents uploaded yet — upload one first.")
         for r in rows:
             r["doc_mode"] = req.doc_mode
+
+    base_count = len(rows)
     rows = _expand_with_strategies(rows, req.strategies)
+
+    # ── Scale guardrail: hard ceiling on total executed rows ───────────────────
+    if len(rows) > HARD_MAX_ROWS:
+        raise HTTPException(
+            400,
+            f"This run would execute {len(rows)} scenarios (limit {HARD_MAX_ROWS}). "
+            f"Lower max_scenarios (currently {req.max_scenarios}) or select fewer strategies.",
+        )
+
     for i, r in enumerate(rows):
         r["order"] = i
-    return rows
+    scope = {
+        "available": available,        # base scenarios before sampling
+        "base_executed": base_count,   # base scenarios actually run
+        "total_rows": len(rows),       # incl. obfuscation variants
+        "sampled": sampled,
+        "max_scenarios": req.max_scenarios,
+        "seed": req.seed,
+    }
+    return rows, scope
 
 
-def _oneshot_summary(results: list[dict], req: OneShotRequest) -> dict:
+def _oneshot_summary(results: list[dict], req: OneShotRequest, scope: dict | None = None) -> dict:
     """Aggregate per-result rows into the run summary (also sets r['evaded'])."""
     summary = {
         "total": len(results),
@@ -1010,10 +1225,26 @@ def _oneshot_summary(results: list[dict], req: OneShotRequest) -> dict:
         "resisted": sum(1 for r in results if r.get("model_outcome") == "resisted"),
         "prevented": sum(1 for r in results if r.get("model_outcome") == "prevented"),
     }
-    detected = summary["blocked"] + summary["not_blocked"]  # attack scenarios run
-    summary["detection_rate"] = (
-        round(summary["blocked"] / detected * 100, 1) if detected else None
-    )
+    if scope:
+        summary["scope"] = scope
+
+    # ── Detection rate, split so the headline isn't ambiguous ──────────────────
+    # `detection_rate` (all attack attempts, incl. obfuscation variants) is kept
+    # for back-compat. `base_detection_rate` covers only the original plaintext
+    # scenarios — the unambiguous "of the real attacks, what % did the guard
+    # block" — and `variant_block_rate` isolates how well the guard held up to
+    # obfuscation. Errors are excluded from every denominator.
+    def _rate(rows: list[dict]) -> float | None:
+        blk = sum(1 for r in rows if r["outcome"] == "blocked")
+        run = blk + sum(1 for r in rows if r["outcome"] == "not_blocked")
+        return round(blk / run * 100, 1) if run else None
+
+    attack_rows = [r for r in results if r.get("color") == "attack"]
+    base_rows = [r for r in attack_rows if not r.get("strategy")]
+    variant_rows = [r for r in attack_rows if r.get("strategy")]
+    summary["detection_rate"] = _rate(attack_rows)
+    summary["base_detection_rate"] = _rate(base_rows)
+    summary["variant_block_rate"] = _rate(variant_rows) if variant_rows else None
 
     # ── Guard ON vs OFF: quantify risk reduction ─────────────────────────────
     summary["compared"] = req.compare
@@ -1036,6 +1267,12 @@ def _oneshot_summary(results: list[dict], req: OneShotRequest) -> dict:
         )
 
     # ── Strategy evasions: obfuscated variant slipped past a base the guard caught ─
+    # We distinguish two things that were previously conflated:
+    #   • evaded            — the variant bypassed the input guard (CP1) that caught
+    #                         the plaintext. A guard-robustness gap.
+    #   • effective_evasion — it ALSO landed: the judge found the model complied.
+    #                         Only this is a real breach; a guard miss the model
+    #                         then refused is a lower-severity robustness note.
     summary["strategies_used"] = [s for s in req.strategies if s in strategies.STRATEGIES]
     if summary["strategies_used"]:
         # Base verdict per scenario id (strategy is None on the base row).
@@ -1043,14 +1280,17 @@ def _oneshot_summary(results: list[dict], req: OneShotRequest) -> dict:
             r["id"]: (r["outcome"] == "blocked")
             for r in results if not r.get("strategy")
         }
-        evasions = 0
+        evasions = effective = 0
         for r in results:
             if r.get("strategy"):
                 evaded = base_blocked.get(r["id"], False) and r["outcome"] == "not_blocked"
                 r["evaded"] = evaded
+                r["evaded_breach"] = bool(evaded and r.get("risk") == "breach")
                 evasions += 1 if evaded else 0
+                effective += 1 if r["evaded_breach"] else 0
         summary["variants"] = sum(1 for r in results if r.get("strategy"))
         summary["evasions"] = evasions
+        summary["effective_evasions"] = effective
 
     # ── Security posture: dashboard + findings/recommendations ────────────────
     summary["security"] = report.build(results, summary, req)
@@ -1111,23 +1351,37 @@ def _oneshot_system_prompt(req: OneShotRequest) -> str | None:
     return sp or _custom_system_prompt
 
 
-@app.post("/api/oneshot")
-async def api_oneshot(req: OneShotRequest):
-    rows = _prepare_oneshot_rows(req)
+async def run_oneshot(req: OneShotRequest, *, llm_config: dict, lakera_key: str,
+                      judge_config: dict | None = None) -> dict:
+    """
+    Prepare → execute → summarize a one-shot run. Shared by the /api/oneshot
+    endpoint and the headless CLI (`python -m backend.oneshot`). The caller passes
+    a config + key snapshot so a mid-run change can't affect in-flight scenarios.
+    `judge_config` lets the judge use a different (typically stronger) model than
+    the target; None → judge with the target `llm_config`.
+    Raises HTTPException on bad input (the CLI maps that to a usage-error exit).
+    """
+    rows, scope = _prepare_oneshot_rows(req)
     do_judge = req.judge or req.compare
     sp = _oneshot_system_prompt(req)
-    sem = asyncio.Semaphore(ONESHOT_CONCURRENCY)
+    jc = judge_config or llm_config
+    sem = asyncio.Semaphore(req.concurrency or ONESHOT_CONCURRENCY)
     results = await asyncio.gather(
-        *[_run_one(r, sem, do_judge, req.compare, sp) for r in rows]
+        *[_run_one(r, sem, do_judge, req.compare, sp,
+                   llm_config=llm_config, lakera_key=lakera_key, judge_config=jc)
+          for r in rows]
     )
     results.sort(key=lambda r: r.get("order", 0))
-    summary = _oneshot_summary(results, req)
-    return {
-        "summary": summary,
-        "results": results,
-        "llm": _public_llm_config(),
-        "category_id": req.category_id,
-    }
+    return {"summary": _oneshot_summary(results, req, scope), "results": results}
+
+
+@app.post("/api/oneshot")
+async def api_oneshot(req: OneShotRequest):
+    # Snapshot the provider config + key once (see run_oneshot).
+    out = await run_oneshot(req, llm_config=dict(_llm_config), lakera_key=_lakera_key,
+                            judge_config=_effective_judge_config())
+    return {**out, "llm": _public_llm_config(), "judge": _public_judge_config(),
+            "category_id": req.category_id}
 
 
 @app.post("/api/oneshot/stream")
@@ -1138,15 +1392,20 @@ async def api_oneshot_stream(req: OneShotRequest):
       {"type":"progress","done":N,"total":M,"id":...,"label":...}   (per completion)
       {"type":"done","summary":{...},"results":[...],"llm":{...}}     (final, ordered)
     """
-    rows = _prepare_oneshot_rows(req)
+    rows, scope = _prepare_oneshot_rows(req)
     do_judge = req.judge or req.compare
     sp = _oneshot_system_prompt(req)
-    sem = asyncio.Semaphore(ONESHOT_CONCURRENCY)
+    cfg, key = dict(_llm_config), _lakera_key   # snapshot (see api_oneshot)
+    jc = _effective_judge_config()
+    sem = asyncio.Semaphore(req.concurrency or ONESHOT_CONCURRENCY)
     total = len(rows)
 
     async def gen():
         results: list[dict] = []
-        tasks = [asyncio.create_task(_run_one(r, sem, do_judge, req.compare, sp)) for r in rows]
+        tasks = [asyncio.create_task(
+            _run_one(r, sem, do_judge, req.compare, sp,
+                     llm_config=cfg, lakera_key=key, judge_config=jc)
+        ) for r in rows]
         done = 0
         try:
             for fut in asyncio.as_completed(tasks):
@@ -1158,10 +1417,11 @@ async def api_oneshot_stream(req: OneShotRequest):
                     "id": res.get("id"), "label": res.get("strategy_label") or res.get("label"),
                 }) + "\n"
             results.sort(key=lambda r: r.get("order", 0))
-            summary = _oneshot_summary(results, req)
+            summary = _oneshot_summary(results, req, scope)
             yield json.dumps({
                 "type": "done", "summary": summary, "results": results,
-                "llm": _public_llm_config(), "category_id": req.category_id,
+                "llm": _public_llm_config(), "judge": _public_judge_config(),
+                "category_id": req.category_id,
             }) + "\n"
         except Exception as exc:  # noqa: BLE001 — report stream-level failure to the client
             logger.exception("One-shot stream failed")
@@ -1170,6 +1430,47 @@ async def api_oneshot_stream(req: OneShotRequest):
             yield json.dumps({"type": "error", "detail": f"{type(exc).__name__}: {exc}"}) + "\n"
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+# ── Run history (persistence + regression diff) ──────────────────────────────
+
+@app.get("/api/history")
+async def api_history_list():
+    return history.list_runs(RUN_HISTORY_DIR)
+
+
+@app.post("/api/history")
+async def api_history_save(req: HistorySaveRequest):
+    payload: dict = {"summary": req.summary, "results": req.results}
+    if req.llm is not None:
+        payload["llm"] = req.llm
+    if req.judge is not None:
+        payload["judge"] = req.judge
+    return history.save(payload, RUN_HISTORY_DIR, label=req.label)
+
+
+@app.get("/api/history/{run_id}")
+async def api_history_get(run_id: str):
+    rec = history.load(RUN_HISTORY_DIR, run_id)
+    if rec is None:
+        raise HTTPException(404, "Run not found.")
+    return rec
+
+
+@app.delete("/api/history/{run_id}")
+async def api_history_delete(run_id: str):
+    if not history.delete(RUN_HISTORY_DIR, run_id):
+        raise HTTPException(404, "Run not found.")
+    return {"deleted": run_id}
+
+
+@app.post("/api/history/diff")
+async def api_history_diff(req: HistoryDiffRequest):
+    base = history.load(RUN_HISTORY_DIR, req.base_id)
+    head = history.load(RUN_HISTORY_DIR, req.head_id)
+    if base is None or head is None:
+        raise HTTPException(404, "One or both runs not found.")
+    return history.diff_summaries(base.get("summary", {}), head.get("summary", {}))
 
 
 # ── Custom RAG document management ───────────────────────────────────────────
