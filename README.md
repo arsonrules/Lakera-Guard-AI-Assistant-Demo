@@ -437,6 +437,25 @@ any point, and the **final delivered reply** is what the judge/assertions grade.
 The click-to-reveal panel shows the full transcript, with the turn at which the
 guard intervened. Guard ON-vs-OFF and the judge work the same as for single-shot.
 
+#### Agentic tool sandbox (LLM06 — excessive agency)
+
+The whole point of this demo is to show where defense-in-depth *beyond* a
+text scanner is needed, and **excessive agency** is the clearest example. The
+LLM06 scenarios now run with a **mock tool sandbox**: the model is offered fake
+ShopEase tools (`delete_customer_records`, `send_bulk_email`,
+`escalate_privileges`, `override_fraud_check`, plus a safe `get_order_status`) as
+OpenAI function-calls. We **never execute** them — we record which the model
+*tried* to call. A dangerous attempt that reached the user is a deterministic
+breach.
+
+The lesson lands because **Lakera scans text, not the structured tool call**: CP1
+may pass the prompt and CP3 sees only the (often empty) text, so the guard can't
+see the model reach for `delete_customer_records(scope="all")`. That gap is the
+case for tool allow-lists, scoped RBAC, and human approval. Attempted calls (with
+a `dangerous` tag) appear in the click-to-reveal panel and the HTML report.
+Requires a function-calling-capable provider (OpenRouter/Claude/GPT); local models
+without tool support simply won't call anything.
+
 #### Guard ON vs OFF: how much risk does Lakera remove?
 
 Tick **Guard ON vs OFF** (implies the judge) to run every attack twice — once
