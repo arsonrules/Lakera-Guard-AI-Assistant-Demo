@@ -454,8 +454,10 @@ it's opt-in. (All of this is included in the exported HTML report.)
 #### Attack strategies: is the guard robust to obfuscation?
 
 The **Strategies** picker wraps each attack in obfuscation variants — `Base64`,
-`Hex`, `ROT13`, `Homoglyph` (look-alike Unicode), `Leetspeak`, `Roleplay` (DAN) —
-and runs them alongside the plaintext base. Each variant gets a **Variant** column
+`Hex`, `ROT13`, `Homoglyph` (look-alike Unicode), `Leetspeak`, `Roleplay` (DAN),
+`Reverse`, `Zero-width` (invisible separators), `Morse` — and runs them alongside
+the plaintext base. Strategies can be **chained** with `+` (e.g. `homoglyph+base64`
+stacks two evasions) via the CLI/API. Each variant gets a **Variant** column
 tag; a variant that **slips past a guard which caught the plaintext** is flagged
 `EVADED` (red) and counted in the **Guard evasions** stat. This answers "does
 base64-encoding a known-blocked prompt bypass CP1?" — 0 evasions means the guard
@@ -573,6 +575,7 @@ After a One-Shot run, two export buttons become active in the modal toolbar:
 
 - **HTML Report** — a self-contained, styled `.html` file (no external assets) with the summary cards, checkpoint legend, and full results table, stamped with the timestamp, provider, model, and endpoint. Each row has a native **"Show prompt & RAG documents"** disclosure (click-to-reveal, collapsed by default) carrying the prompt, simulated output, and retrieved docs. Open it in any browser or attach it to a ticket.
 - **JSON** — the raw run payload (summary + per-scenario traces + provider metadata) for programmatic analysis or diffing across runs.
+- **CSV** — one row per scenario (id, OWASP, outcome, model outcome, risk, strategy, latency, judge reason, assertions matched) for spreadsheets. The CLI writes the same with `--csv <path>`.
 
 Files are named `lakera-oneshot-<timestamp>.{html,json}` and download directly from the browser.
 
