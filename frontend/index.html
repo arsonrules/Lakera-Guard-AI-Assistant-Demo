@@ -1743,6 +1743,8 @@
         'os.detailAssertions': 'Assertions (deterministic)',
         'os.assertMatched': 'matched — attack landed',
         'os.assertNoMatch': 'no match',
+        'os.detailTools': 'Tool calls attempted (sandbox — not executed)',
+        'os.toolDangerous': 'dangerous',
         'os.detailTurns': 'Conversation ({n} turns)',
         'os.turnUser': 'Turn {n} — user',
         'os.turnAssistant': 'assistant',
@@ -2048,6 +2050,8 @@
         'os.detailAssertions': '斷言（確定性）',
         'os.assertMatched': '命中 — 攻擊得手',
         'os.assertNoMatch': '未命中',
+        'os.detailTools': '嘗試呼叫的工具（沙箱 — 未實際執行）',
+        'os.toolDangerous': '危險',
         'os.detailTurns': '對話（{n} 輪）',
         'os.turnUser': '第 {n} 輪 — 使用者',
         'os.turnAssistant': '助手',
@@ -2418,6 +2422,8 @@
         'os.detailAssertions': '断言（确定性）',
         'os.assertMatched': '命中 — 攻击得手',
         'os.assertNoMatch': '未命中',
+        'os.detailTools': '尝试调用的工具（沙箱 — 未实际执行）',
+        'os.toolDangerous': '危险',
         'os.detailTurns': '对话（{n} 轮）',
         'os.turnUser': '第 {n} 轮 — 用户',
         'os.turnAssistant': '助手',
@@ -2788,6 +2794,8 @@
         'os.detailAssertions': 'アサーション（確定的）',
         'os.assertMatched': '一致 — 攻撃成功',
         'os.assertNoMatch': '一致なし',
+        'os.detailTools': '呼び出そうとしたツール（サンドボックス — 未実行）',
+        'os.toolDangerous': '危険',
         'os.detailTurns': '会話（{n} ターン）',
         'os.turnUser': 'ターン {n} — ユーザー',
         'os.turnAssistant': 'アシスタント',
@@ -4680,6 +4688,19 @@
     return h + `</div>`;
   }
 
+  // Mock-tool sandbox: tools the model tried to call (shared modal + report).
+  function toolCallsHtml(r) {
+    const calls = r.tool_calls || [];
+    if (!calls.length) return '';
+    let h = `<div><h4>${esc(t('os.detailTools'))}</h4>`;
+    calls.forEach(c => {
+      const tag = c.dangerous
+        ? `<span class="sev-chip sv-critical">${esc(t('os.toolDangerous'))}</span> ` : '';
+      h += `<div class="os-detail-none">${tag}<span class="mono">${esc(c.name)}(${esc(c.arguments || '')})</span></div>`;
+    });
+    return h + '</div>';
+  }
+
   // Deterministic assertion results (shared by the modal reveal + HTML report).
   function assertionsHtml(r) {
     const a = r.assertions || [];
@@ -4717,6 +4738,7 @@
       h += `<div><h4>${esc(t('os.detailJudge'))}</h4><pre>${esc((verdict ? verdict + ' — ' : '') + reason)}</pre></div>`;
     }
     h += assertionsHtml(r);
+    h += toolCallsHtml(r);
     // Guard-OFF (model alone) response + verdict, in compare mode.
     if (r.alone_outcome) {
       const a = ALONE_META[r.alone_outcome] || ALONE_META.unknown;
@@ -4870,6 +4892,11 @@
           return esc(`${c.type}: ${c.value} → `) + esc(status);
         }).join('\n');
         detail += `<div class="dt"><h4>${esc(t('os.detailAssertions'))}</h4><pre>${lines}</pre></div>`;
+      }
+      if (r.tool_calls && r.tool_calls.length) {
+        const tl = r.tool_calls.map(c =>
+          (c.dangerous ? '[DANGEROUS] ' : '') + c.name + '(' + (c.arguments || '') + ')').join('\n');
+        detail += `<div class="dt"><h4>${esc(t('os.detailTools'))}</h4><pre>${esc(tl)}</pre></div>`;
       }
       if (r.alone_outcome) {
         const a = ALONE_META[r.alone_outcome] || ALONE_META.unknown;
