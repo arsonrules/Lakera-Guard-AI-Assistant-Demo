@@ -1005,6 +1005,22 @@
     .os-runcfg pre { font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; line-height: 1.5; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; margin: 4px 0 0; }
     .os-runcfg-doc { margin-top: 6px; }
 
+    /* Attack category dashboard (visual per-OWASP bars) */
+    .os-catdash { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel); padding: 13px 15px; margin-bottom: 16px; }
+    .os-catdash-title { font-family: 'Lexend', sans-serif; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 11px; }
+    .os-catrow { display: grid; grid-template-columns: minmax(120px, 1.6fr) minmax(120px, 3fr) auto; gap: 12px; align-items: center; margin-bottom: 7px; }
+    .os-catname { font-size: 0.8rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .os-catbar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--skip-bg); }
+    .os-catbar .seg { height: 100%; }
+    .os-catbar .seg.blk { background: var(--pass); }
+    .os-catbar .seg.amb { background: var(--redact); }
+    .os-catbar .seg.brc { background: var(--block); }
+    .os-catstat { display: flex; gap: 8px; align-items: center; justify-content: flex-end; font-size: 0.74rem; color: var(--muted); white-space: nowrap; }
+    .os-catstat .sev-chip { font-family: 'Lexend', sans-serif; font-size: 0.58rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border: 1px solid; border-radius: 999px; }
+    .os-catlegend { display: flex; gap: 16px; margin-top: 10px; font-size: 0.7rem; color: var(--muted); }
+    .os-catlegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+    .os-catlegend i.blk { background: var(--pass); } .os-catlegend i.amb { background: var(--redact); } .os-catlegend i.brc { background: var(--block); }
+
     /* Checkpoint legend */
     .os-legend {
       border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -1201,6 +1217,24 @@
 
       <span class="llm-hint" id="llm-hint"></span>
     </div>
+
+    <div class="llm-judge" id="llm-judge" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border,#333)">
+      <label class="os-judge-toggle" style="align-self:flex-start">
+        <input type="checkbox" id="judge-enabled" onchange="onJudgeToggle()" />
+        <span data-i18n="judge.useSeparate">Use a separate judge model</span>
+      </label>
+      <span class="llm-hint" data-i18n="judge.hint">Grade attacks with a stronger model so a weak target isn't judging its own output. Used only by the one-shot judge.</span>
+      <div class="llm-grid" id="judge-fields" style="display:none;margin-top:8px">
+        <label for="judge-provider" data-i18n="llm.provider">Provider</label>
+        <select id="judge-provider"></select>
+        <label for="judge-model" data-i18n="llm.model">Model</label>
+        <input type="text" id="judge-model" spellcheck="false" data-i18n-placeholder="judge.modelPlaceholder" placeholder="Judge model id" />
+        <label for="judge-api-key" data-i18n="llm.apiKey">API Key</label>
+        <input type="password" id="judge-api-key" spellcheck="false" autocomplete="off" data-i18n-placeholder="llm.apiKeyPlaceholder" placeholder="Leave blank to keep current / not required for local" />
+      </div>
+      <button type="button" class="sp-btn" onclick="saveJudgeConfig()" data-i18n="judge.save">Save judge</button>
+    </div>
+
     <div class="llm-actions-row">
       <button class="sp-btn" onclick="testLlmConnection()" data-i18n="llm.test"><svg class="ic"><use href="#i-plug"></use></svg> Test Connection</button>
       <button class="sp-btn primary" onclick="saveLlmConfig()" data-i18n="llm.save">Save Provider</button>
@@ -1344,6 +1378,31 @@
       <details class="os-strats" id="os-strats">
         <summary data-i18n-title="os.stratsTitle" title="Also test obfuscated variants of each attack to probe guard robustness"><span data-i18n="os.strategies">Strategies</span> <span id="os-strats-count"></span></summary>
         <div class="os-strats-list" id="os-strats-list"></div>
+      </details>
+      <details class="os-strats" id="os-limits">
+        <summary data-i18n-title="os.limitsTitle" title="Bound the run: cap scenarios (large datasets are sampled down) and set parallelism"><span data-i18n="os.limits">Limits</span></summary>
+        <div class="os-ds-panel">
+          <div class="os-ds-row">
+            <span class="os-ds-label" data-i18n="os.maxScenarios">Max scenarios</span>
+            <input type="number" id="os-max" value="100" min="1" max="1000" data-i18n-title="os.maxScenariosTitle" title="Cap on base scenarios. Larger datasets are sampled down to this." />
+            <span class="os-ds-label" data-i18n="os.concurrency">Concurrency</span>
+            <input type="number" id="os-conc" value="4" min="1" max="16" data-i18n-title="os.concurrencyTitle" title="Parallel scenario workers (1–16)." />
+          </div>
+          <div class="os-ds-allnote" data-i18n="os.limitsNote">Datasets bigger than “Max scenarios” are randomly sampled. A run may execute at most 2000 rows including obfuscation variants.</div>
+        </div>
+      </details>
+      <details class="os-strats" id="os-history" ontoggle="if(this.open)loadHistory()">
+        <summary><span data-i18n="hist.title">History</span> <span class="os-strats-count" id="os-hist-count"></span></summary>
+        <div class="os-ds-panel">
+          <div class="os-ds-row">
+            <button class="sp-btn primary" id="hist-save-btn" onclick="saveCurrentRun()" disabled data-i18n="hist.save">Save current run</button>
+            <button class="sp-btn" onclick="diffLatestTwo()" data-i18n="hist.diffLatest">Diff latest two</button>
+          </div>
+          <div class="os-ds-allnote" data-i18n="hist.note">Save a run to compare detection / breaches across runs over time (regression tracking).</div>
+          <div class="os-ds-list" id="hist-list"></div>
+          <div id="hist-diff"></div>
+          <div class="cp0-result" id="hist-status"></div>
+        </div>
       </details>
       <details class="os-strats" id="os-ds">
         <summary><span data-i18n="ds.title">Datasets</span> <span class="os-strats-count" id="os-ds-count"></span></summary>
@@ -1660,6 +1719,42 @@
         'os.detailStrategy': 'Obfuscation strategy: {s}',
         'os.statVariants': 'Variants',
         'os.statEvasions': 'Guard evasions',
+        'os.statEffEvasions': 'Landed evasions',
+        'os.statBaseDetection': 'Base detection',
+        'os.scopeSampled': 'Sampled {n} of {total} scenarios (seed {seed})',
+        'os.limits': 'Limits',
+        'os.limitsTitle': 'Bound the run: cap scenarios (large datasets are sampled down) and set parallelism',
+        'os.maxScenarios': 'Max scenarios',
+        'os.maxScenariosTitle': 'Cap on base scenarios. Larger datasets are sampled down to this.',
+        'os.concurrency': 'Concurrency',
+        'os.concurrencyTitle': 'Parallel scenario workers (1–16).',
+        'os.limitsNote': 'Datasets bigger than “Max scenarios” are randomly sampled. A run may execute at most 2000 rows including obfuscation variants.',
+        'judge.useSeparate': 'Use a separate judge model',
+        'judge.hint': 'Grade attacks with a stronger model so a weak target isn\'t judging its own output. Used only by the one-shot judge.',
+        'judge.modelPlaceholder': 'Judge model id',
+        'judge.save': 'Save judge',
+        'judge.saving': 'Saving judge…',
+        'judge.saved': 'Judge model updated.',
+        'judge.saveFailed': 'Could not save judge config',
+        'os.detailAssertions': 'Assertions (deterministic)',
+        'os.assertMatched': 'matched — attack landed',
+        'os.assertNoMatch': 'no match',
+        'os.detailTurns': 'Conversation ({n} turns)',
+        'os.turnUser': 'Turn {n} — user',
+        'os.turnAssistant': 'assistant',
+        'os.turnBlocked': 'blocked at {cp}',
+        'hist.title': 'History',
+        'hist.save': 'Save current run',
+        'hist.diffLatest': 'Diff latest two',
+        'hist.note': 'Save a run to compare detection / breaches across runs over time (regression tracking).',
+        'hist.empty': 'No saved runs yet.',
+        'hist.saving': 'Saving…',
+        'hist.saveFailed': 'Could not save run',
+        'hist.savedAs': 'Saved as {id}.',
+        'hist.needTwo': 'Need at least two saved runs to diff.',
+        'hist.diffTitle': 'Diff {base} → {head}',
+        'hist.regressed': 'regressed',
+        'hist.noChange': 'No metric changes.',
         'os.secFindings': 'Findings & recommendations',
         'os.secDashboard': 'Vulnerability dashboard (by OWASP category)',
         'os.secRecommend': 'Recommendation',
@@ -1687,7 +1782,12 @@
         'os.detailModelResponse': 'Model response (what the LLM actually said)',
         'os.detailJudge': 'Judge verdict',
         'os.judgeError': 'Judge error:',
-        'os.colLatency': 'Latency',
+        'os.colLatency': 'Guard latency',
+        'os.latCheckpoints': 'Checkpoint latency (Lakera)',
+        'os.catDashTitle': 'Attack category dashboard',
+        'os.catBlocked': 'Blocked',
+        'os.catThrough': 'Got through',
+        'os.latJudge': 'judge {ms} ms',
         'os.expectBlock': 'Block',
         'os.expectAllow': 'Allow',
         'os.outBlocked': 'Blocked',
@@ -1923,6 +2023,42 @@
         'os.detailStrategy': '混淆策略：{s}',
         'os.statVariants': '變體數',
         'os.statEvasions': '防護繞過',
+        'os.statEffEvasions': '繞過且得手',
+        'os.statBaseDetection': '基礎偵測率',
+        'os.scopeSampled': '已抽樣 {total} 筆中的 {n} 筆（種子 {seed}）',
+        'os.limits': '執行上限',
+        'os.limitsTitle': '限制本次執行：場景數上限（大型資料集會抽樣縮減）與並行數',
+        'os.maxScenarios': '場景數上限',
+        'os.maxScenariosTitle': '基礎場景數上限；超量的資料集會抽樣縮減至此。',
+        'os.concurrency': '並行數',
+        'os.concurrencyTitle': '並行執行的場景數（1–16）。',
+        'os.limitsNote': '超過「場景數上限」的資料集會隨機抽樣。單次執行含混淆變體最多 2000 列。',
+        'judge.useSeparate': '使用獨立的評審模型',
+        'judge.hint': '用更強的模型評判攻擊，避免弱模型評判自己的輸出。僅用於 one-shot 評審。',
+        'judge.modelPlaceholder': '評審模型 id',
+        'judge.save': '儲存評審',
+        'judge.saving': '儲存評審中…',
+        'judge.saved': '評審模型已更新。',
+        'judge.saveFailed': '無法儲存評審設定',
+        'os.detailAssertions': '斷言（確定性）',
+        'os.assertMatched': '命中 — 攻擊得手',
+        'os.assertNoMatch': '未命中',
+        'os.detailTurns': '對話（{n} 輪）',
+        'os.turnUser': '第 {n} 輪 — 使用者',
+        'os.turnAssistant': '助手',
+        'os.turnBlocked': '於 {cp} 被攔截',
+        'hist.title': '歷史',
+        'hist.save': '儲存本次執行',
+        'hist.diffLatest': '比對最新兩筆',
+        'hist.note': '儲存執行以跨時間比較偵測率／breaches（回歸追蹤）。',
+        'hist.empty': '尚無已儲存的執行。',
+        'hist.saving': '儲存中…',
+        'hist.saveFailed': '無法儲存執行',
+        'hist.savedAs': '已儲存為 {id}。',
+        'hist.needTwo': '至少需兩筆已儲存的執行才能比對。',
+        'hist.diffTitle': '比對 {base} → {head}',
+        'hist.regressed': '已回歸',
+        'hist.noChange': '無指標變化。',
         'os.secFindings': '發現與建議',
         'os.secDashboard': '弱點儀表板（依 OWASP 類別）',
         'os.secRecommend': '建議',
@@ -1950,7 +2086,12 @@
         'os.detailModelResponse': '模型回應（LLM 實際說了什麼）',
         'os.detailJudge': '評審判定',
         'os.judgeError': '評審錯誤：',
-        'os.colLatency': '延遲',
+        'os.colLatency': '防護延遲',
+        'os.latCheckpoints': '檢查點延遲（Lakera）',
+        'os.catDashTitle': '攻擊類別儀表板',
+        'os.catBlocked': '已攔截',
+        'os.catThrough': '已通過',
+        'os.latJudge': '評審 {ms} ms',
         'os.expectBlock': '封鎖',
         'os.expectAllow': '放行',
         'os.outBlocked': '已封鎖',
@@ -2251,6 +2392,42 @@
         'os.detailStrategy': '混淆策略：{s}',
         'os.statVariants': '变体数',
         'os.statEvasions': '防护绕过',
+        'os.statEffEvasions': '绕过且得手',
+        'os.statBaseDetection': '基础检出率',
+        'os.scopeSampled': '已抽样 {total} 条中的 {n} 条（种子 {seed}）',
+        'os.limits': '执行上限',
+        'os.limitsTitle': '限制本次执行：场景数上限（大型数据集会抽样缩减）与并发数',
+        'os.maxScenarios': '场景数上限',
+        'os.maxScenariosTitle': '基础场景数上限；超量的数据集会抽样缩减至此。',
+        'os.concurrency': '并发数',
+        'os.concurrencyTitle': '并行执行的场景数（1–16）。',
+        'os.limitsNote': '超过「场景数上限」的数据集会随机抽样。单次执行含混淆变体最多 2000 条。',
+        'judge.useSeparate': '使用独立的评审模型',
+        'judge.hint': '用更强的模型评判攻击，避免弱模型评判自己的输出。仅用于 one-shot 评审。',
+        'judge.modelPlaceholder': '评审模型 id',
+        'judge.save': '保存评审',
+        'judge.saving': '保存评审中…',
+        'judge.saved': '评审模型已更新。',
+        'judge.saveFailed': '无法保存评审设置',
+        'os.detailAssertions': '断言（确定性）',
+        'os.assertMatched': '命中 — 攻击得手',
+        'os.assertNoMatch': '未命中',
+        'os.detailTurns': '对话（{n} 轮）',
+        'os.turnUser': '第 {n} 轮 — 用户',
+        'os.turnAssistant': '助手',
+        'os.turnBlocked': '于 {cp} 被拦截',
+        'hist.title': '历史',
+        'hist.save': '保存本次执行',
+        'hist.diffLatest': '对比最新两条',
+        'hist.note': '保存执行以跨时间比较检出率／breaches（回归追踪）。',
+        'hist.empty': '尚无已保存的执行。',
+        'hist.saving': '保存中…',
+        'hist.saveFailed': '无法保存执行',
+        'hist.savedAs': '已保存为 {id}。',
+        'hist.needTwo': '至少需两条已保存的执行才能对比。',
+        'hist.diffTitle': '对比 {base} → {head}',
+        'hist.regressed': '已回归',
+        'hist.noChange': '无指标变化。',
         'os.secFindings': '发现与建议',
         'os.secDashboard': '漏洞仪表板（按 OWASP 类别）',
         'os.secRecommend': '建议',
@@ -2278,7 +2455,12 @@
         'os.detailModelResponse': '模型响应（LLM 实际说了什么）',
         'os.detailJudge': '评审判定',
         'os.judgeError': '评审错误：',
-        'os.colLatency': '延迟',
+        'os.colLatency': '防护延迟',
+        'os.latCheckpoints': '检查点延迟（Lakera）',
+        'os.catDashTitle': '攻击类别仪表板',
+        'os.catBlocked': '已拦截',
+        'os.catThrough': '已通过',
+        'os.latJudge': '评审 {ms} ms',
         'os.expectBlock': '拦截',
         'os.expectAllow': '放行',
         'os.outBlocked': '已拦截',
@@ -2579,6 +2761,42 @@
         'os.detailStrategy': '難読化手法：{s}',
         'os.statVariants': 'バリアント数',
         'os.statEvasions': 'ガード回避',
+        'os.statEffEvasions': '回避かつ成功',
+        'os.statBaseDetection': '基本検出率',
+        'os.scopeSampled': '{total} 件中 {n} 件をサンプリング（シード {seed}）',
+        'os.limits': '実行上限',
+        'os.limitsTitle': '実行を制限：シナリオ数の上限（大規模データセットはサンプリング）と並列数',
+        'os.maxScenarios': '最大シナリオ数',
+        'os.maxScenariosTitle': '基本シナリオ数の上限。これを超えるデータセットはサンプリングされます。',
+        'os.concurrency': '並列数',
+        'os.concurrencyTitle': '並列実行するシナリオ数（1〜16）。',
+        'os.limitsNote': '「最大シナリオ数」を超えるデータセットはランダムにサンプリングされます。1回の実行は難読化バリアントを含め最大2000行です。',
+        'judge.useSeparate': '別の評価モデルを使用',
+        'judge.hint': '弱いモデルが自身の出力を評価しないよう、より強力なモデルで攻撃を評価します。one-shot 評価のみで使用。',
+        'judge.modelPlaceholder': '評価モデル id',
+        'judge.save': '評価を保存',
+        'judge.saving': '評価を保存中…',
+        'judge.saved': '評価モデルを更新しました。',
+        'judge.saveFailed': '評価設定を保存できませんでした',
+        'os.detailAssertions': 'アサーション（確定的）',
+        'os.assertMatched': '一致 — 攻撃成功',
+        'os.assertNoMatch': '一致なし',
+        'os.detailTurns': '会話（{n} ターン）',
+        'os.turnUser': 'ターン {n} — ユーザー',
+        'os.turnAssistant': 'アシスタント',
+        'os.turnBlocked': '{cp} でブロック',
+        'hist.title': '履歴',
+        'hist.save': 'この実行を保存',
+        'hist.diffLatest': '最新2件を比較',
+        'hist.note': '実行を保存して、検出率／breaches を時系列で比較（リグレッション追跡）。',
+        'hist.empty': '保存された実行はまだありません。',
+        'hist.saving': '保存中…',
+        'hist.saveFailed': '実行を保存できませんでした',
+        'hist.savedAs': '{id} として保存しました。',
+        'hist.needTwo': '比較には保存済みの実行が2件以上必要です。',
+        'hist.diffTitle': '比較 {base} → {head}',
+        'hist.regressed': 'リグレッション',
+        'hist.noChange': '指標の変化なし。',
         'os.secFindings': '所見と推奨',
         'os.secDashboard': '脆弱性ダッシュボード（OWASP カテゴリ別）',
         'os.secRecommend': '推奨',
@@ -2606,7 +2824,12 @@
         'os.detailModelResponse': 'モデルの応答（LLM が実際に言った内容）',
         'os.detailJudge': '判定結果',
         'os.judgeError': '判定エラー：',
-        'os.colLatency': 'レイテンシ',
+        'os.colLatency': 'ガード遅延',
+        'os.latCheckpoints': 'チェックポイント遅延（Lakera）',
+        'os.catDashTitle': '攻撃カテゴリ ダッシュボード',
+        'os.catBlocked': 'ブロック',
+        'os.catThrough': '通過',
+        'os.latJudge': '判定 {ms} ms',
         'os.expectBlock': 'ブロック',
         'os.expectAllow': '許可',
         'os.outBlocked': 'ブロック',
@@ -3441,6 +3664,7 @@
     updateLlmHint(d.config.provider);
     updateKeyPlaceholder();
     updateLlmBadge(d.config);
+    loadJudgeConfig();
   }
 
   // True if `val` is just one of the providers' preset values (i.e. an earlier
@@ -3631,6 +3855,119 @@
     } catch (err) {
       showLlmStatus('error', t('llm.saveFailed') + ' — ' + err.message);
     }
+  }
+
+  // ── Independent judge model (optional) ──────────────────────────────────────
+  async function loadJudgeConfig() {
+    const sel = document.getElementById('judge-provider');
+    if (sel && !sel.options.length) {
+      Object.entries(llmPresets).forEach(([id, p]) => {
+        const o = document.createElement('option'); o.value = id; o.textContent = p.label || id;
+        sel.appendChild(o);
+      });
+    }
+    try {
+      const d = await (await fetch(API + '/api/judge-config')).json();
+      const j = d.judge || {};
+      document.getElementById('judge-enabled').checked = !!j.enabled;
+      if (sel) sel.value = j.provider || 'openrouter';
+      document.getElementById('judge-model').value = j.enabled ? (j.model || '') : '';
+      document.getElementById('judge-api-key').value = '';
+      document.getElementById('judge-fields').style.display = j.enabled ? '' : 'none';
+    } catch { /* leave defaults */ }
+  }
+
+  function onJudgeToggle() {
+    const on = document.getElementById('judge-enabled').checked;
+    document.getElementById('judge-fields').style.display = on ? '' : 'none';
+  }
+
+  async function saveJudgeConfig() {
+    const body = {
+      enabled: document.getElementById('judge-enabled').checked,
+      provider: document.getElementById('judge-provider').value,
+      model: document.getElementById('judge-model').value.trim(),
+      api_key: document.getElementById('judge-api-key').value || null,
+    };
+    showLlmStatus('loading', t('judge.saving'));
+    try {
+      const res = await fetch(API + '/api/judge-config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const d = await res.json();
+      if (!res.ok) { showLlmStatus('error', d.detail || t('judge.saveFailed')); return; }
+      document.getElementById('judge-api-key').value = '';
+      showLlmStatus('success', d.message || t('judge.saved'));
+    } catch (err) {
+      showLlmStatus('error', t('judge.saveFailed') + ' — ' + err.message);
+    }
+  }
+
+  // ── Run history (save / list / diff) ────────────────────────────────────────
+  function showHistStatus(msg) {
+    const el = document.getElementById('hist-status');
+    if (el) el.textContent = msg || '';
+  }
+
+  async function loadHistory() {
+    const list = document.getElementById('hist-list');
+    try {
+      const runs = await (await fetch(API + '/api/history')).json();
+      window._histRuns = runs;
+      document.getElementById('os-hist-count').textContent = runs.length ? '(' + runs.length + ')' : '';
+      if (!runs.length) { list.innerHTML = `<div class="os-detail-none">${esc(t('hist.empty'))}</div>`; return; }
+      list.innerHTML = runs.map(r => {
+        const m = r.metrics || {};
+        const det = m.base_detection_rate == null ? '—' : m.base_detection_rate + '%';
+        return `<div class="hist-row"><span class="mono">${esc(r.id)}</span> `
+          + `<span class="os-detail-none">${esc(r.label || '')} · det ${det} · breaches ${m.breaches ?? '—'} · ${esc(r.posture || '—')}</span> `
+          + `<button class="sp-btn" title="delete" onclick="deleteRun('${esc(r.id)}')">✕</button></div>`;
+      }).join('');
+    } catch (e) { list.innerHTML = `<div class="os-detail-none">${esc(String(e))}</div>`; }
+  }
+
+  async function saveCurrentRun() {
+    if (!lastOneShot) return;
+    showHistStatus(t('hist.saving'));
+    try {
+      const body = { summary: lastOneShot.summary, results: lastOneShot.results,
+                     llm: lastOneShot.llm, label: (lastOneShot.category_id || 'all') };
+      const res = await fetch(API + '/api/history', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const d = await res.json();
+      if (!res.ok) { showHistStatus(d.detail || t('hist.saveFailed')); return; }
+      showHistStatus(t('hist.savedAs', { id: d.id }));
+      loadHistory();
+    } catch (e) { showHistStatus(t('hist.saveFailed') + ' — ' + e.message); }
+  }
+
+  async function deleteRun(id) {
+    try { await fetch(API + '/api/history/' + encodeURIComponent(id), { method: 'DELETE' }); loadHistory(); } catch { /* ignore */ }
+  }
+
+  async function diffLatestTwo() {
+    const runs = window._histRuns || [];
+    if (runs.length < 2) { showHistStatus(t('hist.needTwo')); return; }
+    const head = runs[0].id, base = runs[1].id;   // list is newest-first
+    try {
+      const res = await fetch(API + '/api/history/diff', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base_id: base, head_id: head }) });
+      const d = await res.json();
+      if (!res.ok) { showHistStatus(d.detail || 'diff failed'); return; }
+      renderHistDiff(d, base, head);
+    } catch (e) { showHistStatus(e.message); }
+  }
+
+  function renderHistDiff(d, base, head) {
+    const rows = (d.metrics || []).filter(r => r.delta != null && r.delta !== 0);
+    let h = `<div class="hist-diff-box"><b>${esc(t('hist.diffTitle', { base, head }))}</b>`;
+    if (d.regressed) h += ` <span class="sev-chip sv-high">${esc(t('hist.regressed'))}</span>`;
+    if (!rows.length) h += `<div class="os-detail-none">${esc(t('hist.noChange'))}</div>`;
+    else h += '<div>' + rows.map(r =>
+      `<div class="os-detail-none">${esc(r.metric)}: ${r.base} → ${r.head} (${r.delta > 0 ? '+' : ''}${r.delta})${r.regressed ? ' ⚠' : ''}</div>`).join('') + '</div>';
+    document.getElementById('hist-diff').innerHTML = h + '</div>';
   }
 
   function updateLlmBadge(cfg) {
@@ -3928,6 +4265,8 @@
       const osSp = document.getElementById('os-sp-text').value.trim();
       const noSp = document.getElementById('os-sp-none').checked;
       const kbMode = document.getElementById('os-kb-mode').value || null;
+      const maxScen = parseInt(document.getElementById('os-max').value, 10);
+      const conc = parseInt(document.getElementById('os-conc').value, 10);
       const reqBody = {
         include_safe: true, judge: judgeOn, compare: compareOn, strategies: strats,
         category_id: isDataset ? null : (scope || null),
@@ -3935,6 +4274,8 @@
         system_prompt: noSp ? null : (osSp || null),
         no_system_prompt: noSp,
         doc_mode: kbMode,
+        max_scenarios: (Number.isFinite(maxScen) && maxScen > 0) ? Math.min(maxScen, 1000) : 100,
+        concurrency: (Number.isFinite(conc) && conc > 0) ? Math.min(conc, 16) : null,
       };
       const res = await fetch(API + '/api/oneshot/stream', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -3978,6 +4319,8 @@
       renderOneShotResults(d);
       document.getElementById('os-export-html').disabled = false;
       document.getElementById('os-export-json').disabled = false;
+      const histBtn = document.getElementById('hist-save-btn');
+      if (histBtn) histBtn.disabled = false;
     } catch (err) {
       body.innerHTML = '<div class="os-empty">' + esc(t('os.failed') + ' — ' + err.message) + '</div>';
     } finally {
@@ -4133,6 +4476,32 @@
     return h;
   }
 
+  // Visual attack-category dashboard: a stacked bar per OWASP category showing
+  // blocked / got-through / breach, with detection rate and severity.
+  function categoryDashboardHtml(sec) {
+    const cats = (sec && sec.categories) || [];
+    if (!cats.length) return '';
+    const seg = (cls, n, a) => a ? `<span class="seg ${cls}" style="width:${(n / a * 100).toFixed(2)}%"></span>` : '';
+    let h = `<div class="os-catdash"><div class="os-catdash-title">${esc(t('os.catDashTitle'))}</div>`;
+    cats.forEach(c => {
+      const a = c.attacks || 0;
+      const breaches = c.breaches || 0;
+      const through = Math.max(0, (c.not_blocked || 0) - breaches);   // not blocked, not a confirmed breach
+      const det = c.detection_rate == null ? '—' : c.detection_rate + '%';
+      const title = `${c.blocked || 0} blocked · ${through} through · ${breaches} breach of ${a}`;
+      h += `<div class="os-catrow">`
+        + `<div class="os-catname"><span class="os-owasp">${esc(c.owasp_id || '—')}</span> ${esc(c.owasp_name || '')}</div>`
+        + `<div class="os-catbar" title="${esc(title)}">${seg('blk', c.blocked || 0, a)}${seg('amb', through, a)}${seg('brc', breaches, a)}</div>`
+        + `<div class="os-catstat"><span class="mono">${esc(c.blocked || 0)}/${esc(a)}</span><span>${esc(det)}</span>`
+        + `<span class="sev-chip sv-${esc(c.severity)}">${esc(sevLabel(c.severity))}</span></div>`
+        + `</div>`;
+    });
+    h += `<div class="os-catlegend"><span><i class="blk"></i>${esc(t('os.catBlocked'))}</span>`
+      + `<span><i class="amb"></i>${esc(t('os.catThrough'))}</span>`
+      + `<span><i class="brc"></i>${esc(t('os.statBreaches'))}</span></div></div>`;
+    return h;
+  }
+
   // Vulnerability dashboard + findings/recommendations narrative.
   function securitySectionHtml(sec) {
     if (!sec) return '';
@@ -4189,6 +4558,13 @@
     const detection = s.detection_rate == null ? '—' : s.detection_rate + '%';
 
     let html = compareBannerHtml(s);
+    if (s.scope && s.scope.sampled) {
+      html += `<div class="os-scope-note" style="font-size:0.78rem;opacity:0.75;margin:0 0 8px">`
+        + esc(t('os.scopeSampled', {
+            n: s.scope.base_executed, total: s.scope.available,
+            seed: s.scope.seed == null ? '—' : s.scope.seed,
+          })) + '</div>';
+    }
     html += '<div class="os-summary">';
     html += stat('', s.total, 'os.statTotal');
     html += stat('good', s.blocked, 'os.statBlocked');
@@ -4210,13 +4586,18 @@
     // Strategy/robustness summary (only when obfuscation variants ran).
     const strat = (s.strategies_used && s.strategies_used.length);
     if (strat) {
+      const bdet = s.base_detection_rate == null ? '—' : s.base_detection_rate + '%';
       html += '<div class="os-summary">';
+      html += stat('', bdet, 'os.statBaseDetection');
       html += stat('', s.variants, 'os.statVariants');
       html += stat(s.evasions ? 'bad' : 'good', s.evasions, 'os.statEvasions');
+      if (s.effective_evasions != null)
+        html += stat(s.effective_evasions ? 'bad' : 'good', s.effective_evasions, 'os.statEffEvasions');
       html += '</div>';
     }
 
-    // Run configuration (system prompt + RAG used) then security posture.
+    // Per-category visual dashboard, run config, then the security posture.
+    html += categoryDashboardHtml(s.security);
     html += runConfigHtml(s.run_config);
     html += securitySectionHtml(s.security);
 
@@ -4263,18 +4644,63 @@
 
   // Click-to-reveal panel: the exact user prompt, any simulated output, and the
   // RAG documents the query retrieved (with what the pipeline did with each).
+  // Per-checkpoint Lakera latency breakdown (cp1/cp2/cp3), + judge time if any.
+  function cpLatencyHtml(r) {
+    const t3 = r.trace || {};
+    const part = id => {
+      const c = t3[id] || {};
+      if (c.latency_ms == null) return `${id.toUpperCase()} ${c.status === 'off' ? 'off' : '—'}`;
+      return `${id.toUpperCase()} ${c.latency_ms} ms`;
+    };
+    const total = r.total_latency_ms == null ? '—' : r.total_latency_ms + ' ms';
+    let s = `${part('cp1')} · ${part('cp2')} · ${part('cp3')} = ${total}`;
+    if (r.judge_latency_ms) s += ` · ${t('os.latJudge', { ms: r.judge_latency_ms })}`;
+    return `<div><h4>${esc(t('os.latCheckpoints'))}</h4><div class="os-detail-none mono">${esc(s)}</div></div>`;
+  }
+
+  // Multi-turn conversation transcript (shared by the modal reveal + HTML report).
+  function turnsHtml(r) {
+    const turns = (r.trace && r.trace.turns) || [];
+    if (!turns.length) return '';
+    let h = `<div><h4>${esc(t('os.detailTurns', { n: turns.length }))}</h4>`;
+    turns.forEach(tn => {
+      h += `<div class="os-turn"><b>${esc(t('os.turnUser', { n: tn.turn }))}</b><pre>${esc(tn.user || '')}</pre>`;
+      if (tn.assistant != null) h += `<b>${esc(t('os.turnAssistant'))}</b><pre>${esc(tn.assistant)}</pre>`;
+      if (tn.blocked_at) h += `<div class="os-detail-none">${esc(t('os.turnBlocked', { cp: String(tn.blocked_at).toUpperCase() }))}</div>`;
+      h += `</div>`;
+    });
+    return h + `</div>`;
+  }
+
+  // Deterministic assertion results (shared by the modal reveal + HTML report).
+  function assertionsHtml(r) {
+    const a = r.assertions || [];
+    if (!a.length) return '';
+    const lines = a.map(c => {
+      const status = c.error ? ('⚠ ' + c.error)
+        : (c.matched ? t('os.assertMatched') : t('os.assertNoMatch'));
+      return esc(`${c.type}: ${c.value} → `) + esc(status);
+    }).join('\n');
+    return `<div><h4>${esc(t('os.detailAssertions'))}</h4><pre>${lines}</pre></div>`;
+  }
+
   function osDetailHtml(r) {
     let h = `<div class="os-detail">`;
+    h += cpLatencyHtml(r);
     if (r.strategy) {
       const ev = r.evaded ? ' — ' + t('os.evadedNote') : '';
       h += `<div class="os-detail-none">${esc(t('os.detailStrategy', { s: r.strategy_label }) + ev)}</div>`;
     }
-    h += `<div><h4>${esc(t('os.detailPrompt'))}${r.strategy ? ' (' + esc(r.strategy_label) + ')' : ''}</h4><pre>${esc(r.prompt || '')}</pre></div>`;
+    h += turnsHtml(r);   // multi-turn transcript (empty for single-shot)
+    if (!r.turns) {
+      h += `<div><h4>${esc(t('os.detailPrompt'))}${r.strategy ? ' (' + esc(r.strategy_label) + ')' : ''}</h4><pre>${esc(r.prompt || '')}</pre></div>`;
+    }
     if (r.simulate_output) {
       h += `<div><h4>${esc(t('os.detailSimOutput'))}</h4><pre>${esc(r.simulate_output)}</pre></div>`;
     }
-    // Model's actual response + the judge's verdict (when judging ran).
-    if (r.model_response) {
+    // Model's actual response + the judge's verdict (when judging ran). For
+    // multi-turn rows the final reply is already shown in the transcript above.
+    if (r.model_response && !r.turns) {
       h += `<div><h4>${esc(t('os.detailModelResponse'))}</h4><pre>${esc(r.model_response)}</pre></div>`;
     }
     if (r.judge && (r.judge.reason || r.judge.error)) {
@@ -4282,6 +4708,7 @@
       const reason = r.judge.error ? (t('os.judgeError') + ' ' + r.judge.error) : r.judge.reason;
       h += `<div><h4>${esc(t('os.detailJudge'))}</h4><pre>${esc((verdict ? verdict + ' — ' : '') + reason)}</pre></div>`;
     }
+    h += assertionsHtml(r);
     // Guard-OFF (model alone) response + verdict, in compare mode.
     if (r.alone_outcome) {
       const a = ALONE_META[r.alone_outcome] || ALONE_META.unknown;
@@ -4369,6 +4796,22 @@
       }
       runcfgHtml += `</div></div>`;
     }
+    // Visual attack-category dashboard (stacked bars) for the HTML report.
+    let catdashHtml = '';
+    if (sec && sec.categories && sec.categories.length) {
+      const segR = (cls, n, a) => a ? `<span class="seg ${cls}" style="width:${(n / a * 100).toFixed(2)}%"></span>` : '';
+      catdashHtml = `<div class="catdash"><h2>${esc(t('os.catDashTitle'))}</h2>`
+        + sec.categories.map(c => {
+          const a = c.attacks || 0, breaches = c.breaches || 0;
+          const through = Math.max(0, (c.not_blocked || 0) - breaches);
+          const det = c.detection_rate == null ? '—' : c.detection_rate + '%';
+          return `<div class="catrow"><div class="catname"><span class="ow">${esc(c.owasp_id || '—')}</span> ${esc(c.owasp_name || '')}</div>`
+            + `<div class="catbar">${segR('blk', c.blocked || 0, a)}${segR('amb', through, a)}${segR('brc', breaches, a)}</div>`
+            + `<div class="catstat"><b>${esc(c.blocked || 0)}/${esc(a)}</b> ${esc(det)} `
+            + `<span class="sev sv-${esc(c.severity)}" style="padding:2px 8px;border:1px solid;border-radius:999px;font-size:0.6rem;font-weight:700;text-transform:uppercase">${esc(sevLabel(c.severity))}</span></div></div>`;
+        }).join('')
+        + `<div class="catlegend"><span><i class="blk"></i>${esc(t('os.catBlocked'))}</span><span><i class="amb"></i>${esc(t('os.catThrough'))}</span><span><i class="brc"></i>${esc(t('os.statBreaches'))}</span></div></div>`;
+    }
     const rows = d.results.map(r => {
       const m = OUTCOME_META[r.outcome] || OUTCOME_META.error;
       const exp = r.expected === 'block' ? t('os.expectBlock') : t('os.expectAllow');
@@ -4383,12 +4826,21 @@
       const rag = r.rag || [];
       let detail = '';
       if (r.strategy) detail += `<div class="dt"><h4>${esc(t('os.detailStrategy', { s: r.strategy_label }))}</h4></div>`;
-      detail += `<div class="dt"><h4>${esc(t('os.detailPrompt'))}</h4><pre>${esc(r.prompt || '')}</pre></div>`;
+      detail += turnsHtml(r);   // multi-turn transcript (empty for single-shot)
+      if (!r.turns) detail += `<div class="dt"><h4>${esc(t('os.detailPrompt'))}</h4><pre>${esc(r.prompt || '')}</pre></div>`;
       if (r.simulate_output) detail += `<div class="dt"><h4>${esc(t('os.detailSimOutput'))}</h4><pre>${esc(r.simulate_output)}</pre></div>`;
-      if (r.model_response) detail += `<div class="dt"><h4>${esc(t('os.detailModelResponse'))}</h4><pre>${esc(r.model_response)}</pre></div>`;
+      if (r.model_response && !r.turns) detail += `<div class="dt"><h4>${esc(t('os.detailModelResponse'))}</h4><pre>${esc(r.model_response)}</pre></div>`;
       if (r.judge && (r.judge.reason || r.judge.error)) {
         const reason = r.judge.error ? (t('os.judgeError') + ' ' + r.judge.error) : r.judge.reason;
         detail += `<div class="dt"><h4>${esc(t('os.detailJudge'))}</h4><pre>${esc((mm ? t(mm.key) + ' — ' : '') + reason)}</pre></div>`;
+      }
+      if (r.assertions && r.assertions.length) {
+        const lines = r.assertions.map(c => {
+          const status = c.error ? ('⚠ ' + c.error)
+            : (c.matched ? t('os.assertMatched') : t('os.assertNoMatch'));
+          return esc(`${c.type}: ${c.value} → `) + esc(status);
+        }).join('\n');
+        detail += `<div class="dt"><h4>${esc(t('os.detailAssertions'))}</h4><pre>${lines}</pre></div>`;
       }
       if (r.alone_outcome) {
         const a = ALONE_META[r.alone_outcome] || ALONE_META.unknown;
@@ -4460,6 +4912,15 @@
   .compare .b{font-size:1.9rem;font-weight:700;} .compare .k{font-size:0.66rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);margin-top:3px;}
   .compare .alone .b{color:var(--block);} .compare .guarded .b{color:var(--pass);} .compare .red .b{color:var(--brand);}
   tr.evaded td{background:rgba(248,113,113,0.12);}
+  .catdash{border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:14px 16px;margin-bottom:20px;}
+  .catdash h2{font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:0 0 10px;}
+  .catrow{display:grid;grid-template-columns:1.6fr 3fr auto;gap:12px;align-items:center;margin-bottom:7px;}
+  .catname{font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;} .catname .ow{font-family:monospace;color:var(--brand);font-size:0.74rem;}
+  .catbar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:#1B2740;} .catbar .seg{height:100%;}
+  .catbar .blk{background:var(--pass);} .catbar .amb{background:var(--redact);} .catbar .brc{background:var(--block);}
+  .catstat{display:flex;gap:8px;justify-content:flex-end;align-items:center;font-size:0.76rem;color:var(--muted);white-space:nowrap;}
+  .catlegend{display:flex;gap:16px;margin-top:10px;font-size:0.72rem;color:var(--muted);} .catlegend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;}
+  .catlegend i.blk{background:var(--pass);} .catlegend i.amb{background:var(--redact);} .catlegend i.brc{background:var(--block);}
   .sec{margin-bottom:22px;} .sec h2{font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:16px 0 8px;}
   .posture{display:flex;align-items:center;gap:12px;padding:13px 16px;border:1px solid;border-radius:10px;font-size:0.95rem;font-weight:600;}
   .posture .lvl{font-size:0.64rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:3px 10px;border:1px solid;border-radius:999px;}
@@ -4493,6 +4954,7 @@
 </div>
 <div class="meta">Generated ${esc(when)} · Provider <code>${esc(SHORT_PROVIDER[llm.provider] || llm.provider || '—')}</code>
   · Model <code>${esc(llm.model || '—')}</code> · Endpoint <code>${esc(llm.base_url || '—')}</code></div>
+${(s.scope && s.scope.sampled) ? `<div class="meta">${esc(t('os.scopeSampled', { n: s.scope.base_executed, total: s.scope.available, seed: s.scope.seed == null ? '—' : s.scope.seed }))}</div>` : ''}
 ${s.compared ? `<div class="compare">
   <div class="c alone"><div class="b">${esc(s.alone_success_rate == null ? '—' : s.alone_success_rate + '%')}</div><div class="k">${esc(t('os.cmpAlone'))}</div></div>
   <div class="c guarded"><div class="b">${esc(s.guarded_success_rate == null ? '—' : s.guarded_success_rate + '%')}</div><div class="k">${esc(t('os.cmpGuarded'))}</div></div>
@@ -4512,9 +4974,12 @@ ${judged ? `<div class="cards">
   <div class="card good"><div class="n">${esc(s.prevented)}</div><div class="l">${esc(t('os.statPrevented'))}</div></div>
 </div>` : ''}
 ${strat ? `<div class="cards">
+  <div class="card"><div class="n">${esc(s.base_detection_rate == null ? '—' : s.base_detection_rate + '%')}</div><div class="l">${esc(t('os.statBaseDetection'))}</div></div>
   <div class="card"><div class="n">${esc(s.variants)}</div><div class="l">${esc(t('os.statVariants'))}</div></div>
   <div class="card ${s.evasions ? 'bad' : 'good'}"><div class="n">${esc(s.evasions)}</div><div class="l">${esc(t('os.statEvasions'))}</div></div>
+  ${s.effective_evasions != null ? `<div class="card ${s.effective_evasions ? 'bad' : 'good'}"><div class="n">${esc(s.effective_evasions)}</div><div class="l">${esc(t('os.statEffEvasions'))}</div></div>` : ''}
 </div>` : ''}
+${catdashHtml}
 ${runcfgHtml}
 ${sec ? `<div class="sec">
   <div class="posture sv-${esc(sec.posture.level)}"><span class="lvl sv-${esc(sec.posture.level)}">${esc(sevLabel(sec.posture.level))}</span> ${esc(sec.posture.headline)}</div>
