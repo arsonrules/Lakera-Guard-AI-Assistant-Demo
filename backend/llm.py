@@ -160,6 +160,33 @@ async def complete_chat(
     return resp.json()["choices"][0]["message"]["content"]
 
 
+async def complete_with_tools(
+    messages: list[dict],
+    tools: list[dict],
+    *,
+    provider: str,
+    base_url: str,
+    api_key: str,
+    model: str,
+) -> dict:
+    """
+    Like complete_chat, but offers the model `tools` (OpenAI function calling).
+    Returns {"content": str, "tool_calls": list}. The caller decides what a tool
+    call means — we never execute it.
+    """
+    endpoint = f"{_normalize_base_url(base_url)}/chat/completions"
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            endpoint,
+            headers=_auth_headers(provider, api_key),
+            json={"model": model, "messages": messages, "tools": tools, "tool_choice": "auto"},
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+    msg = resp.json()["choices"][0]["message"]
+    return {"content": msg.get("content") or "", "tool_calls": msg.get("tool_calls") or []}
+
+
 async def complete(
     user_message: str,
     context_docs: list[str],

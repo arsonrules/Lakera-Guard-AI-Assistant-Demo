@@ -206,6 +206,66 @@ def _blocked(checkpoint: int, message: str, trace: dict, raw_response: str | Non
     }
 
 
+# ── Agentic (tool-using) requests ────────────────────────────────────────────
+# The model is offered fake tools; we record which it tries to call but never run
+# them. Lakera scans the text (CP1 input, CP3 output) — it is blind to the
+# structured tool call, which is exactly the defense-in-depth gap LLM06 is about.
+
+async def process_agentic(
+    message: str,
+    tools: list[dict],
+    doc_mode: str,
+    system_prompt: str | None = None,
+    llm_config: dict | None = None,
+    lakera_key: str = "",
+) -> dict:
+    if not lakera_key:
+        raise LakeraNotConfigured()
+    trace = _empty_trace()
+
+    cp1 = await lakera.check(message, lakera_key)
+    trace["cp1"]["latency_ms"] = cp1["latency_ms"]
+    if lakera.is_flagged(cp1):
+        trace["cp1"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp1))
+        trace["cp2"]["status"] = "skipped"
+        trace["cp3"]["status"] = "skipped"
+        return {**_blocked(1, FALLBACK_CP1, trace, raw_response=None), "tool_calls": []}
+    trace["cp1"].update(status="passed", flagged=False)
+
+    docs = rag.retrieve(message, mode=doc_mode)
+    clean, flagged_names, passed_names, cp2_lat = [], [], [], 0
+    for doc in docs:
+        cp2 = await lakera.check(doc["content"], lakera_key)
+        cp2_lat += cp2["latency_ms"]
+        (flagged_names if lakera.is_flagged(cp2) else passed_names).append(doc["filename"])
+        if not lakera.is_flagged(cp2):
+            clean.append(doc["content"])
+    trace["cp2"].update(latency_ms=cp2_lat, docs_checked=len(docs),
+                        docs_flagged=flagged_names, docs_passed=passed_names,
+                        status=("skipped" if not docs else ("redacted" if flagged_names else "passed")))
+
+    cfg = llm_config or {}
+    messages = llm.build_messages([{"role": "user", "content": message}], clean, system_prompt)
+    out = await llm.complete_with_tools(
+        messages, tools,
+        provider=cfg.get("provider", llm.DEFAULT_PROVIDER),
+        base_url=cfg.get("base_url", llm.preset(llm.DEFAULT_PROVIDER)["base_url"]),
+        api_key=cfg.get("api_key", settings.openrouter_api_key),
+        model=cfg.get("model", settings.openrouter_model),
+    )
+    content, tool_calls = out["content"], out["tool_calls"]
+
+    cp3 = await lakera.check(content or "", lakera_key)
+    trace["cp3"]["latency_ms"] = cp3["latency_ms"]
+    if lakera.is_flagged(cp3):
+        trace["cp3"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp3))
+        return {**_blocked(3, FALLBACK_CP3, trace, raw_response=content), "tool_calls": tool_calls}
+    trace["cp3"].update(status="passed", flagged=False)
+
+    return {"message": content, "blocked": False, "blocked_at": None, "fallback_used": False,
+            "trace": trace, "raw_response": content, "tool_calls": tool_calls}
+
+
 # ── Multi-turn (Crescendo-style) conversations ───────────────────────────────
 # An attack spread across several turns: each escalates until the payload lands.
 # Lakera CP1/CP3 run on EVERY turn, so the guard can catch the escalation at any

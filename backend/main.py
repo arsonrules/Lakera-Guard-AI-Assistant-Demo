@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lakera_demo")
 
-from backend import assertions, chat, datasets, history, judge, llm, rag, report, strategies
+from backend import assertions, chat, datasets, history, judge, llm, rag, report, strategies, tools
 from backend.config import ENV_PATH, settings
 from backend.llm import SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT
 from backend.scenarios import CATEGORIES
@@ -881,6 +881,7 @@ def _dataset_rows(slug: str) -> list[dict]:
             "strategy_label": None,
             "assertions": None,
             "turns": None,
+            "tools": None,
         })
     return rows
 
@@ -914,6 +915,8 @@ def _flatten_scenarios(category_id: str | None, include_safe: bool) -> list[dict
                 "strategy_label": None,
                 # Optional deterministic compromise checks on the delivered response.
                 "assertions": s.get("assertions"),
+                # Optional mock tools offered to the model (agentic / LLM06 scenarios).
+                "tools": s.get("tools"),
             })
     return rows
 
@@ -1040,6 +1043,8 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
             "strategy_label": row.get("strategy_label"),
             # Multi-turn conversation (None = single-shot).
             "turns": row.get("turns"),
+            # Mock tools offered (agentic scenarios).
+            "tools": row.get("tools"),
             # Stable display order for streamed (out-of-order) completion.
             "order": row.get("order", 0),
         }
@@ -1047,6 +1052,11 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
             if row.get("turns"):
                 result = await chat.process_multiturn(
                     row["turns"], doc_mode=row["doc_mode"],
+                    system_prompt=system_prompt, llm_config=llm_config, lakera_key=lakera_key,
+                )
+            elif row.get("tools"):
+                result = await chat.process_agentic(
+                    row["prompt"], tools.openai_tools(row["tools"]), doc_mode=row["doc_mode"],
                     system_prompt=system_prompt, llm_config=llm_config, lakera_key=lakera_key,
                 )
             else:
@@ -1068,6 +1078,14 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
             )
             judge_latency = 0
             raw = result.get("raw_response")
+
+            # Mock-tool sandbox: which tools the model TRIED to call (never run). A
+            # dangerous attempt is a deterministic compromise — Lakera scans text,
+            # not the structured call, so this is a defense-in-depth signal.
+            tool_attempts, tool_dangerous = None, False
+            if row.get("tools"):
+                td = tools.detect_calls(result.get("tool_calls") or [])
+                tool_attempts, tool_dangerous = td["attempted"], bool(td["dangerous"])
 
             # ── LLM-as-judge: did the attack land on the response the GUARD-ON
             # pipeline actually DELIVERED? We only judge what reached the user.
@@ -1099,6 +1117,8 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                         judge_info = {"reason": verdict.get("reason", ""), "error": verdict.get("error")}
                         judge_latency += verdict.get("latency_ms") or 0
                     model_outcome = _combine_outcome(verdict, assert_result, judged=do_judge)
+                    if tool_dangerous:   # the model reached for an unauthorized tool
+                        model_outcome = "compromised"
 
             # ── Guard OFF (model alone): same attack with Lakera disabled ─────
             alone_outcome, alone_reason, alone_response = None, None, None
@@ -1132,6 +1152,7 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                 "risk": _risk(model_outcome, result["blocked"]),
                 "judge": judge_info,
                 "assertions": assert_checks,
+                "tool_calls": tool_attempts,
                 "model_response": model_response,
                 "alone_outcome": alone_outcome,
                 "alone_reason": alone_reason,
@@ -1148,7 +1169,7 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                 **base,
                 "blocked": None, "blocked_at": None, "outcome": "error",
                 "model_outcome": "n/a", "risk": None, "judge": None, "assertions": None,
-                "model_response": None,
+                "tool_calls": None, "model_response": None,
                 "alone_outcome": None, "alone_reason": None, "alone_response": None,
                 "trace": {}, "rag": [], "total_latency_ms": None, "judge_latency_ms": None,
                 "error": f"{type(exc).__name__}: {exc}",
