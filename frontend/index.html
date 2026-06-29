@@ -1753,6 +1753,7 @@
         'os.dynCompromised': 'Compromised at round {n} of {total}',
         'os.dynHeld': 'Held all {n} round(s)',
         'os.dynRound': 'Round {n} — attacker',
+        'scn.liveProbeHint': 'live chat sends a single probe; run the full multi-turn / adaptive flow in One-Shot',
         'os.detailTurns': 'Conversation ({n} turns)',
         'os.turnUser': 'Turn {n} — user',
         'os.turnAssistant': 'assistant',
@@ -2066,6 +2067,7 @@
         'os.dynCompromised': '於第 {n}/{total} 回合被攻破',
         'os.dynHeld': '撐過全部 {n} 回合',
         'os.dynRound': '第 {n} 回合 — 攻擊者',
+        'scn.liveProbeHint': '即時聊天只送單則探測；完整的多輪／自適應流程請於 One-Shot 執行',
         'os.detailTurns': '對話（{n} 輪）',
         'os.turnUser': '第 {n} 輪 — 使用者',
         'os.turnAssistant': '助手',
@@ -2444,6 +2446,7 @@
         'os.dynCompromised': '于第 {n}/{total} 回合被攻破',
         'os.dynHeld': '撑过全部 {n} 回合',
         'os.dynRound': '第 {n} 回合 — 攻击者',
+        'scn.liveProbeHint': '实时聊天只发送单条探测；完整的多轮／自适应流程请在 One-Shot 执行',
         'os.detailTurns': '对话（{n} 轮）',
         'os.turnUser': '第 {n} 轮 — 用户',
         'os.turnAssistant': '助手',
@@ -2822,6 +2825,7 @@
         'os.dynCompromised': 'ラウンド {n}/{total} で突破',
         'os.dynHeld': '全 {n} ラウンドを防御',
         'os.dynRound': 'ラウンド {n} — 攻撃者',
+        'scn.liveProbeHint': 'ライブチャットは単発のプローブのみ。完全なマルチターン／適応フローは One-Shot で実行してください',
         'os.detailTurns': '会話（{n} ターン）',
         'os.turnUser': 'ターン {n} — ユーザー',
         'os.turnAssistant': 'アシスタント',
@@ -3405,14 +3409,25 @@
     if (isBusy) return;
     await setDocMode(scenario.docMode);
     showScenarioInfo(scenario);
-    await sendMessage(scenario.prompt, scenario.simulateOutput);
+    // Multi-turn / dynamic scenarios have no single prompt (they carry `turns` /
+    // `goal`). The live chat is single-message, so send a representative probe —
+    // the final (payload) turn, or the goal — and point to One-Shot for the full
+    // multi-turn / adaptive run.
+    const prompt = scenario.prompt
+      || (scenario.turns && scenario.turns[scenario.turns.length - 1])
+      || scenario.goal
+      || '';
+    if (!prompt) return;
+    await sendMessage(prompt, scenario.simulateOutput);
   }
 
   function showScenarioInfo(s) {
     currentScenario = s;
     document.getElementById('scenario-info-card').style.display = 'block';
     document.getElementById('scenario-info-label').textContent = scnLabel(s);
-    document.getElementById('scenario-info-desc').textContent = scnDesc(s);
+    let desc = scnDesc(s);
+    if (s.turns || s.dynamic) desc += ' — ' + t('scn.liveProbeHint');
+    document.getElementById('scenario-info-desc').textContent = desc;
   }
 
   // ── Send from input ─────────────────────────────────────────────────────
