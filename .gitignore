@@ -23,3 +23,6 @@ env/
 
 # User-uploaded custom RAG documents (runtime state, not part of the repo)
 tests/fixtures/docs_custom/*.txt
+
+# Saved one-shot run history (regression baselines — local/CI state)
+runs/
