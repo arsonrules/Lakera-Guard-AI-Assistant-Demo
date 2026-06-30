@@ -162,11 +162,16 @@ def build(results: list[dict], summary: dict, req) -> dict:
             "recommendation": "Keep the guard in front of the model; treat the residual successes above as the priority to close.",
         })
     if errors:
+        retried = summary.get("retried", 0)
         findings.append({
             "severity": "medium",
-            "title": f"{errors} scenario(s) failed to run",
-            "detail": "Some scenarios errored (often an unreachable or misconfigured LLM endpoint).",
-            "recommendation": "Check the LLM provider settings (the LLM button) and that the endpoint is reachable, then re-run.",
+            "title": f"{errors} scenario(s) failed to run (after retries)",
+            "detail": (f"{errors} scenario(s) still errored after automatic retries"
+                       + (f"; {retried} recovered on retry." if retried else ".")
+                       + " A persistent error usually means an unreachable or misconfigured "
+                         "LLM endpoint, or sustained rate limiting."),
+            "recommendation": "Check the LLM/Lakera provider settings and that the endpoint is "
+                              "reachable; lower concurrency if you're being rate-limited, then re-run.",
         })
     if not findings:
         findings.append({

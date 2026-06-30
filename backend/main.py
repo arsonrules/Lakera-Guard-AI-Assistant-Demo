@@ -31,6 +31,19 @@ ALLOWED_DOC_EXT     = ".txt"
 ONESHOT_CONCURRENCY = 4
 MAX_CONCURRENCY = 16            # upper bound the UI/API may request
 
+# Per-scenario retry for TRANSIENT failures (rate limits, timeouts, 5xx) that a
+# concurrent batch otherwise surfaces as a spurious "error" row.
+ONESHOT_RETRIES = 2            # retries after the first try (3 attempts total)
+ONESHOT_RETRY_BACKOFF = 1.5    # base seconds for exponential backoff
+
+
+def _is_transient(exc: Exception) -> bool:
+    """A failure worth retrying: rate limit, timeout, connection, or 5xx."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return bool(exc.response is not None
+                    and exc.response.status_code in (429, 500, 502, 503, 504))
+    return isinstance(exc, httpx.RequestError)   # timeouts, connection errors
+
 # Scale guardrails for one-shot runs. A run can otherwise explode: an imported
 # dataset (up to datasets.MAX_ROWS rows) × strategy variants × judge + compare
 # calls would be tens of thousands of LLM/Lakera requests. We sample the base
@@ -1273,7 +1286,32 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                 "alone_outcome": None, "alone_reason": None, "alone_response": None,
                 "trace": {}, "rag": [], "total_latency_ms": None, "judge_latency_ms": None,
                 "error": f"{type(exc).__name__}: {exc}",
+                "error_transient": _is_transient(exc),
             }
+
+
+async def _run_one_resilient(row: dict, sem: asyncio.Semaphore, do_judge: bool,
+                             do_compare: bool, system_prompt: str | None = None, *,
+                             llm_config: dict, lakera_key: str, judge_config: dict,
+                             max_rounds: int = 4) -> dict:
+    """
+    Run one scenario, retrying TRANSIENT failures with exponential backoff. The
+    sleep happens between tries (outside the semaphore, since _run_one re-acquires
+    it), so a retry doesn't hold a concurrency slot while waiting. `attempts`
+    records how many tries it took; a persistent error keeps outcome "error".
+    """
+    res = None
+    for attempt in range(1, ONESHOT_RETRIES + 2):
+        res = await _run_one(row, sem, do_judge, do_compare, system_prompt,
+                             llm_config=llm_config, lakera_key=lakera_key,
+                             judge_config=judge_config, max_rounds=max_rounds)
+        if res["outcome"] != "error" or not res.get("error_transient") or attempt > ONESHOT_RETRIES:
+            res["attempts"] = attempt
+            return res
+        await asyncio.sleep(min(ONESHOT_RETRY_BACKOFF * (2 ** (attempt - 1)), 10)
+                            + random.uniform(0, 0.5))
+    res["attempts"] = ONESHOT_RETRIES + 1
+    return res
 
 
 def _prepare_oneshot_rows(req: OneShotRequest) -> tuple[list[dict], dict]:
@@ -1340,6 +1378,8 @@ def _oneshot_summary(results: list[dict], req: OneShotRequest, scope: dict | Non
         "not_blocked": sum(1 for r in results if r["outcome"] == "not_blocked"),
         "false_positive": sum(1 for r in results if r["outcome"] == "false_positive"),
         "errors": sum(1 for r in results if r["outcome"] == "error"),
+        # Scenarios that needed >1 attempt (transient failures that were retried).
+        "retried": sum(1 for r in results if (r.get("attempts") or 1) > 1),
         # Judge-derived (attack scenarios only).
         "judged": (req.judge or req.compare),
         "breaches": sum(1 for r in results if r.get("risk") == "breach"),
@@ -1488,9 +1528,9 @@ async def run_oneshot(req: OneShotRequest, *, llm_config: dict, lakera_key: str,
     jc = judge_config or llm_config
     sem = asyncio.Semaphore(req.concurrency or ONESHOT_CONCURRENCY)
     results = await asyncio.gather(
-        *[_run_one(r, sem, do_judge, req.compare, sp,
-                   llm_config=llm_config, lakera_key=lakera_key, judge_config=jc,
-                   max_rounds=req.max_rounds)
+        *[_run_one_resilient(r, sem, do_judge, req.compare, sp,
+                             llm_config=llm_config, lakera_key=lakera_key, judge_config=jc,
+                             max_rounds=req.max_rounds)
           for r in rows]
     )
     results.sort(key=lambda r: r.get("order", 0))
@@ -1525,9 +1565,9 @@ async def api_oneshot_stream(req: OneShotRequest):
     async def gen():
         results: list[dict] = []
         tasks = [asyncio.create_task(
-            _run_one(r, sem, do_judge, req.compare, sp,
-                     llm_config=cfg, lakera_key=key, judge_config=jc,
-                     max_rounds=req.max_rounds)
+            _run_one_resilient(r, sem, do_judge, req.compare, sp,
+                               llm_config=cfg, lakera_key=key, judge_config=jc,
+                               max_rounds=req.max_rounds)
         ) for r in rows]
         done = 0
         try:
