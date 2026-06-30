@@ -529,6 +529,14 @@ of thousands of LLM/Lakera calls:
 The built-in catalogue (~50 scenarios) is below the default cap, so it always runs
 in full.
 
+**Transient-error retry.** A concurrent batch can hit rate limits or timeouts on
+the LLM/Lakera endpoints, which would otherwise surface as spurious `error` rows.
+Each scenario is retried (with exponential backoff) on a *transient* failure (HTTP
+429/5xx, timeout, connection); a permanent error (bad model id, auth) is not
+retried. If a scenario still errors after the retries, it stays `error` and the
+**count is shown as an `Errors` stat card and flagged in the report's findings**
+(with how many recovered on retry). Lower *Concurrency* if you're being rate-limited.
+
 Outcomes are colour-coded:
 
 | Outcome | Meaning |
