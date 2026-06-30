@@ -1017,6 +1017,11 @@
     .os-catbar .seg.blk { background: var(--pass); }
     .os-catbar .seg.amb { background: var(--redact); }
     .os-catbar .seg.brc { background: var(--block); }
+    .os-catbars { display: flex; flex-direction: column; gap: 4px; }
+    .os-catbarrow { display: grid; grid-template-columns: 58px 1fr; gap: 7px; align-items: center; }
+    .os-catbarrow .bl { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; text-align: right; }
+    .os-catbarrow .bl.bad { color: var(--block); }
+    .os-catdash-sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); font-size: 0.62rem; }
     .os-catstat { display: flex; gap: 8px; align-items: center; justify-content: flex-end; font-size: 0.74rem; color: var(--muted); white-space: nowrap; }
     .os-catstat .sev-chip { font-family: 'Lexend', sans-serif; font-size: 0.58rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border: 1px solid; border-radius: 999px; }
     .os-catlegend { display: flex; gap: 16px; margin-top: 10px; font-size: 0.7rem; color: var(--muted); }
@@ -1805,6 +1810,9 @@
         'os.colLatency': 'Guard latency',
         'os.latCheckpoints': 'Checkpoint latency (Lakera)',
         'os.catDashTitle': 'Attack category dashboard',
+        'os.catGuardRow': 'With Lakera',
+        'os.catAloneRow': 'Model alone',
+        'os.catCompareNote': '· with Lakera (top) vs model alone (bottom)',
         'os.catBlocked': 'Blocked',
         'os.catThrough': 'Got through',
         'os.latJudge': 'judge {ms} ms',
@@ -2124,6 +2132,9 @@
         'os.colLatency': '防護延遲',
         'os.latCheckpoints': '檢查點延遲（Lakera）',
         'os.catDashTitle': '攻擊類別儀表板',
+        'os.catGuardRow': '有 Lakera',
+        'os.catAloneRow': '僅模型',
+        'os.catCompareNote': '· 有 Lakera（上）vs 僅模型（下）',
         'os.catBlocked': '已攔截',
         'os.catThrough': '已通過',
         'os.latJudge': '評審 {ms} ms',
@@ -2508,6 +2519,9 @@
         'os.colLatency': '防护延迟',
         'os.latCheckpoints': '检查点延迟（Lakera）',
         'os.catDashTitle': '攻击类别仪表板',
+        'os.catGuardRow': '有 Lakera',
+        'os.catAloneRow': '仅模型',
+        'os.catCompareNote': '· 有 Lakera（上）vs 仅模型（下）',
         'os.catBlocked': '已拦截',
         'os.catThrough': '已通过',
         'os.latJudge': '评审 {ms} ms',
@@ -2892,6 +2906,9 @@
         'os.colLatency': 'ガード遅延',
         'os.latCheckpoints': 'チェックポイント遅延（Lakera）',
         'os.catDashTitle': '攻撃カテゴリ ダッシュボード',
+        'os.catGuardRow': 'Lakera あり',
+        'os.catAloneRow': 'モデル単独',
+        'os.catCompareNote': '· Lakera あり（上）vs モデル単独（下）',
         'os.catBlocked': 'ブロック',
         'os.catThrough': '通過',
         'os.latJudge': '判定 {ms} ms',
@@ -4565,20 +4582,34 @@
 
   // Visual attack-category dashboard: a stacked bar per OWASP category showing
   // blocked / got-through / breach, with detection rate and severity.
-  function categoryDashboardHtml(sec) {
+  function categoryDashboardHtml(sec, compared) {
     const cats = (sec && sec.categories) || [];
     if (!cats.length) return '';
     const seg = (cls, n, a) => a ? `<span class="seg ${cls}" style="width:${(n / a * 100).toFixed(2)}%"></span>` : '';
-    let h = `<div class="os-catdash"><div class="os-catdash-title">${esc(t('os.catDashTitle'))}</div>`;
+    let h = `<div class="os-catdash"><div class="os-catdash-title">${esc(t('os.catDashTitle'))}`
+      + (compared ? ` <span class="os-catdash-sub">${esc(t('os.catCompareNote'))}</span>` : '')
+      + `</div>`;
     cats.forEach(c => {
       const a = c.attacks || 0;
       const breaches = c.breaches || 0;
       const through = Math.max(0, (c.not_blocked || 0) - breaches);   // not blocked, not a confirmed breach
       const det = c.detection_rate == null ? '—' : c.detection_rate + '%';
-      const title = `${c.blocked || 0} blocked · ${through} through · ${breaches} breach of ${a}`;
+      const guardBar = `<div class="os-catbar" title="${esc(`${c.blocked || 0} blocked · ${through} through · ${breaches} breach of ${a}`)}">`
+        + `${seg('blk', c.blocked || 0, a)}${seg('amb', through, a)}${seg('brc', breaches, a)}</div>`;
+      let barCell = guardBar;
+      // Guard ON vs OFF: overlay the model-alone bar under the with-Lakera bar.
+      if (compared) {
+        const aloneBr = c.alone_breaches || 0;
+        const aloneBar = `<div class="os-catbar" title="${esc(`model alone: ${aloneBr} breach of ${a}`)}">`
+          + `${seg('blk', Math.max(0, a - aloneBr), a)}${seg('brc', aloneBr, a)}</div>`;
+        barCell = `<div class="os-catbars">`
+          + `<div class="os-catbarrow"><span class="bl" title="${esc(t('os.cmpGuarded'))}">${esc(t('os.catGuardRow'))}</span>${guardBar}</div>`
+          + `<div class="os-catbarrow"><span class="bl bad" title="${esc(t('os.cmpAlone'))}">${esc(t('os.catAloneRow'))}</span>${aloneBar}</div>`
+          + `</div>`;
+      }
       h += `<div class="os-catrow">`
         + `<div class="os-catname"><span class="os-owasp">${esc(c.owasp_id || '—')}</span> ${esc(c.owasp_name || '')}</div>`
-        + `<div class="os-catbar" title="${esc(title)}">${seg('blk', c.blocked || 0, a)}${seg('amb', through, a)}${seg('brc', breaches, a)}</div>`
+        + barCell
         + `<div class="os-catstat"><span class="mono">${esc(c.blocked || 0)}/${esc(a)}</span><span>${esc(det)}</span>`
         + `<span class="sev-chip sv-${esc(c.severity)}">${esc(sevLabel(c.severity))}</span></div>`
         + `</div>`;
@@ -4685,7 +4716,7 @@
     }
 
     // Per-category visual dashboard, run config, then the security posture.
-    html += categoryDashboardHtml(s.security);
+    html += categoryDashboardHtml(s.security, s.compared);
     html += runConfigHtml(s.run_config);
     html += securitySectionHtml(s.security);
 
@@ -4945,13 +4976,21 @@
     let catdashHtml = '';
     if (sec && sec.categories && sec.categories.length) {
       const segR = (cls, n, a) => a ? `<span class="seg ${cls}" style="width:${(n / a * 100).toFixed(2)}%"></span>` : '';
-      catdashHtml = `<div class="catdash"><h2>${esc(t('os.catDashTitle'))}</h2>`
+      catdashHtml = `<div class="catdash"><h2>${esc(t('os.catDashTitle'))}${s.compared ? ` <span class="catdash-sub">${esc(t('os.catCompareNote'))}</span>` : ''}</h2>`
         + sec.categories.map(c => {
           const a = c.attacks || 0, breaches = c.breaches || 0;
           const through = Math.max(0, (c.not_blocked || 0) - breaches);
           const det = c.detection_rate == null ? '—' : c.detection_rate + '%';
+          const guardBar = `<div class="catbar">${segR('blk', c.blocked || 0, a)}${segR('amb', through, a)}${segR('brc', breaches, a)}</div>`;
+          let barCell = guardBar;
+          if (s.compared) {
+            const aloneBr = c.alone_breaches || 0;
+            const aloneBar = `<div class="catbar">${segR('blk', Math.max(0, a - aloneBr), a)}${segR('brc', aloneBr, a)}</div>`;
+            barCell = `<div class="catbars"><div class="catbarrow"><span class="bl">${esc(t('os.catGuardRow'))}</span>${guardBar}</div>`
+              + `<div class="catbarrow"><span class="bl bad">${esc(t('os.catAloneRow'))}</span>${aloneBar}</div></div>`;
+          }
           return `<div class="catrow"><div class="catname"><span class="ow">${esc(c.owasp_id || '—')}</span> ${esc(c.owasp_name || '')}</div>`
-            + `<div class="catbar">${segR('blk', c.blocked || 0, a)}${segR('amb', through, a)}${segR('brc', breaches, a)}</div>`
+            + barCell
             + `<div class="catstat"><b>${esc(c.blocked || 0)}/${esc(a)}</b> ${esc(det)} `
             + `<span class="sev sv-${esc(c.severity)}" style="padding:2px 8px;border:1px solid;border-radius:999px;font-size:0.6rem;font-weight:700;text-transform:uppercase">${esc(sevLabel(c.severity))}</span></div></div>`;
         }).join('')
@@ -5073,6 +5112,10 @@
   .catname{font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;} .catname .ow{font-family:monospace;color:var(--brand);font-size:0.74rem;}
   .catbar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:#1B2740;} .catbar .seg{height:100%;}
   .catbar .blk{background:var(--pass);} .catbar .amb{background:var(--redact);} .catbar .brc{background:var(--block);}
+  .catbars{display:flex;flex-direction:column;gap:4px;}
+  .catbarrow{display:grid;grid-template-columns:58px 1fr;gap:7px;align-items:center;}
+  .catbarrow .bl{font-size:0.6rem;color:var(--muted);text-transform:uppercase;text-align:right;} .catbarrow .bl.bad{color:var(--block);}
+  .catdash-sub{font-weight:400;text-transform:none;color:var(--muted);font-size:0.66rem;}
   .catstat{display:flex;gap:8px;justify-content:flex-end;align-items:center;font-size:0.76rem;color:var(--muted);white-space:nowrap;}
   .catlegend{display:flex;gap:16px;margin-top:10px;font-size:0.72rem;color:var(--muted);} .catlegend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;}
   .catlegend i.blk{background:var(--pass);} .catlegend i.amb{background:var(--redact);} .catlegend i.brc{background:var(--block);}

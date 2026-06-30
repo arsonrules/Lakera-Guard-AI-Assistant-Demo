@@ -487,6 +487,10 @@ reduced` = the drop between them. Each row also shows a **Model alone** verdict,
 the Guard-OFF response is in the click-to-reveal panel. This doubles model calls, so
 it's opt-in. (All of this is included in the exported HTML report.)
 
+In compare mode the **per-OWASP dashboard** shows two overlaid bars per category —
+*With Lakera* (top) vs *Model alone* (bottom) — so you can see at a glance how many
+attacks the model failed on its own (red) versus how many the guard let through.
+
 #### Attack strategies: is the guard robust to obfuscation?
 
 The **Strategies** picker wraps each attack in obfuscation variants — `Base64`,

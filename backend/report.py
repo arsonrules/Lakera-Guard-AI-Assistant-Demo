@@ -59,6 +59,8 @@ def build(results: list[dict], summary: dict, req) -> dict:
             "attacks": 0, "blocked": 0, "not_blocked": 0, "breaches": 0,
             "resisted": 0, "evasions": 0, "effective_evasions": 0,
             "variants": 0, "judged": judged,
+            # Guard-OFF (model alone) breaches, for the ON-vs-OFF overlay chart.
+            "alone_breaches": 0,
         })
         if r.get("strategy"):                       # obfuscation variant
             c["variants"] += 1
@@ -78,6 +80,8 @@ def build(results: list[dict], summary: dict, req) -> dict:
             c["breaches"] += 1
         if r.get("model_outcome") == "resisted":
             c["resisted"] += 1
+        if r.get("alone_outcome") == "compromised":   # model alone (guard OFF)
+            c["alone_breaches"] += 1
 
     cat_list = list(cats.values())
     for c in cat_list:

@@ -66,6 +66,22 @@ def test_build_marks_category_critical_on_breach():
     assert any(f["severity"] == "critical" for f in out["findings"])
 
 
+def test_build_aggregates_alone_breaches_for_overlay():
+    # Guard ON vs OFF: per-category model-alone breaches feed the overlay chart.
+    results = [
+        _row(outcome="blocked", risk=None, model_outcome="prevented", alone_outcome="compromised"),
+        _row(outcome="not_blocked", risk="breach", model_outcome="compromised", alone_outcome="compromised"),
+        _row(outcome="blocked", alone_outcome="resisted"),
+    ]
+    summary = {"breaches": 1, "evasions": 0, "effective_evasions": 0, "false_positive": 0,
+               "errors": 0, "not_blocked": 1, "strategies_used": [], "judged": True,
+               "compared": True}
+    out = report.build(results, summary, type("R", (), {})())
+    cat = out["categories"][0]
+    assert cat["alone_breaches"] == 2     # model alone was compromised on 2 of 3
+    assert cat["breaches"] == 1           # but only 1 reached the user with Lakera
+
+
 def test_build_evasion_finding_medium_when_not_landed():
     results = [
         _row(id="A", strategy=None, outcome="blocked"),
