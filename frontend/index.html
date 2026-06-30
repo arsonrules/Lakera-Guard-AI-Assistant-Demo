@@ -1198,6 +1198,9 @@
         <button type="button" class="sp-btn primary" onclick="saveLakeraKey()" data-i18n="llm.setKey">Set key</button>
       </div>
 
+      <label for="lakera-project" data-i18n="llm.lakeraProject">Lakera Project ID</label>
+      <input type="text" id="lakera-project" spellcheck="false" autocomplete="off" data-i18n-placeholder="llm.lakeraProjectPlaceholder" placeholder="Optional — selects a project's Guard policy" />
+
       <label for="llm-provider" data-i18n="llm.provider">Provider</label>
       <select id="llm-provider" onchange="onLlmProviderChange()"></select>
 
@@ -1602,6 +1605,8 @@
         'llm.apiKeyStored': '✓ Key stored — leave blank to keep, or type a new one',
         'llm.apiKeyEnter': 'Enter this provider’s API key (blank = none)',
         'llm.lakeraKey': 'Lakera Guard key',
+        'llm.lakeraProject': 'Lakera Project ID',
+        'llm.lakeraProjectPlaceholder': 'Optional — selects a project\'s Guard policy',
         'llm.lakeraPlaceholder': 'Required — your Lakera Guard API key',
         'llm.lakeraStored': '✓ Key stored ({masked}) — type to replace',
         'llm.setKey': 'Set key',
@@ -1919,6 +1924,8 @@
         'llm.apiKeyStored': '✓ 已儲存金鑰 — 留空以保留，或輸入新的金鑰',
         'llm.apiKeyEnter': '輸入此供應商的 API 金鑰（留空＝無）',
         'llm.lakeraKey': 'Lakera Guard 金鑰',
+        'llm.lakeraProject': 'Lakera 專案 ID',
+        'llm.lakeraProjectPlaceholder': '選填 — 套用該專案的 Guard 政策',
         'llm.lakeraPlaceholder': '必填 — 你的 Lakera Guard API 金鑰',
         'llm.lakeraStored': '✓ 已儲存金鑰（{masked}）— 輸入以替換',
         'llm.setKey': '設定金鑰',
@@ -2301,6 +2308,8 @@
         'llm.apiKeyStored': '✓ 已保存密钥 — 留空以保留，或输入新的密钥',
         'llm.apiKeyEnter': '输入此供应商的 API 密钥（留空＝无）',
         'llm.lakeraKey': 'Lakera Guard 密钥',
+        'llm.lakeraProject': 'Lakera 项目 ID',
+        'llm.lakeraProjectPlaceholder': '选填 — 应用该项目的 Guard 策略',
         'llm.lakeraPlaceholder': '必填 — 你的 Lakera Guard API 密钥',
         'llm.lakeraStored': '✓ 已保存密钥（{masked}）— 输入以替换',
         'llm.setKey': '设置密钥',
@@ -2683,6 +2692,8 @@
         'llm.apiKeyStored': '✓ キー保存済み — 空欄で維持、または新しいキーを入力',
         'llm.apiKeyEnter': 'このプロバイダーの API キーを入力（空欄＝なし）',
         'llm.lakeraKey': 'Lakera Guard キー',
+        'llm.lakeraProject': 'Lakera プロジェクト ID',
+        'llm.lakeraProjectPlaceholder': '任意 — そのプロジェクトの Guard ポリシーを適用',
         'llm.lakeraPlaceholder': '必須 — あなたの Lakera Guard API キー',
         'llm.lakeraStored': '✓ キー保存済み（{masked}）— 入力で置換',
         'llm.setKey': 'キーを設定',
@@ -3667,18 +3678,23 @@
       inp.placeholder = lakeraKeySet
         ? t('llm.lakeraStored', { masked: d.api_key_masked })
         : t('llm.lakeraPlaceholder');
+      const proj = document.getElementById('lakera-project');
+      if (proj) proj.value = d.project_id || '';   // not secret → prefill it
       updateKeysBadge();
     } catch { /* ignore */ }
   }
 
   async function saveLakeraKey() {
     const key = document.getElementById('lakera-key').value.trim();
-    if (!key) { showLlmStatus('error', t('llm.lakeraNeeded')); return; }
+    const project = document.getElementById('lakera-project').value.trim();
+    // A key is only required the first time; afterwards the project id can be
+    // updated on its own (api_key: null keeps the stored key).
+    if (!key && !lakeraKeySet) { showLlmStatus('error', t('llm.lakeraNeeded')); return; }
     showLlmStatus('loading', t('llm.saving'));
     try {
       const res = await fetch(API + '/api/lakera-config', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: key }),
+        body: JSON.stringify({ api_key: key || null, project_id: project }),
       });
       const d = await res.json();
       if (!res.ok) { showLlmStatus('error', d.detail || t('llm.saveFailed')); return; }

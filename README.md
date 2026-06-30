@@ -794,8 +794,8 @@ AI assistant demo/
 | `POST` | `/api/datasets/import-hf` | Import a public HuggingFace dataset (`dataset_id`, optional `config`/`split`/`column`/`limit`) |
 | `POST` | `/api/datasets/upload` | Upload a `.csv` / `.json` / `.jsonl` / `.txt` dataset (multipart) |
 | `DELETE` | `/api/datasets/{slug}` | Delete an imported dataset |
-| `GET` | `/api/lakera-config` | Whether the Lakera Guard key is set (masked) |
-| `POST` | `/api/lakera-config` | Set/clear the Lakera Guard key (runtime) |
+| `GET` | `/api/lakera-config` | Whether the Lakera Guard key is set (masked) + the project id |
+| `POST` | `/api/lakera-config` | Set the Lakera Guard key and/or **project id** (null field = keep) |
 | `POST` | `/api/config/save-env` | Persist the current keys + LLM provider to `.env` |
 
 ---
