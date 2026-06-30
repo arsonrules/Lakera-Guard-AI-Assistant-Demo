@@ -1815,6 +1815,9 @@
         'os.statNotBlocked': 'Attacks through',
         'os.statPassed': 'Safe passed',
         'os.statFalsePos': 'False positives',
+        'os.statErrors': 'Errors',
+        'os.detailError': 'Error',
+        'os.errAttempts': 'failed after {n} attempts',
         'os.statDetection': 'Detection rate',
         'os.failed': 'Test run failed',
         'os.reportTitle': 'AI Guardrails — One-Shot Security Test Report',
@@ -2129,6 +2132,9 @@
         'os.statNotBlocked': '漏過的攻擊',
         'os.statPassed': '安全通過',
         'os.statFalsePos': '誤判',
+        'os.statErrors': '錯誤',
+        'os.detailError': '錯誤',
+        'os.errAttempts': '重試 {n} 次後仍失敗',
         'os.statDetection': '偵測率',
         'os.failed': '測試執行失敗',
         'os.reportTitle': 'AI 防護機制 — 一鍵安全測試報告',
@@ -2508,6 +2514,9 @@
         'os.statNotBlocked': '漏过的攻击',
         'os.statPassed': '安全通过',
         'os.statFalsePos': '误判',
+        'os.statErrors': '错误',
+        'os.detailError': '错误',
+        'os.errAttempts': '重试 {n} 次后仍失败',
         'os.statDetection': '检测率',
         'os.failed': '测试运行失败',
         'os.reportTitle': 'AI 防护机制 — 一键安全测试报告',
@@ -2887,6 +2896,9 @@
         'os.statNotBlocked': '通過した攻撃',
         'os.statPassed': '安全に通過',
         'os.statFalsePos': '誤検知',
+        'os.statErrors': 'エラー',
+        'os.detailError': 'エラー',
+        'os.errAttempts': '{n} 回試行後も失敗',
         'os.statDetection': '検出率',
         'os.failed': 'テスト実行に失敗しました',
         'os.reportTitle': 'AI ガードレール — ワンショット セキュリティ テスト レポート',
@@ -4630,6 +4642,7 @@
     html += stat('bad', s.not_blocked, 'os.statNotBlocked');
     html += stat('good', s.passed, 'os.statPassed');
     html += stat('warn', s.false_positive, 'os.statFalsePos');
+    if (s.errors) html += stat('bad', s.errors, 'os.statErrors');
     html += stat('', detection, 'os.statDetection');
     html += '</div>';
 
@@ -4775,6 +4788,10 @@
 
   function osDetailHtml(r) {
     let h = `<div class="os-detail">`;
+    if (r.error) {
+      const att = (r.attempts && r.attempts > 1) ? ' — ' + t('os.errAttempts', { n: r.attempts }) : '';
+      h += `<div><h4>${esc(t('os.detailError'))}${esc(att)}</h4><pre>${esc(r.error)}</pre></div>`;
+    }
     h += cpLatencyHtml(r);
     if (r.strategy) {
       const ev = r.evaded ? ' — ' + t('os.evadedNote') : '';
@@ -4937,6 +4954,10 @@
       // Click-to-reveal detail using a native <details> element (no JS in the report).
       const rag = r.rag || [];
       let detail = '';
+      if (r.error) {
+        const att = (r.attempts && r.attempts > 1) ? ' — ' + t('os.errAttempts', { n: r.attempts }) : '';
+        detail += `<div class="dt"><h4>${esc(t('os.detailError'))}${esc(att)}</h4><pre>${esc(r.error)}</pre></div>`;
+      }
       if (r.strategy) detail += `<div class="dt"><h4>${esc(t('os.detailStrategy', { s: r.strategy_label }))}</h4></div>`;
       detail += turnsHtml(r);     // multi-turn transcript (empty for single-shot)
       detail += dynamicHtml(r);   // adaptive-attacker rounds (empty unless dynamic)
@@ -5084,6 +5105,7 @@ ${s.compared ? `<div class="compare">
   <div class="card bad"><div class="n">${esc(s.not_blocked)}</div><div class="l">${esc(t('os.statNotBlocked'))}</div></div>
   <div class="card good"><div class="n">${esc(s.passed)}</div><div class="l">${esc(t('os.statPassed'))}</div></div>
   <div class="card warn"><div class="n">${esc(s.false_positive)}</div><div class="l">${esc(t('os.statFalsePos'))}</div></div>
+  ${s.errors ? `<div class="card bad"><div class="n">${esc(s.errors)}</div><div class="l">${esc(t('os.statErrors'))}</div></div>` : ''}
   <div class="card"><div class="n">${esc(detection)}</div><div class="l">${esc(t('os.statDetection'))}</div></div>
 </div>
 ${judged ? `<div class="cards">
