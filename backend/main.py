@@ -35,6 +35,9 @@ MAX_CONCURRENCY = 16            # upper bound the UI/API may request
 # concurrent batch otherwise surfaces as a spurious "error" row.
 ONESHOT_RETRIES = 2            # retries after the first try (3 attempts total)
 ONESHOT_RETRY_BACKOFF = 1.5    # base seconds for exponential backoff
+# Seconds of stream silence before a keep-alive ping. A long/slow scenario must
+# not let the NDJSON connection go idle, or the browser drops it ("network error").
+ONESHOT_STREAM_KEEPALIVE = 5.0
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -1563,34 +1566,61 @@ async def api_oneshot_stream(req: OneShotRequest):
     total = len(rows)
 
     async def gen():
-        results: list[dict] = []
+        q: asyncio.Queue = asyncio.Queue()
         tasks = [asyncio.create_task(
             _run_one_resilient(r, sem, do_judge, req.compare, sp,
                                llm_config=cfg, lakera_key=key, judge_config=jc,
                                max_rounds=req.max_rounds)
         ) for r in rows]
-        done = 0
+
+        async def producer():
+            results: list[dict] = []
+            done = 0
+            try:
+                for fut in asyncio.as_completed(tasks):
+                    res = await fut
+                    results.append(res)
+                    done += 1
+                    await q.put(("progress", done, res))
+                results.sort(key=lambda r: r.get("order", 0))
+                await q.put(("done", _oneshot_summary(results, req, scope), results))
+            except Exception as exc:  # noqa: BLE001 — surface stream-level failure to the client
+                logger.exception("One-shot stream failed")
+                await q.put(("error", f"{type(exc).__name__}: {exc}"))
+
+        prod = asyncio.create_task(producer())
+        # Immediate first byte + a heartbeat during gaps, so a slow scenario never
+        # lets the connection go idle long enough to be dropped ("network error").
+        yield json.dumps({"type": "start", "total": total}) + "\n"
         try:
-            for fut in asyncio.as_completed(tasks):
-                res = await fut
-                results.append(res)
-                done += 1
-                yield json.dumps({
-                    "type": "progress", "done": done, "total": total,
-                    "id": res.get("id"), "label": res.get("strategy_label") or res.get("label"),
-                }) + "\n"
-            results.sort(key=lambda r: r.get("order", 0))
-            summary = _oneshot_summary(results, req, scope)
-            yield json.dumps({
-                "type": "done", "summary": summary, "results": results,
-                "llm": _public_llm_config(), "judge": _public_judge_config(),
-                "category_id": req.category_id,
-            }) + "\n"
-        except Exception as exc:  # noqa: BLE001 — report stream-level failure to the client
-            logger.exception("One-shot stream failed")
+            while True:
+                try:
+                    item = await asyncio.wait_for(q.get(), timeout=ONESHOT_STREAM_KEEPALIVE)
+                except asyncio.TimeoutError:
+                    yield json.dumps({"type": "ping"}) + "\n"   # keep-alive
+                    continue
+                kind = item[0]
+                if kind == "progress":
+                    _, done, res = item
+                    yield json.dumps({
+                        "type": "progress", "done": done, "total": total,
+                        "id": res.get("id"), "label": res.get("strategy_label") or res.get("label"),
+                    }) + "\n"
+                elif kind == "error":
+                    yield json.dumps({"type": "error", "detail": item[1]}) + "\n"
+                    break
+                else:  # done
+                    _, summary, results = item
+                    yield json.dumps({
+                        "type": "done", "summary": summary, "results": results,
+                        "llm": _public_llm_config(), "judge": _public_judge_config(),
+                        "category_id": req.category_id,
+                    }) + "\n"
+                    break
+        finally:
+            prod.cancel()
             for tsk in tasks:
                 tsk.cancel()
-            yield json.dumps({"type": "error", "detail": f"{type(exc).__name__}: {exc}"}) + "\n"
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
 

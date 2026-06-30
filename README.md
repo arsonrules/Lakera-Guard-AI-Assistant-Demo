@@ -536,6 +536,8 @@ Each scenario is retried (with exponential backoff) on a *transient* failure (HT
 retried. If a scenario still errors after the retries, it stays `error` and the
 **count is shown as an `Errors` stat card and flagged in the report's findings**
 (with how many recovered on retry). Lower *Concurrency* if you're being rate-limited.
+The progress stream also sends a keep-alive heartbeat during slow scenarios, so a
+long run can't go idle and be dropped by the browser as a spurious "network error".
 
 Outcomes are colour-coded:
 
