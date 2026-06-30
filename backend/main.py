@@ -104,6 +104,8 @@ def _effective_judge_config() -> dict:
 
 # Runtime-configurable Lakera Guard key (seeded from .env if present, else set in UI).
 _lakera_key: str = settings.lakera_guard_api_key or ""
+# Optional Lakera project id — sent with every Guard call to select that project's policy.
+_lakera_project_id: str = settings.lakera_project_id or ""
 
 # Imported external attack datasets (HuggingFace / uploaded), keyed by slug.
 # Each value: {slug, name, source, count, column, rows:[{prompt, category}]}.
@@ -385,7 +387,11 @@ class OneShotRequest(BaseModel):
 
 
 class LakeraKeyRequest(BaseModel):
-    api_key: str = Field(max_length=400)
+    # null → keep the stored key (so the project id can be set on its own);
+    # a string sets it ("" clears it).
+    api_key: str | None = Field(default=None, max_length=400)
+    # null → keep the stored project id; a string sets it ("" clears it).
+    project_id: str | None = Field(default=None, max_length=200)
 
 
 class HFImportRequest(BaseModel):
@@ -418,6 +424,7 @@ async def api_chat(req: ChatRequest):
                 system_prompt=_custom_system_prompt,
                 llm_config=_llm_config,
                 lakera_key=_lakera_key,
+                lakera_project_id=_lakera_project_id,
             )
         else:
             # Lakera OFF: straight to the model, no CP1/CP2/CP3, no key needed.
@@ -588,17 +595,24 @@ async def api_set_judge_config(req: JudgeConfigRequest):
 
 @app.get("/api/lakera-config")
 async def api_get_lakera_config():
-    return {"api_key_set": bool(_lakera_key), "api_key_masked": _mask(_lakera_key)}
+    return {"api_key_set": bool(_lakera_key), "api_key_masked": _mask(_lakera_key),
+            "project_id": _lakera_project_id}
 
 
 @app.post("/api/lakera-config")
 async def api_set_lakera_config(req: LakeraKeyRequest):
-    global _lakera_key
-    _lakera_key = _clean(req.api_key)
+    global _lakera_key, _lakera_project_id
+    # null leaves the value unchanged; a string sets it (blank clears it). This lets
+    # the project id be updated without re-entering the (write-only) key.
+    if req.api_key is not None:
+        _lakera_key = _clean(req.api_key)
+    if req.project_id is not None:
+        _lakera_project_id = _clean(req.project_id)
     return {
         "api_key_set": bool(_lakera_key),
         "api_key_masked": _mask(_lakera_key),
-        "message": "Lakera Guard key updated." if _lakera_key else "Lakera Guard key cleared.",
+        "project_id": _lakera_project_id,
+        "message": "Lakera Guard configuration updated.",
     }
 
 
@@ -630,6 +644,7 @@ async def api_save_env():
     """Persist the current Lakera key + LLM provider config to the project .env."""
     values = {
         "LAKERA_GUARD_API_KEY": _lakera_key,
+        "LAKERA_PROJECT_ID": _lakera_project_id,
         "LLM_PROVIDER": _llm_config.get("provider", ""),
         "LLM_BASE_URL": _llm_config.get("base_url", ""),
         "LLM_MODEL": _llm_config.get("model", ""),
@@ -813,7 +828,7 @@ async def api_set_system_prompt(req: SystemPromptRequest):
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
 
     try:
-        scan = await chat.scan_system_prompt(req.prompt, _lakera_key)
+        scan = await chat.scan_system_prompt(req.prompt, _lakera_key, _lakera_project_id)
     except chat.LakeraNotConfigured:
         raise HTTPException(status_code=400, detail=LAKERA_NOT_SET_MSG)
 
@@ -1053,7 +1068,7 @@ async def _grade_attack(prompt: str, category_id: str, override: str | None, raw
 
 
 async def _run_dynamic(base: dict, row: dict, *, system_prompt: str | None,
-                       llm_config: dict, lakera_key: str, judge_config: dict,
+                       llm_config: dict, lakera_key: str, lakera_project_id: str = "", judge_config: dict,
                        max_rounds: int) -> dict:
     """
     Adaptive attacker loop: an attacker LLM refines its prompt up to `max_rounds`
@@ -1077,6 +1092,7 @@ async def _run_dynamic(base: dict, row: dict, *, system_prompt: str | None,
         result = await chat.process(
             message=atk_prompt, doc_mode=row["doc_mode"], simulate_output=None,
             system_prompt=system_prompt, llm_config=llm_config, lakera_key=lakera_key,
+            lakera_project_id=lakera_project_id,
         )
         trace = result.get("trace", {})
         guard_latency += sum((trace.get(cp, {}) or {}).get("latency_ms") or 0
@@ -1138,7 +1154,7 @@ async def _run_dynamic(base: dict, row: dict, *, system_prompt: str | None,
 
 async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare: bool,
                    system_prompt: str | None = None, *,
-                   llm_config: dict, lakera_key: str, judge_config: dict,
+                   llm_config: dict, lakera_key: str, lakera_project_id: str = "", judge_config: dict,
                    max_rounds: int = 4) -> dict:
     async with sem:
         base = {
@@ -1164,16 +1180,19 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
             if row.get("dynamic"):
                 return await _run_dynamic(
                     base, row, system_prompt=system_prompt, llm_config=llm_config,
-                    lakera_key=lakera_key, judge_config=judge_config, max_rounds=max_rounds)
+                    lakera_key=lakera_key, lakera_project_id=lakera_project_id,
+                    judge_config=judge_config, max_rounds=max_rounds)
             if row.get("turns"):
                 result = await chat.process_multiturn(
                     row["turns"], doc_mode=row["doc_mode"],
                     system_prompt=system_prompt, llm_config=llm_config, lakera_key=lakera_key,
+                    lakera_project_id=lakera_project_id,
                 )
             elif row.get("tools"):
                 result = await chat.process_agentic(
                     row["prompt"], tools.openai_tools(row["tools"]), doc_mode=row["doc_mode"],
                     system_prompt=system_prompt, llm_config=llm_config, lakera_key=lakera_key,
+                    lakera_project_id=lakera_project_id,
                 )
             else:
                 result = await chat.process(
@@ -1183,6 +1202,7 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                     system_prompt=system_prompt,
                     llm_config=llm_config,
                     lakera_key=lakera_key,
+                    lakera_project_id=lakera_project_id,
                 )
             trace = result.get("trace", {})
             # Checkpoint (Lakera guard) latency = CP1 + CP2 + CP3 only. The LLM
@@ -1295,7 +1315,7 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
 
 async def _run_one_resilient(row: dict, sem: asyncio.Semaphore, do_judge: bool,
                              do_compare: bool, system_prompt: str | None = None, *,
-                             llm_config: dict, lakera_key: str, judge_config: dict,
+                             llm_config: dict, lakera_key: str, lakera_project_id: str = "", judge_config: dict,
                              max_rounds: int = 4) -> dict:
     """
     Run one scenario, retrying TRANSIENT failures with exponential backoff. The
@@ -1307,6 +1327,7 @@ async def _run_one_resilient(row: dict, sem: asyncio.Semaphore, do_judge: bool,
     for attempt in range(1, ONESHOT_RETRIES + 2):
         res = await _run_one(row, sem, do_judge, do_compare, system_prompt,
                              llm_config=llm_config, lakera_key=lakera_key,
+                             lakera_project_id=lakera_project_id,
                              judge_config=judge_config, max_rounds=max_rounds)
         if res["outcome"] != "error" or not res.get("error_transient") or attempt > ONESHOT_RETRIES:
             res["attempts"] = attempt
@@ -1516,7 +1537,7 @@ def _oneshot_system_prompt(req: OneShotRequest) -> str | None:
 
 
 async def run_oneshot(req: OneShotRequest, *, llm_config: dict, lakera_key: str,
-                      judge_config: dict | None = None) -> dict:
+                      lakera_project_id: str = "", judge_config: dict | None = None) -> dict:
     """
     Prepare → execute → summarize a one-shot run. Shared by the /api/oneshot
     endpoint and the headless CLI (`python -m backend.oneshot`). The caller passes
@@ -1532,7 +1553,8 @@ async def run_oneshot(req: OneShotRequest, *, llm_config: dict, lakera_key: str,
     sem = asyncio.Semaphore(req.concurrency or ONESHOT_CONCURRENCY)
     results = await asyncio.gather(
         *[_run_one_resilient(r, sem, do_judge, req.compare, sp,
-                             llm_config=llm_config, lakera_key=lakera_key, judge_config=jc,
+                             llm_config=llm_config, lakera_key=lakera_key,
+                             lakera_project_id=lakera_project_id, judge_config=jc,
                              max_rounds=req.max_rounds)
           for r in rows]
     )
@@ -1544,6 +1566,7 @@ async def run_oneshot(req: OneShotRequest, *, llm_config: dict, lakera_key: str,
 async def api_oneshot(req: OneShotRequest):
     # Snapshot the provider config + key once (see run_oneshot).
     out = await run_oneshot(req, llm_config=dict(_llm_config), lakera_key=_lakera_key,
+                            lakera_project_id=_lakera_project_id,
                             judge_config=_effective_judge_config())
     return {**out, "llm": _public_llm_config(), "judge": _public_judge_config(),
             "category_id": req.category_id}
@@ -1561,6 +1584,7 @@ async def api_oneshot_stream(req: OneShotRequest):
     do_judge = req.judge or req.compare
     sp = _oneshot_system_prompt(req)
     cfg, key = dict(_llm_config), _lakera_key   # snapshot (see api_oneshot)
+    proj = _lakera_project_id
     jc = _effective_judge_config()
     sem = asyncio.Semaphore(req.concurrency or ONESHOT_CONCURRENCY)
     total = len(rows)
@@ -1569,8 +1593,8 @@ async def api_oneshot_stream(req: OneShotRequest):
         q: asyncio.Queue = asyncio.Queue()
         tasks = [asyncio.create_task(
             _run_one_resilient(r, sem, do_judge, req.compare, sp,
-                               llm_config=cfg, lakera_key=key, judge_config=jc,
-                               max_rounds=req.max_rounds)
+                               llm_config=cfg, lakera_key=key, lakera_project_id=proj,
+                               judge_config=jc, max_rounds=req.max_rounds)
         ) for r in rows]
 
         async def producer():

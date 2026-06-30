@@ -4,17 +4,23 @@ import httpx
 LAKERA_ENDPOINT = "https://api.lakera.ai/v2/guard"
 
 
-async def check(text: str, api_key: str) -> dict:
+def _build_body(text: str, project_id: str = "") -> dict:
+    """Lakera Guard v2 request body. `project_id` (when set) selects that
+    project's configured Guard policy."""
+    body = {"messages": [{"role": "user", "content": text}], "breakdown": True}
+    if project_id:
+        body["project_id"] = project_id
+    return body
+
+
+async def check(text: str, api_key: str, project_id: str = "") -> dict:
     """Run Lakera Guard v2 on a text string. Returns response dict + latency_ms."""
     start = time.monotonic()
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             LAKERA_ENDPOINT,
             headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "messages": [{"role": "user", "content": text}],
-                "breakdown": True,
-            },
+            json=_build_body(text, project_id),
             timeout=10.0,
         )
         resp.raise_for_status()

@@ -10,6 +10,8 @@ ENV_PATH = pathlib.Path(__file__).resolve().parent.parent / ".env"
 class Settings(BaseSettings):
     # Optional so the app boots with NO .env — keys are then set via the UI.
     lakera_guard_api_key: str = ""
+    # Optional Lakera project id — selects that project's Guard policy when set.
+    lakera_project_id: str = ""
 
     # ── LLM provider (OpenAI-compatible Chat Completions) ─────────────────────
     # `llm_provider` selects a preset (openrouter | lmstudio | ollama | omlx | custom).

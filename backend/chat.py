@@ -15,14 +15,14 @@ class LakeraNotConfigured(RuntimeError):
     """Raised when a checkpoint is reached but no Lakera Guard key is set."""
 
 
-async def scan_system_prompt(text: str, lakera_key: str) -> dict:
+async def scan_system_prompt(text: str, lakera_key: str, lakera_project_id: str = "") -> dict:
     """
     CP0: run Lakera Guard on a candidate system prompt before it is activated.
     Returns the full Lakera response plus a summary for the UI.
     """
     if not lakera_key:
         raise LakeraNotConfigured()
-    result = await lakera.check(text, lakera_key)
+    result = await lakera.check(text, lakera_key, lakera_project_id)
     return {
         "flagged": lakera.is_flagged(result),
         "categories": lakera.flagged_categories(result),
@@ -118,13 +118,14 @@ async def process(
     system_prompt: str | None = None,
     llm_config: dict | None = None,
     lakera_key: str = "",
+    lakera_project_id: str = "",
 ) -> dict:
     if not lakera_key:
         raise LakeraNotConfigured()
     trace = _empty_trace()
 
     # ── Checkpoint 1: user input ────────────────────────────────────────────
-    cp1 = await lakera.check(message, lakera_key)
+    cp1 = await lakera.check(message, lakera_key, lakera_project_id)
     trace["cp1"]["latency_ms"] = cp1["latency_ms"]
 
     if lakera.is_flagged(cp1):
@@ -146,7 +147,7 @@ async def process(
     all_cp2_categories: list[str] = []
 
     for doc in docs:
-        cp2 = await lakera.check(doc["content"], lakera_key)
+        cp2 = await lakera.check(doc["content"], lakera_key, lakera_project_id)
         cp2_latency += cp2["latency_ms"]
         if lakera.is_flagged(cp2):
             flagged_names.append(doc["filename"])
@@ -174,7 +175,7 @@ async def process(
     response_text = await _call_llm(message, clean_docs, simulate_output, system_prompt, llm_config)
 
     # ── Checkpoint 3: LLM output ────────────────────────────────────────────
-    cp3 = await lakera.check(response_text, lakera_key)
+    cp3 = await lakera.check(response_text, lakera_key, lakera_project_id)
     trace["cp3"]["latency_ms"] = cp3["latency_ms"]
 
     if lakera.is_flagged(cp3):
@@ -218,12 +219,13 @@ async def process_agentic(
     system_prompt: str | None = None,
     llm_config: dict | None = None,
     lakera_key: str = "",
+    lakera_project_id: str = "",
 ) -> dict:
     if not lakera_key:
         raise LakeraNotConfigured()
     trace = _empty_trace()
 
-    cp1 = await lakera.check(message, lakera_key)
+    cp1 = await lakera.check(message, lakera_key, lakera_project_id)
     trace["cp1"]["latency_ms"] = cp1["latency_ms"]
     if lakera.is_flagged(cp1):
         trace["cp1"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp1))
@@ -235,7 +237,7 @@ async def process_agentic(
     docs = rag.retrieve(message, mode=doc_mode)
     clean, flagged_names, passed_names, cp2_lat = [], [], [], 0
     for doc in docs:
-        cp2 = await lakera.check(doc["content"], lakera_key)
+        cp2 = await lakera.check(doc["content"], lakera_key, lakera_project_id)
         cp2_lat += cp2["latency_ms"]
         (flagged_names if lakera.is_flagged(cp2) else passed_names).append(doc["filename"])
         if not lakera.is_flagged(cp2):
@@ -255,7 +257,7 @@ async def process_agentic(
     )
     content, tool_calls = out["content"], out["tool_calls"]
 
-    cp3 = await lakera.check(content or "", lakera_key)
+    cp3 = await lakera.check(content or "", lakera_key, lakera_project_id)
     trace["cp3"]["latency_ms"] = cp3["latency_ms"]
     if lakera.is_flagged(cp3):
         trace["cp3"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp3))
@@ -290,6 +292,7 @@ async def process_multiturn(
     system_prompt: str | None = None,
     llm_config: dict | None = None,
     lakera_key: str = "",
+    lakera_project_id: str = "",
 ) -> dict:
     """Run a multi-turn conversation through the full guard pipeline, turn by turn."""
     if not lakera_key:
@@ -302,7 +305,7 @@ async def process_multiturn(
     last_response: str | None = None
 
     for i, user_turn in enumerate(turns, 1):
-        cp1 = await lakera.check(user_turn, lakera_key)
+        cp1 = await lakera.check(user_turn, lakera_key, lakera_project_id)
         cp1_lat += cp1["latency_ms"]
         if lakera.is_flagged(cp1):
             trace["cp1"].update(status="blocked", flagged=True,
@@ -319,7 +322,7 @@ async def process_multiturn(
         clean: list[str] = []
         for d in docs:
             docs_checked += 1
-            cp2 = await lakera.check(d["content"], lakera_key)
+            cp2 = await lakera.check(d["content"], lakera_key, lakera_project_id)
             cp2_lat += cp2["latency_ms"]
             if not lakera.is_flagged(cp2):
                 clean.append(d["content"])
@@ -327,7 +330,7 @@ async def process_multiturn(
         history.append({"role": "user", "content": user_turn})
         resp = await _llm_with_history(history, clean, system_prompt, llm_config)
 
-        cp3 = await lakera.check(resp, lakera_key)
+        cp3 = await lakera.check(resp, lakera_key, lakera_project_id)
         cp3_lat += cp3["latency_ms"]
         if lakera.is_flagged(cp3):
             trace["cp3"].update(status="blocked", flagged=True,

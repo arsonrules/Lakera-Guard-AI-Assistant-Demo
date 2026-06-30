@@ -4,7 +4,7 @@ import backend.chat as chat
 
 def _lakera(flag_on_text=None, flag_kind="cp1"):
     """Return an async lakera.check stub that flags when text contains a marker."""
-    async def _check(text, key):
+    async def _check(text, key, project_id=""):
         flagged = bool(flag_on_text and flag_on_text in text)
         return {"flagged": flagged, "latency_ms": 1,
                 "breakdown": [{"detector_type": "prompt_attack", "detected": True}] if flagged else []}
@@ -42,7 +42,7 @@ async def test_cp1_blocks_mid_conversation(monkeypatch):
 
 async def test_cp3_blocks_on_output(monkeypatch):
     # CP1 clean, but the model's reply on turn 1 trips CP3.
-    async def check(text, key):
+    async def check(text, key, project_id=""):
         flagged = "LEAK" in text
         return {"flagged": flagged, "latency_ms": 1,
                 "breakdown": [{"detector_type": "pii", "detected": True}] if flagged else []}

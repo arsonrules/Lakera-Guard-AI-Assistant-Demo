@@ -33,7 +33,7 @@ def test_detect_calls_tolerates_junk():
 # ── process_agentic (Lakera + LLM mocked) ─────────────────────────────────────
 
 def _lakera_clean():
-    async def _check(text, key):
+    async def _check(text, key, project_id=""):
         return {"flagged": False, "latency_ms": 1, "breakdown": []}
     return _check
 
