@@ -5108,7 +5108,7 @@
         <td>${esc(r.owasp_id || '—')}<br><span class="muted">${esc(r.owasp_name || '')}</span></td>
         ${strat ? `<td class="mono">${variantCell}</td>` : ''}
         <td>${esc(exp)}</td>
-        <td class="mono">${esc(cps)}</td>
+        <td class="mono">${cps}</td>
         <td><b>${esc(t(m.key))}</b>${evadedFlag}</td>
         ${judged ? `<td>${modelCell}</td>` : ''}
         <td>${esc(lat)}</td></tr>
