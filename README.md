@@ -392,7 +392,9 @@ signal lives.)
 > weak target isn't judging itself:
 >
 > - **UI** — in *Settings → LLM provider*, tick **"Use a separate judge model"** and
->   set its provider/model/key (the judge key is independent of the target key).
+>   set its provider, **base URL**, model, and key (independent of the target). Use
+>   **Load models** to probe the endpoint and pick a model, exactly like the target
+>   provider panel — so the judge can point at any OpenAI-compatible endpoint.
 > - **`.env`** — `JUDGE_PROVIDER` / `JUDGE_BASE_URL` / `JUDGE_MODEL` / `JUDGE_API_KEY`
 >   (all blank → judge with the target model).
 > - **CLI** — `--judge-provider` / `--judge-model` (key from `JUDGE_API_KEY`), or a

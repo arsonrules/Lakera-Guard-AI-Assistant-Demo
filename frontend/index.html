@@ -1247,9 +1247,18 @@
       <span class="llm-hint" data-i18n="judge.hint">Grade attacks with a stronger model so a weak target isn't judging its own output. Used only by the one-shot judge.</span>
       <div class="llm-grid" id="judge-fields" style="display:none;margin-top:8px">
         <label for="judge-provider" data-i18n="llm.provider">Provider</label>
-        <select id="judge-provider"></select>
+        <select id="judge-provider" onchange="onJudgeProviderChange()"></select>
+        <label for="judge-base-url" data-i18n="llm.baseUrl">Base URL</label>
+        <input type="text" id="judge-base-url" spellcheck="false" placeholder="https://…/v1" />
         <label for="judge-model" data-i18n="llm.model">Model</label>
-        <input type="text" id="judge-model" spellcheck="false" data-i18n-placeholder="judge.modelPlaceholder" placeholder="Judge model id" />
+        <div class="llm-model-cell">
+          <input type="text" id="judge-model" spellcheck="false" list="judge-model-list" data-i18n-placeholder="judge.modelPlaceholder" placeholder="Judge model id" />
+          <datalist id="judge-model-list"></datalist>
+          <select id="judge-model-select" onchange="onJudgeModelSelect()" aria-label="Select judge model from provider">
+            <option value="" data-i18n="llm.fromProvider">— from provider —</option>
+          </select>
+          <button type="button" class="sp-btn" onclick="loadJudgeModels()" data-i18n="llm.loadModels">Load models</button>
+        </div>
         <label for="judge-api-key" data-i18n="llm.apiKey">API Key</label>
         <input type="password" id="judge-api-key" spellcheck="false" autocomplete="off" data-i18n-placeholder="llm.apiKeyPlaceholder" placeholder="Leave blank to keep current / not required for local" />
       </div>
@@ -3991,6 +4000,8 @@
       const j = d.judge || {};
       document.getElementById('judge-enabled').checked = !!j.enabled;
       if (sel) sel.value = j.provider || 'openrouter';
+      const preset = llmPresets[(sel && sel.value) || 'openrouter'] || {};
+      document.getElementById('judge-base-url').value = j.enabled ? (j.base_url || preset.base_url || '') : (preset.base_url || '');
       document.getElementById('judge-model').value = j.enabled ? (j.model || '') : '';
       document.getElementById('judge-api-key').value = '';
       document.getElementById('judge-fields').style.display = j.enabled ? '' : 'none';
@@ -4002,10 +4013,69 @@
     document.getElementById('judge-fields').style.display = on ? '' : 'none';
   }
 
+  // Switching provider fills the base URL / model preset (only if not customised).
+  function onJudgeProviderChange() {
+    const p = llmPresets[document.getElementById('judge-provider').value] || {};
+    const base = document.getElementById('judge-base-url');
+    const model = document.getElementById('judge-model');
+    if (isPresetUrl(base.value)) base.value = p.base_url || '';
+    if (isPresetModel(model.value)) model.value = p.default_model || '';
+    populateJudgeModelList([]);
+  }
+
+  function readJudgeForm() {
+    const k = document.getElementById('judge-api-key').value;
+    return {
+      provider: document.getElementById('judge-provider').value,
+      base_url: document.getElementById('judge-base-url').value.trim(),
+      model: document.getElementById('judge-model').value.trim(),
+      api_key: k === '' ? null : k,
+    };
+  }
+
+  function populateJudgeModelList(models) {
+    const dl = document.getElementById('judge-model-list'); dl.innerHTML = '';
+    (models || []).forEach(m => { const o = document.createElement('option'); o.value = m; dl.appendChild(o); });
+    const sel = document.getElementById('judge-model-select');
+    const cur = document.getElementById('judge-model').value.trim();
+    sel.innerHTML = '';
+    const ph = document.createElement('option'); ph.value = ''; ph.textContent = t('llm.fromProvider'); sel.appendChild(ph);
+    (models || []).forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = m; if (m === cur) o.selected = true; sel.appendChild(o); });
+  }
+
+  function onJudgeModelSelect() {
+    const v = document.getElementById('judge-model-select').value;
+    if (v) document.getElementById('judge-model').value = v;
+  }
+
+  // Probe the judge endpoint (reusing the provider test) and list its models.
+  async function loadJudgeModels() {
+    showLlmStatus('loading', t('llm.loadingModels'));
+    try {
+      const res = await fetch(API + '/api/llm-config/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(readJudgeForm()),
+      });
+      const d = await res.json();
+      if (!res.ok) { showLlmStatus('error', d.detail || t('llm.unreachable', { err: '' })); return; }
+      const at = d.base_url ? ' @ ' + d.base_url : '';
+      if (d.ok) {
+        populateJudgeModelList(d.models || []);
+        const mi = document.getElementById('judge-model');
+        if (!mi.value.trim() && d.models && d.models.length) mi.value = d.models[0];
+        if (d.models && d.models.length) {
+          showLlmStatus('success', t('llm.modelsLoaded', { n: d.models.length }));
+          document.getElementById('judge-model-select').focus();
+        } else { showLlmStatus('error', t('llm.noModels') + at); }
+      } else { showLlmStatus('error', t('llm.unreachable', { err: d.error || '' }) + at); }
+    } catch (err) { showLlmStatus('error', t('llm.unreachable', { err: err.message })); }
+  }
+
   async function saveJudgeConfig() {
     const body = {
       enabled: document.getElementById('judge-enabled').checked,
       provider: document.getElementById('judge-provider').value,
+      base_url: document.getElementById('judge-base-url').value.trim(),
       model: document.getElementById('judge-model').value.trim(),
       api_key: document.getElementById('judge-api-key').value || null,
     };
