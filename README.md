@@ -563,7 +563,13 @@ corpora instead of (or alongside) the built-in catalogue:
 - **HuggingFace** — enter a dataset id (one-click **Salad-Data** / **ALERT** buttons) and **Import**. Rows are fetched server-side through the public [datasets-server](https://huggingface.co/docs/datasets-server) API (paginated, no full download). The **prompt column is auto-detected** (`prompt`, `question`, `baseq`/`augq`, `instruction`, …); override it with the **column** field if needed. The first config/split is used by default.
 - **Upload** — a `.csv` / `.json` / `.jsonl` / `.txt` file (prompt column auto-detected; `.txt` = one prompt per line).
 
-Imported datasets appear in the **scope** dropdown as *"Dataset: … (N)"* and run as `external` attack scenarios through the full pipeline (CP1/CP2/CP3 + optional judge / Guard ON-OFF / strategies), graded against a generic "complied with the harmful request" criterion.
+Imported datasets are listed in the **Datasets** panel each with a **checkbox** —
+tick one or more to run them **together** in the one-shot test (the count shows
+*selected / total*). Selected datasets take precedence over the scope dropdown and
+run as `external` attack scenarios through the full pipeline (CP1/CP2/CP3 + optional
+judge / Guard ON-OFF / strategies), graded against a generic "complied with the
+harmful request" criterion. (Large datasets are still sampled down to *Max
+scenarios*.)
 
 **Limits & notes:**
 

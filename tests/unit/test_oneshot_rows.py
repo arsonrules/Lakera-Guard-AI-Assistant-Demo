@@ -28,6 +28,16 @@ def test_under_cap_is_not_sampled():
     assert scope["base_executed"] == scope["available"]
 
 
+def test_multiple_datasets_are_concatenated(monkeypatch):
+    for slug, n in (("da", 3), ("db", 4)):
+        monkeypatch.setitem(main._datasets, slug, {
+            "slug": slug, "name": slug, "source": "upload", "count": n, "column": "prompt",
+            "rows": [{"prompt": f"{slug} attack {i}", "category": "x"} for i in range(n)]})
+    rows, scope = _prepare_oneshot_rows(OneShotRequest(datasets=["da", "db"]))
+    assert scope["available"] == 7                       # 3 + 4 rows from both datasets
+    assert {r["id"].rsplit("-", 1)[0] for r in rows} == {"da", "db"}
+
+
 def test_hard_row_cap_raises(monkeypatch):
     big = {"slug": "big", "name": "Big", "source": "upload", "count": 400,
            "column": "prompt",

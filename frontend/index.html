@@ -791,7 +791,9 @@
     .os-ds-examples { display: flex; align-items: center; gap: 8px; font-size: 0.74rem; color: var(--muted); margin-bottom: 10px; }
     .os-ds-list { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
     .os-ds-item { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
-    .os-ds-item .nm { flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .os-ds-item .os-ds-pick { flex: 1; display: flex; align-items: center; gap: 7px; min-width: 0; cursor: pointer; }
+.os-ds-item .os-ds-pick input { accent-color: var(--brand); flex-shrink: 0; }
+.os-ds-item .nm { flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .os-ds-item .ct { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--muted); }
     .os-ds-del { display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid var(--block-br); background: var(--block-bg); color: var(--block); font-size: 0.64rem; font-weight: 600; cursor: pointer; border-radius: 6px; }
     .os-ds-allnote { font-size: 0.72rem; line-height: 1.5; color: var(--redact); background: var(--redact-bg); border: 1px solid var(--redact-br); border-radius: var(--radius-sm); padding: 7px 10px; margin-bottom: 10px; }
@@ -1666,6 +1668,7 @@
         'ds.uploadLabel': 'Upload (.csv / .json / .jsonl / .txt)',
         'ds.upload': 'Upload file',
         'ds.rows': 'rows',
+        'ds.pickTitle': 'Select this dataset to include in the one-shot run',
         'ds.needId': 'Enter a dataset id (owner/name).',
         'ds.importing': 'Importing from HuggingFace…',
         'ds.importingAll': 'Importing all rows from HuggingFace… (this can take a few minutes)',
@@ -1989,6 +1992,7 @@
         'ds.uploadLabel': '上傳（.csv / .json / .jsonl / .txt）',
         'ds.upload': '上傳檔案',
         'ds.rows': '筆',
+        'ds.pickTitle': '勾選以將此資料集納入 one-shot 執行',
         'ds.needId': '請輸入資料集 ID（owner/name）。',
         'ds.importing': '正在從 HuggingFace 匯入…',
         'ds.importingAll': '正在從 HuggingFace 匯入全部資料…（可能需要幾分鐘）',
@@ -2377,6 +2381,7 @@
         'ds.uploadLabel': '上传（.csv / .json / .jsonl / .txt）',
         'ds.upload': '上传文件',
         'ds.rows': '条',
+        'ds.pickTitle': '勾选以将此数据集纳入 one-shot 执行',
         'ds.needId': '请输入数据集 ID（owner/name）。',
         'ds.importing': '正在从 HuggingFace 导入…',
         'ds.importingAll': '正在从 HuggingFace 导入全部数据…（可能需要几分钟）',
@@ -2765,6 +2770,7 @@
         'ds.uploadLabel': 'アップロード（.csv / .json / .jsonl / .txt）',
         'ds.upload': 'ファイルをアップロード',
         'ds.rows': '件',
+        'ds.pickTitle': 'このデータセットを one-shot 実行に含める',
         'ds.needId': 'データセット ID（owner/name）を入力してください。',
         'ds.importing': 'HuggingFace からインポート中…',
         'ds.importingAll': 'HuggingFace から全行をインポート中…（数分かかる場合があります）',
@@ -4136,13 +4142,7 @@
       opt.textContent = t('os.scopeCategory', { name: (cat.owaspId ? cat.owaspId + ' ' : '') + catName(cat) });
       sel.appendChild(opt);
     });
-    // Imported external datasets.
-    (importedDatasets || []).forEach(d => {
-      const opt = document.createElement('option');
-      opt.value = 'ds:' + d.slug;
-      opt.textContent = t('os.scopeDataset', { name: d.name, count: d.count });
-      sel.appendChild(opt);
-    });
+    // Datasets are chosen (multi-select) via the Datasets panel checkboxes, not here.
     // Default to the currently selected category, if any.
     if (prev) sel.value = prev;
     else if (currentCategory) sel.value = currentCategory.id;
@@ -4179,9 +4179,7 @@
   async function loadDatasets() {
     try { importedDatasets = await (await fetch(API + '/api/datasets')).json(); }
     catch { importedDatasets = []; }
-    renderDatasetList();
-    document.getElementById('os-ds-count').textContent =
-      importedDatasets.length ? `(${importedDatasets.length})` : '';
+    renderDatasetList();   // also refreshes the os-ds-count (selected / total)
     buildScopeOptions();
   }
 
@@ -4191,12 +4189,25 @@
     importedDatasets.forEach(d => {
       const row = document.createElement('div');
       row.className = 'os-ds-item';
-      row.innerHTML = `<span class="nm" title="${esc(d.name)}">${esc(d.name)}</span>`
+      row.innerHTML = `<label class="os-ds-pick" title="${esc(t('ds.pickTitle'))}">`
+        + `<input type="checkbox" class="os-ds-cb" value="${esc(d.slug)}" onchange="onDatasetPick()">`
+        + `<span class="nm" title="${esc(d.name)}">${esc(d.name)}</span></label>`
         + `<span class="ct">${esc(d.count)} ${esc(t('ds.rows'))}</span>`
         + `<button class="os-ds-del">${esc(t('cdocs.del'))}</button>`;
       row.querySelector('.os-ds-del').onclick = () => deleteDataset(d.slug);
       el.appendChild(row);
     });
+    onDatasetPick();
+  }
+
+  // Datasets selected (checked) to run together in the one-shot test.
+  function selectedDatasets() {
+    return [...document.querySelectorAll('#os-ds-list .os-ds-cb:checked')].map(i => i.value);
+  }
+  function onDatasetPick() {
+    const n = selectedDatasets().length, total = importedDatasets.length;
+    document.getElementById('os-ds-count').textContent =
+      n ? `(${n}✓/${total})` : (total ? `(${total})` : '');
   }
 
   function osDsStatus(type, text) {
@@ -4356,6 +4367,7 @@
 
   async function runOneShot() {
     const scope = document.getElementById('os-scope').value;
+    const dsSel = selectedDatasets();   // checked datasets take precedence over the scope
     const runBtn = document.getElementById('os-run-btn');
     const running = document.getElementById('os-running');
     const body = document.getElementById('os-body');
@@ -4369,13 +4381,16 @@
       document.getElementById('os-progress').textContent = txt;
       body.innerHTML = '<div class="os-empty">' + esc(txt) + '</div>';
     };
-    setProg(0, scopeScenarioCount(scope));
+    const est = dsSel.length
+      ? dsSel.reduce((n, slug) => { const d = importedDatasets.find(x => x.slug === slug); return n + (d ? d.count : 0); }, 0)
+      : scopeScenarioCount(scope);
+    setProg(0, est);
 
     try {
       const compareOn = document.getElementById('os-compare').checked;
       const judgeOn = document.getElementById('os-judge').checked || compareOn;
       const strats = selectedStrategies();
-      const isDataset = scope && scope.startsWith('ds:');
+      const isDataset = dsSel.length > 0;
       const osSp = document.getElementById('os-sp-text').value.trim();
       const noSp = document.getElementById('os-sp-none').checked;
       const kbMode = document.getElementById('os-kb-mode').value || null;
@@ -4385,7 +4400,8 @@
       const reqBody = {
         include_safe: true, judge: judgeOn, compare: compareOn, strategies: strats,
         category_id: isDataset ? null : (scope || null),
-        dataset: isDataset ? scope.slice(3) : null,
+        dataset: null,
+        datasets: dsSel,
         system_prompt: noSp ? null : (osSp || null),
         no_system_prompt: noSp,
         doc_mode: kbMode,

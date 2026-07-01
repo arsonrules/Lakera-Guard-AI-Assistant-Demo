@@ -368,6 +368,8 @@ class OneShotRequest(BaseModel):
     strategies: list[str] = Field(default_factory=list, max_length=12)
     # Run an imported external dataset (slug) instead of the built-in catalogue.
     dataset: str | None = Field(default=None, max_length=60)
+    # Run several selected datasets together (slugs). Takes precedence over `dataset`.
+    datasets: list[str] = Field(default_factory=list, max_length=12)
     # Optional per-run system prompt override. Blank/None → use the active prompt.
     system_prompt: str | None = Field(default=None, max_length=16_000)
     # Run with NO system prompt at all (overrides system_prompt / the active one).
@@ -1350,8 +1352,14 @@ def _prepare_oneshot_rows(req: OneShotRequest) -> tuple[list[dict], dict]:
     """
     if not _lakera_key:
         raise HTTPException(400, LAKERA_NOT_SET_MSG)
-    rows = _dataset_rows(req.dataset) if req.dataset else \
-        _flatten_scenarios(req.category_id, req.include_safe)
+    if req.datasets:                      # several selected datasets, concatenated
+        rows = []
+        for slug in req.datasets:
+            rows.extend(_dataset_rows(slug))
+    elif req.dataset:
+        rows = _dataset_rows(req.dataset)
+    else:
+        rows = _flatten_scenarios(req.category_id, req.include_safe)
     if not rows:
         raise HTTPException(400, "No scenarios match the requested selection.")
 
