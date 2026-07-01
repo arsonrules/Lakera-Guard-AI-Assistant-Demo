@@ -954,14 +954,22 @@
     .oc-error          { background: var(--skip-bg);  color: var(--skip);  border-color: var(--skip-br); }
     .os-cp-mini { display: inline-flex; gap: 3px; }
     .os-cp-mini i {
-      width: 20px; height: 18px; display: inline-grid; place-items: center;
+      min-width: 30px; height: 18px; display: inline-flex; align-items: center; justify-content: center; gap: 2px; padding: 0 4px;
       font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; font-style: normal;
       border-radius: 4px; border: 1px solid var(--border); color: var(--muted);
     }
+    .os-cp-mini i .cn { font-weight: 700; }
+    .os-cp-mini i .ic, .os-cp-mini-key .ic { width: 11px; height: 11px; }
     .os-cp-mini i.s-passed   { color: var(--pass);   border-color: var(--pass-br);   background: var(--pass-bg); }
     .os-cp-mini i.s-blocked  { color: var(--block);  border-color: var(--block-br);  background: var(--block-bg); }
     .os-cp-mini i.s-redacted { color: var(--redact); border-color: var(--redact-br); background: var(--redact-bg); }
-    .os-cp-mini i.s-skipped  { color: var(--skip);   border-color: var(--skip-br);   background: var(--skip-bg); }
+    .os-cp-mini i.s-skipped,
+    .os-cp-mini i.s-off      { color: var(--skip);   border-color: var(--skip-br);   background: var(--skip-bg); }
+    .os-cp-mini-key { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 3px; border: 1px solid; margin-right: 5px; vertical-align: middle; }
+    .os-cp-mini-key.s-passed { color: var(--pass); border-color: var(--pass-br); }
+    .os-cp-mini-key.s-blocked { color: var(--block); border-color: var(--block-br); }
+    .os-cp-mini-key.s-redacted { color: var(--redact); border-color: var(--redact-br); }
+    .os-cp-mini-key.s-skipped { color: var(--skip); border-color: var(--skip-br); }
     .os-empty { text-align: center; color: var(--muted); padding: 40px 0; font-size: 0.9rem; }
     /* Expandable per-scenario detail (click-to-reveal) */
     .os-table tr.os-row { cursor: pointer; }
@@ -4499,12 +4507,20 @@
     { id: 'cp3', t: 'os.cp3Title', d: 'os.cp3Desc' },
   ];
 
+  // Status → icon so each checkpoint result reads at a glance:
+  //   passed ✓ · blocked ✗ · redacted ✂ · skipped/off —
+  const CP_STATUS_ICON = {
+    passed: 'check', blocked: 'x', redacted: 'scissors',
+    skipped: 'minus', off: 'shield-off', pending: 'minus',
+  };
+  const cpStatusLabel = (s) => t('badge.' + s) !== 'badge.' + s ? t('badge.' + s) : s;
+
   function cpMini(trace) {
     return '<span class="os-cp-mini">' + CP_INFO.map((cp, i) => {
       const status = (trace && trace[cp.id] && trace[cp.id].status) || 'skipped';
-      // Tooltip spells out the checkpoint name + its status, e.g.
-      // "CP1 · User input — passed".
-      return `<i class="s-${esc(status)}" title="${esc(t(cp.t))} — ${esc(status)}">${i + 1}</i>`;
+      // Chip = CP number + a status icon; tooltip spells it out ("CP1 · User input — Passed").
+      return `<i class="s-${esc(status)}" title="${esc(t(cp.t))} — ${esc(cpStatusLabel(status))}">`
+        + `<span class="cn">${i + 1}</span>${icon(CP_STATUS_ICON[status] || 'minus')}</i>`;
     }).join('') + '</span>';
   }
 
@@ -4515,12 +4531,12 @@
       `<div class="os-legend-item"><b>${esc(t(cp.t))}</b><span>${esc(t(cp.d))}</span></div>`
     ).join('');
     const key = [
-      ['s-passed', t('badge.passed')],
-      ['s-blocked', t('badge.blocked')],
-      ['s-redacted', t('badge.redacted')],
-      ['s-skipped', t('badge.skipped')],
-    ].map(([c, label]) =>
-      `<span class="k"><i class="${c}"></i>${esc(label)}</span>`
+      ['s-passed', 'check', t('badge.passed')],
+      ['s-blocked', 'x', t('badge.blocked')],
+      ['s-redacted', 'scissors', t('badge.redacted')],
+      ['s-skipped', 'minus', t('badge.skipped')],
+    ].map(([c, ic, label]) =>
+      `<span class="k"><i class="os-cp-mini-key ${c}">${icon(ic)}</i>${esc(label)}</span>`
     ).join('');
     return `<div class="os-legend">
       <div class="os-legend-title">${esc(t('os.cpLegendTitle'))}</div>
@@ -5016,8 +5032,12 @@
       const m = OUTCOME_META[r.outcome] || OUTCOME_META.error;
       const exp = r.expected === 'block' ? t('os.expectBlock') : t('os.expectAllow');
       const lat = r.total_latency_ms == null ? '—' : r.total_latency_ms + ' ms';
-      const cps = ['cp1', 'cp2', 'cp3'].map(cp =>
-        ((r.trace && r.trace[cp] && r.trace[cp].status) || 'skipped')).join(' · ');
+      // The report is standalone (no SVG sprite), so use Unicode glyphs, colored by status.
+      const CP_GLYPH = { passed: '✓', blocked: '✗', redacted: '✂', skipped: '–', off: '–', pending: '–' };
+      const cps = ['cp1', 'cp2', 'cp3'].map((cp, i) => {
+        const st = (r.trace && r.trace[cp] && r.trace[cp].status) || 'skipped';
+        return `<span class="cpb s-${esc(st)}" title="CP${i + 1} — ${esc(st)}"><b>${i + 1}</b> ${CP_GLYPH[st] || '–'}</span>`;
+      }).join('');
       const mm = modelMeta(r);
       const modelCell = mm ? `<b class="${mm.cls}">${esc(t(mm.key))}</b>` : '<span class="muted">—</span>';
       const variantCell = r.strategy ? esc(r.strategy_label) : esc(t('os.variantBase'));
@@ -5117,6 +5137,9 @@
   .ragst{font-size:0.6rem;font-weight:600;text-transform:uppercase;padding:1px 7px;border:1px solid;border-radius:999px;margin-left:6px;}
   .rs-passed{color:var(--pass);border-color:var(--pass);} .rs-redacted{color:var(--redact);border-color:var(--redact);} .rs-not_reached{color:var(--skip);border-color:var(--skip);}
   .none{color:var(--muted);font-style:italic;font-size:0.8rem;}
+  .cpb{display:inline-flex;align-items:center;gap:3px;padding:1px 5px;margin-right:3px;border:1px solid var(--border);border-radius:4px;font-size:0.64rem;color:var(--muted);font-family:monospace;}
+  .cpb.s-passed{color:var(--pass);border-color:var(--pass);} .cpb.s-blocked{color:var(--block);border-color:var(--block);}
+  .cpb.s-redacted{color:var(--redact);border-color:var(--redact);} .cpb.s-skipped,.cpb.s-off{color:var(--skip);border-color:var(--skip);}
   .compare{display:flex;border:1px solid var(--brand);border-radius:10px;overflow:hidden;margin-bottom:20px;}
   .compare .c{flex:1;text-align:center;padding:16px;} .compare .c+.c{border-left:1px solid var(--border);}
   .compare .b{font-size:1.9rem;font-weight:700;} .compare .k{font-size:0.66rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);margin-top:3px;}

@@ -1081,6 +1081,7 @@ async def _run_dynamic(base: dict, row: dict, *, system_prompt: str | None,
     guard_latency = extra_latency = 0
     compromised_round = None
     final_response = None
+    final_trace: dict = {}
     rounds_used = 0
 
     for rnd in range(1, max_rounds + 1):
@@ -1095,6 +1096,7 @@ async def _run_dynamic(base: dict, row: dict, *, system_prompt: str | None,
             lakera_project_id=lakera_project_id,
         )
         trace = result.get("trace", {})
+        final_trace = trace
         guard_latency += sum((trace.get(cp, {}) or {}).get("latency_ms") or 0
                              for cp in ("cp1", "cp2", "cp3"))
         raw, blocked = result.get("raw_response"), result["blocked"]
@@ -1144,7 +1146,9 @@ async def _run_dynamic(base: dict, row: dict, *, system_prompt: str | None,
         "assertions": None, "tool_calls": None,
         "model_response": (final_response[:MODEL_RESPONSE_PREVIEW_CHARS] if final_response else None),
         "alone_outcome": None, "alone_reason": None, "alone_response": None,
-        "trace": {}, "rag": [],
+        # Surface the final round's checkpoint trace so the CP1/CP2/CP3 column
+        # isn't blank for dynamic scenarios.
+        "trace": (final_trace or {}), "rag": [],
         "dynamic": {"rounds_used": rounds_used, "max_rounds": max_rounds,
                     "compromised_round": compromised_round, "transcript": transcript},
         "total_latency_ms": guard_latency, "judge_latency_ms": extra_latency or None,

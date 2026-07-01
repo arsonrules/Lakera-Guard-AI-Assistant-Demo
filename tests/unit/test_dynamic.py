@@ -76,6 +76,7 @@ async def test_compromised_on_second_round(monkeypatch):
     assert r["dynamic"]["compromised_round"] == 2
     assert r["dynamic"]["rounds_used"] == 2
     assert len(r["dynamic"]["transcript"]) == 2
+    assert "cp1" in r["trace"]          # final round's checkpoints surfaced (not blank)
 
 
 async def test_guard_blocks_every_round_is_prevented(monkeypatch):
