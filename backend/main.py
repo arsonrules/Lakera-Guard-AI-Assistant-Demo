@@ -52,9 +52,9 @@ def _is_transient(exc: Exception) -> bool:
 # dataset (up to datasets.MAX_ROWS rows) × strategy variants × judge + compare
 # calls would be tens of thousands of LLM/Lakera requests. We sample the base
 # scenarios down to `max_scenarios` and hard-cap the total executed rows.
-DEFAULT_MAX_SCENARIOS = 100     # base scenarios per run unless the caller raises it
-HARD_MAX_SCENARIOS = 1000       # ceiling on the requestable max_scenarios
-HARD_MAX_ROWS = 2000            # ceiling on base × (1 + strategies) actually run
+DEFAULT_MAX_SCENARIOS = 100        # base scenarios per run unless the caller raises it
+HARD_MAX_SCENARIOS = 100_000       # ceiling on the requestable max_scenarios
+HARD_MAX_ROWS = 100_000            # ceiling on base × (1 + strategies) actually run
 
 # Global state
 _doc_mode: str = "clean"

@@ -1430,13 +1430,13 @@
         <div class="os-ds-panel">
           <div class="os-ds-row">
             <span class="os-ds-label" data-i18n="os.maxScenarios">Max scenarios</span>
-            <input type="number" id="os-max" value="100" min="1" max="1000" data-i18n-title="os.maxScenariosTitle" title="Cap on base scenarios. Larger datasets are sampled down to this." />
+            <input type="number" id="os-max" value="100" min="1" max="100000" data-i18n-title="os.maxScenariosTitle" title="Cap on base scenarios. Larger datasets are sampled down to this." />
             <span class="os-ds-label" data-i18n="os.concurrency">Concurrency</span>
             <input type="number" id="os-conc" value="4" min="1" max="16" data-i18n-title="os.concurrencyTitle" title="Parallel scenario workers (1–16)." />
             <span class="os-ds-label" data-i18n="os.maxRounds">Adaptive rounds</span>
             <input type="number" id="os-rounds" value="4" min="1" max="10" data-i18n-title="os.maxRoundsTitle" title="Round budget for dynamic (adaptive attacker) scenarios (1–10)." />
           </div>
-          <div class="os-ds-allnote" data-i18n="os.limitsNote">Datasets bigger than “Max scenarios” are randomly sampled. A run may execute at most 2000 rows including obfuscation variants.</div>
+          <div class="os-ds-allnote" data-i18n="os.limitsNote">Datasets bigger than “Max scenarios” are randomly sampled. A run may execute at most 100,000 rows including obfuscation variants.</div>
         </div>
       </details>
       <details class="os-strats" id="os-history" ontoggle="if(this.open)loadHistory()">
@@ -1783,7 +1783,7 @@
         'os.concurrencyTitle': 'Parallel scenario workers (1–16).',
         'os.maxRounds': 'Adaptive rounds',
         'os.maxRoundsTitle': 'Round budget for dynamic (adaptive attacker) scenarios (1–10).',
-        'os.limitsNote': 'Datasets bigger than “Max scenarios” are randomly sampled. A run may execute at most 2000 rows including obfuscation variants.',
+        'os.limitsNote': 'Datasets bigger than “Max scenarios” are randomly sampled. A run may execute at most 100,000 rows including obfuscation variants.',
         'judge.useSeparate': 'Use a separate judge model',
         'judge.hint': 'Grade attacks with a stronger model so a weak target isn\'t judging its own output. Used only by the one-shot judge.',
         'judge.modelPlaceholder': 'Judge model id',
@@ -2107,7 +2107,7 @@
         'os.concurrencyTitle': '並行執行的場景數（1–16）。',
         'os.maxRounds': '自適應回合',
         'os.maxRoundsTitle': '動態（自適應攻擊）場景的回合上限（1–10）。',
-        'os.limitsNote': '超過「場景數上限」的資料集會隨機抽樣。單次執行含混淆變體最多 2000 列。',
+        'os.limitsNote': '超過「場景數上限」的資料集會隨機抽樣。單次執行含混淆變體最多 100,000 列。',
         'judge.useSeparate': '使用獨立的評審模型',
         'judge.hint': '用更強的模型評判攻擊，避免弱模型評判自己的輸出。僅用於 one-shot 評審。',
         'judge.modelPlaceholder': '評審模型 id',
@@ -2496,7 +2496,7 @@
         'os.concurrencyTitle': '并行执行的场景数（1–16）。',
         'os.maxRounds': '自适应回合',
         'os.maxRoundsTitle': '动态（自适应攻击）场景的回合上限（1–10）。',
-        'os.limitsNote': '超过「场景数上限」的数据集会随机抽样。单次执行含混淆变体最多 2000 条。',
+        'os.limitsNote': '超过「场景数上限」的数据集会随机抽样。单次执行含混淆变体最多 100,000 条。',
         'judge.useSeparate': '使用独立的评审模型',
         'judge.hint': '用更强的模型评判攻击，避免弱模型评判自己的输出。仅用于 one-shot 评审。',
         'judge.modelPlaceholder': '评审模型 id',
@@ -2885,7 +2885,7 @@
         'os.concurrencyTitle': '並列実行するシナリオ数（1〜16）。',
         'os.maxRounds': '適応ラウンド',
         'os.maxRoundsTitle': '動的（適応型攻撃）シナリオのラウンド上限（1〜10）。',
-        'os.limitsNote': '「最大シナリオ数」を超えるデータセットはランダムにサンプリングされます。1回の実行は難読化バリアントを含め最大2000行です。',
+        'os.limitsNote': '「最大シナリオ数」を超えるデータセットはランダムにサンプリングされます。1回の実行は難読化バリアントを含め最大100,000行です。',
         'judge.useSeparate': '別の評価モデルを使用',
         'judge.hint': '弱いモデルが自身の出力を評価しないよう、より強力なモデルで攻撃を評価します。one-shot 評価のみで使用。',
         'judge.modelPlaceholder': '評価モデル id',
