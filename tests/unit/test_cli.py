@@ -87,8 +87,9 @@ def test_judge_config_requires_key_when_cloud(monkeypatch):
 
 
 def test_build_request_validation_error():
-    cfg = build_effective_config(_args(["--max-scenarios", "99999"]))
-    with pytest.raises(ConfigError):       # pydantic le=1000 → mapped to ConfigError
+    over = core.HARD_MAX_SCENARIOS + 1     # pydantic le=HARD_MAX_SCENARIOS → ConfigError
+    cfg = build_effective_config(_args(["--max-scenarios", str(over)]))
+    with pytest.raises(ConfigError):
         build_request(cfg)
 
 

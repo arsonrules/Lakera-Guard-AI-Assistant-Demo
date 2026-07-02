@@ -39,12 +39,16 @@ def test_multiple_datasets_are_concatenated(monkeypatch):
 
 
 def test_hard_row_cap_raises(monkeypatch):
-    big = {"slug": "big", "name": "Big", "source": "upload", "count": 400,
+    strats = list(STRATEGIES.keys())
+    # Enough base rows that base × (1 + strategies) exceeds the hard cap. Derive
+    # the size from the constant so the test tracks the cap instead of a literal.
+    n_base = main.HARD_MAX_ROWS // (1 + len(strats)) + 10
+    big = {"slug": "big", "name": "Big", "source": "upload", "count": n_base,
            "column": "prompt",
-           "rows": [{"prompt": f"attack {i}", "category": "x"} for i in range(400)]}
+           "rows": [{"prompt": f"attack {i}", "category": "x"} for i in range(n_base)]}
     monkeypatch.setitem(main._datasets, "big", big)
-    req = OneShotRequest(dataset="big", max_scenarios=1000,
-                         strategies=list(STRATEGIES.keys()))   # 400 × 7 = 2800 > 2000
+    req = OneShotRequest(dataset="big", max_scenarios=main.HARD_MAX_SCENARIOS,
+                         strategies=strats)
     with pytest.raises(HTTPException) as ei:
         _prepare_oneshot_rows(req)
     assert ei.value.status_code == 400
