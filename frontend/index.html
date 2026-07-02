@@ -77,13 +77,14 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-wrap: wrap;
       padding: 12px 24px;
       background: linear-gradient(180deg, #101A2E 0%, #0D1525 100%);
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
-      gap: 16px;
+      gap: 12px 16px;
     }
-    .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .brand { display: flex; align-items: center; gap: 11px; flex-shrink: 0; }
     /* White chip so the Check Point logo (pink + black on white) reads correctly
        against the dark console header. */
     .brand-mark {
@@ -113,7 +114,7 @@
       white-space: nowrap;
     }
 
-    .header-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .header-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
     .doc-toggle { display: flex; align-items: center; gap: 8px; }
     .doc-toggle > span {
       font-family: 'Lexend', sans-serif;
@@ -132,6 +133,7 @@
       font-family: 'Lexend', sans-serif;
       font-size: 0.74rem; font-weight: 600;
       letter-spacing: 0.04em; text-transform: uppercase;
+      white-space: nowrap;
       cursor: pointer;
       border-radius: var(--radius-sm);
       transition: background 0.15s var(--ease), border-color 0.15s var(--ease), color 0.15s var(--ease), transform 0.08s var(--ease);
@@ -354,7 +356,9 @@
     .cat-pill.attack.active { background: var(--block-bg); color: var(--block); border-color: var(--block-br); }
 
     /* Scenario buttons */
-    #scenario-buttons { display: flex; gap: 8px; }
+    #scenario-buttons { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+    /* While a message is in flight, scenario triggers are inert — show it. */
+    body.busy .scenario-btn { opacity: 0.55; pointer-events: none; }
     .scenario-btn {
       padding: 5px 12px;
       border: 1px solid var(--border);
@@ -401,8 +405,17 @@
       padding: 11px 15px;
       font-size: 0.92rem; line-height: 1.55;
       word-break: break-word;
+      white-space: pre-wrap;
       position: relative;
       border: 1px solid var(--border);
+    }
+    .message code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85em;
+      background: rgba(129,140,248,0.10);
+      border: 1px solid var(--border-soft);
+      border-radius: 4px;
+      padding: 0 4px;
     }
     .message.user {
       background: var(--user-bubble);
@@ -691,6 +704,8 @@
     .llm-grid select option { background: var(--panel); color: var(--text); }
     .llm-hint { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--muted); grid-column: 2; margin-top: -4px; }
     .llm-model-cell { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+    /* Inputs sharing a row with a button must shrink instead of forcing a wrap. */
+    .llm-model-cell input { flex: 1 1 200px; width: auto; min-width: 0; }
     .llm-model-cell #llm-model { flex: 1 1 200px; min-width: 0; }
     .llm-model-cell #llm-model-select { flex: 0 1 210px; max-width: 240px; }
     .llm-model-cell .sp-btn { flex: 0 0 auto; }
@@ -1078,7 +1093,10 @@
     @media (max-width: 640px) {
       header { flex-direction: column; align-items: stretch; gap: 11px; }
       .brand-text h1 { white-space: normal; }
-      .header-controls { width: 100%; }
+      .header-controls { width: 100%; gap: 8px; }
+      .header-controls > * { flex: 1 1 auto; }
+      .ctl { padding: 6px 9px; font-size: 0.7rem; justify-content: center; }
+      #lang-select { width: 100%; }
       .doc-toggle { flex: 1; }
       .doc-toggle > span { display: none; }
       #sp-mode-badge, #doc-mode-btn, #custom-docs-btn { flex: 1; justify-content: center; }
@@ -1315,10 +1333,8 @@
       <svg class="ic"><use href="#i-shield-off"></use></svg>
       <span data-i18n="guard.offBanner">Lakera Guard is OFF — messages go straight to the model, unscanned.</span>
     </div>
-    <div class="messages" id="messages">
-      <div class="message assistant">
-        <span data-i18n="chat.greeting">Hi! I'm ShopEase's AI customer service assistant. How can I help you today?</span>
-      </div>
+    <div class="messages" id="messages" role="log" aria-live="polite">
+      <div class="message assistant"><span data-i18n="chat.greeting">Hi! I'm ShopEase's AI customer service assistant. How can I help you today?</span></div>
     </div>
     <div class="chat-input-row">
       <textarea id="chat-input" rows="2" data-i18n-placeholder="chat.placeholder" placeholder="Type a message or pick a scenario above…"></textarea>
@@ -3103,6 +3119,11 @@
     updateGuardToggle();
     updateDocModeBtn(currentDocMode);
     if (currentLlmCfg) updateLlmBadge(currentLlmCfg);
+    // Pill tooltips carry the translated category names — refresh them too.
+    allCategories.forEach(c => {
+      const pill = document.getElementById(`cat-pill-${c.id}`);
+      if (pill) pill.title = (c.owaspId ? `${c.owaspId} — ` : '') + catName(c);
+    });
     if (currentCategory) selectCategory(currentCategory);
     if (currentScenario && document.getElementById('scenario-info-card').style.display !== 'none') {
       showScenarioInfo(currentScenario);
@@ -3143,6 +3164,7 @@
       pill.id = `cat-pill-${cat.id}`;
       pill.textContent = cat.label;
       pill.title = (cat.owaspId ? `${cat.owaspId} — ` : '') + catName(cat);
+      pill.setAttribute('aria-pressed', 'false');
       pill.onclick = () => selectCategory(cat);
       pillsContainer.appendChild(pill);
     });
@@ -3154,7 +3176,10 @@
     currentCategory = cat;
     allCategories.forEach(c => {
       const pill = document.getElementById(`cat-pill-${c.id}`);
-      if (pill) pill.classList.toggle('active', c.id === cat.id);
+      if (pill) {
+        pill.classList.toggle('active', c.id === cat.id);
+        pill.setAttribute('aria-pressed', String(c.id === cat.id));
+      }
     });
 
     const container = document.getElementById('scenario-buttons');
@@ -3532,6 +3557,7 @@
     if (isBusy) return;
     isBusy = true;
     document.getElementById('send-btn').disabled = true;
+    document.body.classList.add('busy');
 
     appendMessage('user', message, false);
     resetInspector();
@@ -3562,6 +3588,7 @@
     } finally {
       isBusy = false;
       document.getElementById('send-btn').disabled = false;
+      document.body.classList.remove('busy');
     }
   }
 
@@ -3576,7 +3603,15 @@
       div.appendChild(badge);
     }
     const p = document.createElement('span');
-    p.textContent = text;
+    if (role === 'assistant') {
+      // LLM replies often carry light markdown. Render just bold + inline code,
+      // HTML-escaping first so model output can never inject markup.
+      p.innerHTML = esc(text)
+        .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+        .replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    } else {
+      p.textContent = text;
+    }
     div.appendChild(p);
     document.getElementById('messages').appendChild(div);
     div.scrollIntoView({ behavior: 'smooth' });
@@ -4184,19 +4219,40 @@
   }
 
   // ── One-shot batch testing ──────────────────────────────────────────────
+  let _osLastFocus = null;
   function openOneShot() {
+    _osLastFocus = document.activeElement;   // remember focus to restore on close
     loadDatasets();   // refresh imported datasets → also rebuilds scope options
     buildScopeOptions();
-    document.getElementById('oneshot-overlay').classList.add('open');
+    const overlay = document.getElementById('oneshot-overlay');
+    overlay.classList.add('open');
+    // Move focus into the dialog for keyboard / screen-reader users.
+    const close = overlay.querySelector('.modal-close');
+    if (close) close.focus();
   }
   function closeOneShot() {
     document.getElementById('oneshot-overlay').classList.remove('open');
+    // Return focus to whatever opened the modal (typically the One-Shot button).
+    if (_osLastFocus && typeof _osLastFocus.focus === 'function') _osLastFocus.focus();
+    _osLastFocus = null;
+  }
+  // Close any open header panel (system prompt / LLM settings / custom docs).
+  function closeAllPanels() {
+    if (spPanelOpen) toggleSpPanel();
+    if (llmPanelOpen) toggleLlmPanel();
+    if (cdocsPanelOpen) toggleCustomDocsPanel();
   }
   document.getElementById('oneshot-overlay').addEventListener('click', e => {
     if (e.target.id === 'oneshot-overlay') closeOneShot();
   });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeOneShot();
+    if (e.key !== 'Escape') return;
+    // Escape closes the modal first if open, otherwise any open side panel.
+    if (document.getElementById('oneshot-overlay').classList.contains('open')) {
+      closeOneShot();
+    } else {
+      closeAllPanels();
+    }
   });
 
   function buildScopeOptions() {
@@ -4860,7 +4916,7 @@
       const evadedFlag = r.evaded
         ? `<span class="os-evaded-flag">${icon('alert-triangle')}${esc(t('os.evaded'))}</span>` : '';
       const rowCls = 'os-row' + (r.strategy ? ' variant' : '') + (r.evaded ? ' evaded' : '');
-      html += `<tr class="${rowCls}" id="osr-${i}" onclick="toggleOsDetail(${i})" title="${esc(t('os.revealHint'))}">`
+      html += `<tr class="${rowCls}" id="osr-${i}" tabindex="0" role="button" aria-expanded="false" aria-controls="osd-${i}" onclick="toggleOsDetail(${i})" onkeydown="osRowKey(event, ${i})" title="${esc(t('os.revealHint'))}">`
         + `<td><span class="os-caret">▸</span> ${esc(r.label)}<br><span class="mono">${esc(r.id)}</span></td>`
         + `<td>${owasp}</td>`
         + (strat ? `<td>${variantCell}</td>` : '')
@@ -5013,6 +5069,16 @@
     const open = det.style.display === 'none';
     det.style.display = open ? '' : 'none';
     row.classList.toggle('open', open);
+    row.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  // Keyboard activation for the expandable result rows (Enter / Space), so the
+  // reveal panel isn't mouse-only.
+  function osRowKey(e, i) {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+      e.preventDefault();
+      toggleOsDetail(i);
+    }
   }
 
   // ── Report generation ───────────────────────────────────────────────────
