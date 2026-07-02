@@ -1235,6 +1235,9 @@
       <label for="lakera-project" data-i18n="llm.lakeraProject">Lakera Project ID</label>
       <input type="text" id="lakera-project" spellcheck="false" autocomplete="off" data-i18n-placeholder="llm.lakeraProjectPlaceholder" placeholder="Optional — selects a project's Guard policy" />
 
+      <label for="lakera-endpoint" data-i18n="llm.lakeraEndpoint">Guard Region</label>
+      <select id="lakera-endpoint" aria-label="Lakera Guard region" onchange="saveLakeraEndpoint()"></select>
+
       <label for="llm-provider" data-i18n="llm.provider">Provider</label>
       <select id="llm-provider" onchange="onLlmProviderChange()"></select>
 
@@ -1653,6 +1656,8 @@
         'llm.setKey': 'Set key',
         'llm.lakeraNeeded': 'Set your Lakera Guard API key to run the checkpoints.',
         'llm.lakeraSaved': 'Lakera Guard key saved',
+        'llm.lakeraEndpoint': 'Guard Region',
+        'llm.lakeraRegionSaved': 'Guard region set — {region}',
         'llm.saveEnv': 'Save to .env',
         'llm.saveEnvTitle': 'Write the current keys + provider to .env so they load on next start',
         'llm.savingEnv': 'Saving to .env…',
@@ -1977,6 +1982,8 @@
         'llm.setKey': '設定金鑰',
         'llm.lakeraNeeded': '請設定 Lakera Guard API 金鑰以執行檢查點。',
         'llm.lakeraSaved': '已儲存 Lakera Guard 金鑰',
+        'llm.lakeraEndpoint': 'Guard 區域',
+        'llm.lakeraRegionSaved': '已設定 Guard 區域 — {region}',
         'llm.saveEnv': '儲存到 .env',
         'llm.saveEnvTitle': '將目前的金鑰與供應商寫入 .env，下次啟動自動載入',
         'llm.savingEnv': '正在儲存到 .env…',
@@ -2366,6 +2373,8 @@
         'llm.setKey': '设置密钥',
         'llm.lakeraNeeded': '请设置 Lakera Guard API 密钥以运行检查点。',
         'llm.lakeraSaved': '已保存 Lakera Guard 密钥',
+        'llm.lakeraEndpoint': 'Guard 区域',
+        'llm.lakeraRegionSaved': '已设置 Guard 区域 — {region}',
         'llm.saveEnv': '保存到 .env',
         'llm.saveEnvTitle': '将当前密钥与供应商写入 .env，下次启动自动加载',
         'llm.savingEnv': '正在保存到 .env…',
@@ -2755,6 +2764,8 @@
         'llm.setKey': 'キーを設定',
         'llm.lakeraNeeded': 'チェックポイントを実行するには Lakera Guard API キーを設定してください。',
         'llm.lakeraSaved': 'Lakera Guard キーを保存しました',
+        'llm.lakeraEndpoint': 'Guard リージョン',
+        'llm.lakeraRegionSaved': 'Guard リージョンを設定しました — {region}',
         'llm.saveEnv': '.env に保存',
         'llm.saveEnvTitle': '現在のキーとプロバイダーを .env に書き込み、次回起動時に読み込み',
         'llm.savingEnv': '.env に保存中…',
@@ -3760,8 +3771,47 @@
         : t('llm.lakeraPlaceholder');
       const proj = document.getElementById('lakera-project');
       if (proj) proj.value = d.project_id || '';   // not secret → prefill it
+      const sel = document.getElementById('lakera-endpoint');
+      if (sel && Array.isArray(d.regions)) {
+        // Build the region list once; keep the current selection in sync.
+        if (!sel.options.length) {
+          d.regions.forEach(r => {
+            const opt = document.createElement('option');
+            opt.value = r.url;
+            opt.textContent = `${r.label} — ${r.url.replace(/^https?:\/\//, '')}`;
+            sel.appendChild(opt);
+          });
+        }
+        // If the stored endpoint isn't a known region (custom .env value), add it.
+        if (d.endpoint && ![...sel.options].some(o => o.value === d.endpoint)) {
+          const opt = document.createElement('option');
+          opt.value = d.endpoint;
+          opt.textContent = `Custom — ${d.endpoint.replace(/^https?:\/\//, '')}`;
+          sel.appendChild(opt);
+        }
+        if (d.endpoint) sel.value = d.endpoint;
+      }
       updateKeysBadge();
     } catch { /* ignore */ }
+  }
+
+  // Region change applies immediately — it needs no key and isn't secret.
+  async function saveLakeraEndpoint() {
+    const sel = document.getElementById('lakera-endpoint');
+    if (!sel) return;
+    showLlmStatus('loading', t('llm.saving'));
+    try {
+      const res = await fetch(API + '/api/lakera-config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: sel.value }),
+      });
+      const d = await res.json();
+      if (!res.ok) { showLlmStatus('error', d.detail || t('llm.saveFailed')); return; }
+      const label = sel.options[sel.selectedIndex]?.textContent || sel.value;
+      showLlmStatus('success', t('llm.lakeraRegionSaved', { region: label }));
+    } catch (err) {
+      showLlmStatus('error', t('llm.saveFailed') + ' — ' + err.message);
+    }
   }
 
   async function saveLakeraKey() {

@@ -196,6 +196,8 @@ keys below seed the *startup* config; the UI is the source of truth at runtime.
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `LAKERA_GUARD_API_KEY` | No* | — | Lakera Guard key for all checkpoint scans (*required to run scans — set here or in the UI) |
+| `LAKERA_PROJECT_ID` | No | — | Optional project id sent with every Guard call to apply that project's policy |
+| `LAKERA_ENDPOINT` | No | Community (`api.lakera.ai`) | Guard region — a region host (e.g. `https://eu-west-1.api.lakera.ai`) or full URL; also selectable in the UI |
 | `LLM_PROVIDER` | No | `openrouter` | Startup provider: `openrouter`, `lmstudio`, `ollama`, `omlx`, or `custom` |
 | `LLM_BASE_URL` | No | preset per provider | OpenAI-compatible base URL (blank → provider preset) |
 | `LLM_MODEL` | No | preset per provider | Model id to request |
@@ -806,8 +808,8 @@ AI assistant demo/
 | `POST` | `/api/datasets/import-hf` | Import a public HuggingFace dataset (`dataset_id`, optional `config`/`split`/`column`/`limit`) |
 | `POST` | `/api/datasets/upload` | Upload a `.csv` / `.json` / `.jsonl` / `.txt` dataset (multipart) |
 | `DELETE` | `/api/datasets/{slug}` | Delete an imported dataset |
-| `GET` | `/api/lakera-config` | Whether the Lakera Guard key is set (masked) + the project id |
-| `POST` | `/api/lakera-config` | Set the Lakera Guard key and/or **project id** (null field = keep) |
+| `GET` | `/api/lakera-config` | Whether the Lakera Guard key is set (masked), the project id, the current Guard region endpoint + selectable regions |
+| `POST` | `/api/lakera-config` | Set the Lakera Guard key, **project id**, and/or **Guard region endpoint** (null field = keep) |
 | `POST` | `/api/config/save-env` | Persist the current keys + LLM provider to `.env` |
 
 ---

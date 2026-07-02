@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lakera_demo")
 
-from backend import assertions, attacker, chat, datasets, history, judge, llm, rag, report, strategies, tools
+from backend import assertions, attacker, chat, datasets, history, judge, lakera, llm, rag, report, strategies, tools
 from backend.config import ENV_PATH, settings
 from backend.llm import SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT
 from backend.scenarios import CATEGORIES
@@ -107,6 +107,9 @@ def _effective_judge_config() -> dict:
 _lakera_key: str = settings.lakera_guard_api_key or ""
 # Optional Lakera project id — sent with every Guard call to select that project's policy.
 _lakera_project_id: str = settings.lakera_project_id or ""
+# Regional Guard endpoint (seeded from .env; the source of truth lives in the
+# lakera module, so every checkpoint call picks it up without threading).
+lakera.set_endpoint(settings.lakera_endpoint)
 
 # Imported external attack datasets (HuggingFace / uploaded), keyed by slug.
 # Each value: {slug, name, source, count, column, rows:[{prompt, category}]}.
@@ -438,6 +441,9 @@ class LakeraKeyRequest(BaseModel):
     api_key: str | None = Field(default=None, max_length=400)
     # null → keep the stored project id; a string sets it ("" clears it).
     project_id: str | None = Field(default=None, max_length=200)
+    # null → keep the current endpoint; a string sets it (a region host or full
+    # URL; "" resets to the Community default).
+    endpoint: str | None = Field(default=None, max_length=300)
 
 
 class HFImportRequest(BaseModel):
@@ -645,7 +651,9 @@ async def api_set_judge_config(req: JudgeConfigRequest):
 @app.get("/api/lakera-config")
 async def api_get_lakera_config():
     return {"api_key_set": bool(_lakera_key), "api_key_masked": _mask(_lakera_key),
-            "project_id": _lakera_project_id}
+            "project_id": _lakera_project_id,
+            "endpoint": lakera.current_endpoint(),
+            "regions": lakera.REGIONS}
 
 
 @app.post("/api/lakera-config")
@@ -657,10 +665,16 @@ async def api_set_lakera_config(req: LakeraKeyRequest):
         _lakera_key = _clean(req.api_key)
     if req.project_id is not None:
         _lakera_project_id = _clean(req.project_id)
+    if req.endpoint is not None:
+        try:
+            lakera.set_endpoint(_clean(req.endpoint))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
     return {
         "api_key_set": bool(_lakera_key),
         "api_key_masked": _mask(_lakera_key),
         "project_id": _lakera_project_id,
+        "endpoint": lakera.current_endpoint(),
         "message": "Lakera Guard configuration updated.",
     }
 
@@ -694,6 +708,7 @@ async def api_save_env():
     values = {
         "LAKERA_GUARD_API_KEY": _lakera_key,
         "LAKERA_PROJECT_ID": _lakera_project_id,
+        "LAKERA_ENDPOINT": lakera.current_endpoint(),
         "LLM_PROVIDER": _llm_config.get("provider", ""),
         "LLM_BASE_URL": _llm_config.get("base_url", ""),
         "LLM_MODEL": _llm_config.get("model", ""),

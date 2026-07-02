@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     lakera_guard_api_key: str = ""
     # Optional Lakera project id — selects that project's Guard policy when set.
     lakera_project_id: str = ""
+    # Regional Guard endpoint. Blank → the Community default (api.lakera.ai).
+    # Accepts a region host (e.g. https://eu-west-1.api.lakera.ai) or full URL.
+    lakera_endpoint: str = ""
 
     # ── LLM provider (OpenAI-compatible Chat Completions) ─────────────────────
     # `llm_provider` selects a preset (openrouter | lmstudio | ollama | omlx | custom).
