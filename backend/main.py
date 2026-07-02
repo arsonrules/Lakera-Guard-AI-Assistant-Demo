@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import json
 import logging
 import pathlib
@@ -136,6 +137,40 @@ def _clean(value: str | None) -> str:
     (b) HTTP header injection when the value is placed in an Authorization header.
     """
     return _CTRL_CHARS.sub("", (value or "").strip())
+
+
+# Hostnames that resolve to a cloud instance-metadata service. Reaching these
+# from a server-side fetch is the classic SSRF credential-theft vector.
+_METADATA_HOSTS = {
+    "metadata.google.internal", "metadata.goog",
+    "instance-data", "instance-data.ec2.internal",
+}
+
+
+def _reject_metadata_url(base_url: str) -> None:
+    """
+    Defense-in-depth for the operator-supplied LLM/judge base URL, which the
+    server fetches. Reject link-local / cloud-metadata endpoints (e.g.
+    169.254.169.254, fd00:ec2::254, metadata.google.internal) that serve no
+    legitimate purpose here — this blocks the direct-IP SSRF vector used to
+    steal instance credentials. Loopback and private LAN addresses stay allowed
+    because local/on-prem LLM servers are a first-class feature. This checks the
+    URL as written and does not resolve DNS, so it is not a defense against DNS
+    rebinding — run the demo in a trusted network, as the README notes.
+    """
+    host = (urllib.parse.urlsplit(base_url).hostname or "").strip().lower().rstrip(".")
+    if not host:
+        return
+    if host in _METADATA_HOSTS:
+        raise HTTPException(400, "This host is not allowed (cloud metadata endpoint).")
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return  # a normal hostname — allowed (DNS is resolved by httpx at call time)
+    # 169.254.0.0/16 (incl. AWS/Azure/GCP metadata 169.254.169.254) and IPv6
+    # link-local fe80::/10; also the AWS IPv6 metadata address.
+    if ip.is_link_local or ip == ipaddress.ip_address("fd00:ec2::254"):
+        raise HTTPException(400, "This host is not allowed (link-local / metadata address).")
 
 
 def _public_llm_config() -> dict:
@@ -294,6 +329,15 @@ async def security_middleware(request: Request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
+    # Isolate the origin and drop access to powerful browser features the demo
+    # never uses (defense-in-depth against a hijacked tab / dependency).
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "geolocation=(), microphone=(), camera=(), usb=(), payment=(), "
+        "accelerometer=(), gyroscope=(), magnetometer=()",
+    )
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self' 'unsafe-inline'; "
@@ -508,6 +552,7 @@ async def api_set_llm_config(req: LLMConfigRequest):
         raise HTTPException(400, "A base URL is required for this provider.")
     if not re.match(r"^https?://", base_url):
         raise HTTPException(400, "Base URL must start with http:// or https://")
+    _reject_metadata_url(base_url)
 
     model = _clean(req.model) or p["default_model"]
     if not model:
@@ -541,6 +586,7 @@ async def api_test_llm_config(req: LLMConfigRequest):
     base_url = _clean(req.base_url) or p["base_url"]
     if not re.match(r"^https?://", base_url or ""):
         raise HTTPException(400, "Base URL must start with http:// or https://")
+    _reject_metadata_url(base_url)
     model = _clean(req.model) or p["default_model"]
     api_key = _resolve_api_key(req.provider, req.api_key)
 
@@ -574,6 +620,7 @@ async def api_set_judge_config(req: JudgeConfigRequest):
     base_url = _clean(req.base_url) or p["base_url"]
     if not re.match(r"^https?://", base_url or ""):
         raise HTTPException(400, "Base URL must start with http:// or https://")
+    _reject_metadata_url(base_url)
     model = _clean(req.model) or p["default_model"]
     if not model:
         raise HTTPException(400, f"A model id is required for {p['label']}.")
