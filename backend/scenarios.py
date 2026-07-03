@@ -789,3 +789,42 @@ CATEGORIES = [
         ],
     },
 ]
+
+
+import copy
+
+from backend.scenarios_i18n import PROMPTS as _PROMPT_I18N
+
+
+def localized_categories(lang: str | None) -> list[dict]:
+    """
+    Return the catalogue with each scenario's prompt-bearing fields (prompt /
+    simulateOutput / turns / goal) swapped for the requested language. English
+    (or an unknown language) returns the catalogue unchanged.
+
+    The two large payload prompts (LLM10-05's repeated log, AGT-04's lorem
+    filler) only translate their natural-language lead/intro/directive; the bulk
+    payload is spliced back in from the English source so it is never duplicated.
+    """
+    table = _PROMPT_I18N.get(lang or "")
+    if not table:
+        return CATEGORIES
+    cats = copy.deepcopy(CATEGORIES)
+    for cat in cats:
+        for s in cat["scenarios"]:
+            tr = table.get(s["id"])
+            if not tr:
+                continue
+            for key in ("prompt", "simulateOutput", "turns", "goal"):
+                if key in tr:
+                    s[key] = tr[key]
+            # LLM10-05: translated lead + original repeated-log payload.
+            if "prompt_lead" in tr and s.get("prompt"):
+                _, _, payload = s["prompt"].partition("\n\n")
+                s["prompt"] = tr["prompt_lead"] + "\n\n" + payload
+            # AGT-04: translated intro + original lorem filler + translated directive.
+            if "prompt_intro" in tr and s.get("prompt"):
+                parts = s["prompt"].split("\n\n")
+                filler = parts[1] if len(parts) > 1 else ""
+                s["prompt"] = tr["prompt_intro"] + "\n\n" + filler + "\n\n" + tr["prompt_directive"]
+    return cats
