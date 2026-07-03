@@ -20,6 +20,14 @@ def _cp_flags(checkpoints: dict | None) -> dict:
     return {"cp1": True, "cp2": True, "cp3": True, **(checkpoints or {})}
 
 
+def _cp_projects(project_id: str, overrides: dict | None) -> dict:
+    """Resolve the Lakera Project ID each checkpoint scans under. A per-checkpoint
+    override (when given) wins; otherwise the checkpoint uses the run-level
+    `project_id`. Lets one run route CP1/CP2/CP3 to different Guard policies."""
+    o = overrides or {}
+    return {c: o.get(c, project_id) for c in ("cp1", "cp2", "cp3")}
+
+
 async def scan_system_prompt(text: str, lakera_key: str, lakera_project_id: str = "") -> dict:
     """
     CP0: run Lakera Guard on a candidate system prompt before it is activated.
@@ -125,19 +133,21 @@ async def process(
     lakera_key: str = "",
     lakera_project_id: str = "",
     checkpoints: dict | None = None,
+    checkpoint_projects: dict | None = None,
 ) -> dict:
     if not lakera_key:
         raise LakeraNotConfigured()
     # Per-checkpoint enablement (all on by default). A disabled checkpoint is
     # skipped so the demo can show what gets through without that protection.
     cp = _cp_flags(checkpoints)
+    proj = _cp_projects(lakera_project_id, checkpoint_projects)
     trace = _empty_trace()
 
     # ── Checkpoint 1: user input ────────────────────────────────────────────
     if not cp["cp1"]:
         trace["cp1"]["status"] = "disabled"
     else:
-        cp1 = await lakera.check(message, lakera_key, lakera_project_id)
+        cp1 = await lakera.check(message, lakera_key, proj["cp1"])
         trace["cp1"]["latency_ms"] = cp1["latency_ms"]
 
         if lakera.is_flagged(cp1):
@@ -168,7 +178,7 @@ async def process(
         all_cp2_categories: list[str] = []
 
         for doc in docs:
-            cp2 = await lakera.check(doc["content"], lakera_key, lakera_project_id)
+            cp2 = await lakera.check(doc["content"], lakera_key, proj["cp2"])
             cp2_latency += cp2["latency_ms"]
             if lakera.is_flagged(cp2):
                 flagged_names.append(doc["filename"])
@@ -199,7 +209,7 @@ async def process(
     if not cp["cp3"]:
         trace["cp3"]["status"] = "disabled"
     else:
-        cp3 = await lakera.check(response_text, lakera_key, lakera_project_id)
+        cp3 = await lakera.check(response_text, lakera_key, proj["cp3"])
         trace["cp3"]["latency_ms"] = cp3["latency_ms"]
 
         if lakera.is_flagged(cp3):
@@ -245,16 +255,18 @@ async def process_agentic(
     lakera_key: str = "",
     lakera_project_id: str = "",
     checkpoints: dict | None = None,
+    checkpoint_projects: dict | None = None,
 ) -> dict:
     if not lakera_key:
         raise LakeraNotConfigured()
     cp = _cp_flags(checkpoints)
+    proj = _cp_projects(lakera_project_id, checkpoint_projects)
     trace = _empty_trace()
 
     if not cp["cp1"]:
         trace["cp1"]["status"] = "disabled"
     else:
-        cp1 = await lakera.check(message, lakera_key, lakera_project_id)
+        cp1 = await lakera.check(message, lakera_key, proj["cp1"])
         trace["cp1"]["latency_ms"] = cp1["latency_ms"]
         if lakera.is_flagged(cp1):
             trace["cp1"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp1))
@@ -271,7 +283,7 @@ async def process_agentic(
     else:
         clean, flagged_names, passed_names, cp2_lat = [], [], [], 0
         for doc in docs:
-            cp2 = await lakera.check(doc["content"], lakera_key, lakera_project_id)
+            cp2 = await lakera.check(doc["content"], lakera_key, proj["cp2"])
             cp2_lat += cp2["latency_ms"]
             (flagged_names if lakera.is_flagged(cp2) else passed_names).append(doc["filename"])
             if not lakera.is_flagged(cp2):
@@ -294,7 +306,7 @@ async def process_agentic(
     if not cp["cp3"]:
         trace["cp3"]["status"] = "disabled"
     else:
-        cp3 = await lakera.check(content or "", lakera_key, lakera_project_id)
+        cp3 = await lakera.check(content or "", lakera_key, proj["cp3"])
         trace["cp3"]["latency_ms"] = cp3["latency_ms"]
         if lakera.is_flagged(cp3):
             trace["cp3"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp3))
@@ -331,12 +343,14 @@ async def process_multiturn(
     lakera_key: str = "",
     lakera_project_id: str = "",
     checkpoints: dict | None = None,
+    checkpoint_projects: dict | None = None,
 ) -> dict:
     """Run a multi-turn conversation through the full guard pipeline, turn by turn.
     A disabled checkpoint is skipped on every turn."""
     if not lakera_key:
         raise LakeraNotConfigured()
     cp = _cp_flags(checkpoints)
+    proj = _cp_projects(lakera_project_id, checkpoint_projects)
     trace = _empty_trace()
     turn_log: list[dict] = []
     cp1_lat = cp2_lat = cp3_lat = 0
@@ -346,7 +360,7 @@ async def process_multiturn(
 
     for i, user_turn in enumerate(turns, 1):
         if cp["cp1"]:
-            cp1 = await lakera.check(user_turn, lakera_key, lakera_project_id)
+            cp1 = await lakera.check(user_turn, lakera_key, proj["cp1"])
             cp1_lat += cp1["latency_ms"]
             if lakera.is_flagged(cp1):
                 trace["cp1"].update(status="blocked", flagged=True,
@@ -366,7 +380,7 @@ async def process_multiturn(
             if not cp["cp2"]:
                 clean.append(d["content"])          # unredacted — CP2 off
                 continue
-            cp2 = await lakera.check(d["content"], lakera_key, lakera_project_id)
+            cp2 = await lakera.check(d["content"], lakera_key, proj["cp2"])
             cp2_lat += cp2["latency_ms"]
             if not lakera.is_flagged(cp2):
                 clean.append(d["content"])
@@ -375,7 +389,7 @@ async def process_multiturn(
         resp = await _llm_with_history(history, clean, system_prompt, llm_config)
 
         if cp["cp3"]:
-            cp3 = await lakera.check(resp, lakera_key, lakera_project_id)
+            cp3 = await lakera.check(resp, lakera_key, proj["cp3"])
             cp3_lat += cp3["latency_ms"]
             if lakera.is_flagged(cp3):
                 trace["cp3"].update(status="blocked", flagged=True,

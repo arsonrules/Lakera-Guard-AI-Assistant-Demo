@@ -871,6 +871,9 @@
     .os-ds-label { font-family: 'Lexend', sans-serif; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); flex-basis: 100%; }
     .os-ds-panel input[type=text] { flex: 1 1 160px; min-width: 0; padding: 7px 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; border-radius: var(--radius-sm); }
     .os-ds-panel input[type=number] { width: 64px; padding: 7px 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; border-radius: var(--radius-sm); }
+    /* Per-checkpoint project boxes: three share a row, so keep them compact. */
+    .os-ds-panel input.os-proj-cp { flex: 1 1 120px; font-size: 0.74rem; }
+    .os-ds-panel input.os-proj-cp:not(:placeholder-shown) { border-color: var(--brand-br); }
     .os-ds-examples { display: flex; align-items: center; gap: 8px; font-size: 0.74rem; color: var(--muted); margin-bottom: 10px; }
     .os-ds-list { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
     .os-ds-item { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
@@ -1097,6 +1100,7 @@
     .os-runcfg-item { margin-bottom: 10px; }
     .os-runcfg-item h4 { font-family: 'Lexend', sans-serif; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--heading); margin-bottom: 5px; }
     .os-runcfg-tag { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 0.66rem; padding: 2px 8px; border: 1px solid; border-radius: 999px; margin-bottom: 5px; }
+    .os-runcfg-cp { margin-top: 4px; }
     .os-runcfg-tag.used { color: var(--pass); border-color: var(--pass-br); background: var(--pass-bg); }
     .os-runcfg-tag.none { color: var(--skip); border-color: var(--skip-br); background: var(--skip-bg); }
     .os-runcfg pre { font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; line-height: 1.5; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; margin: 4px 0 0; }
@@ -1640,7 +1644,13 @@
             <input type="text" id="os-proj-id" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.placeholder" placeholder="Default from Settings" />
             <button class="sp-btn" onclick="resetOsProj()" data-i18n="osproj.reset">Default</button>
           </div>
-          <div class="os-ds-allnote" data-i18n="osproj.hint">Optional — selects that project's Guard policy for this run only. Pre-filled from Settings; edit to override, clear for no project.</div>
+          <div class="os-ds-row">
+            <span class="os-ds-label" data-i18n="osproj.perCp">Per-checkpoint override (optional)</span>
+            <input type="text" id="os-proj-cp1" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp1Placeholder" placeholder="CP1 — input" />
+            <input type="text" id="os-proj-cp2" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp2Placeholder" placeholder="CP2 — RAG" />
+            <input type="text" id="os-proj-cp3" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp3Placeholder" placeholder="CP3 — output" />
+          </div>
+          <div class="os-ds-allnote" data-i18n="osproj.hint">Optional — selects that project's Guard policy for this run only. The run-level ID is pre-filled from Settings; a per-checkpoint box (blank = inherit the run-level ID) routes that checkpoint to a different project. Clear all for no project.</div>
         </div>
       </details>
       <button class="sp-btn primary" id="os-run-btn" onclick="runOneShot()"><svg class="ic"><use href="#i-play"></use></svg> <span data-i18n="os.run">Run Test</span></button>
@@ -1885,7 +1895,11 @@
         'osproj.label': 'Lakera Project ID for this run',
         'osproj.placeholder': 'Default from Settings',
         'osproj.reset': 'Default',
-        'osproj.hint': "Optional — selects that project's Guard policy for this run only. Pre-filled from Settings; edit to override, clear for no project.",
+        'osproj.hint': "Optional — selects that project's Guard policy for this run only. The run-level ID is pre-filled from Settings; a per-checkpoint box (blank = inherit the run-level ID) routes that checkpoint to a different project. Clear all for no project.",
+        'osproj.perCp': 'Per-checkpoint override (optional)',
+        'osproj.cp1Placeholder': 'CP1 — input',
+        'osproj.cp2Placeholder': 'CP2 — RAG',
+        'osproj.cp3Placeholder': 'CP3 — output',
         'os.rcUsed': 'Used',
         'os.rcNoSp': 'Not used — no system prompt for this run',
         'os.rcNoKb': 'Not used — no RAG file for this run',
@@ -2250,7 +2264,11 @@
         'osproj.label': '本次執行的 Lakera 專案 ID',
         'osproj.placeholder': '預設取自設定',
         'osproj.reset': '預設',
-        'osproj.hint': '選填 — 僅為本次執行選擇該專案的 Guard 政策。預先帶入設定值；可修改以覆寫，或清空表示不使用專案。',
+        'osproj.hint': '選填 — 僅為本次執行選擇該專案的 Guard 政策。執行層級 ID 預先帶入設定值；各檢查點欄位（留空＝沿用執行層級 ID）可將該檢查點導向不同專案。全部清空表示不使用專案。',
+        'osproj.perCp': '各檢查點覆寫（選填）',
+        'osproj.cp1Placeholder': 'CP1 — 輸入',
+        'osproj.cp2Placeholder': 'CP2 — RAG',
+        'osproj.cp3Placeholder': 'CP3 — 輸出',
         'os.rcUsed': '已使用',
         'os.rcNoSp': '未使用 — 本次執行沒有系統提示詞',
         'os.rcNoKb': '未使用 — 本次執行沒有 RAG 檔案',
@@ -2680,7 +2698,11 @@
         'osproj.label': '本次运行的 Lakera 项目 ID',
         'osproj.placeholder': '默认取自设置',
         'osproj.reset': '默认',
-        'osproj.hint': '选填 — 仅为本次运行选择该项目的 Guard 策略。预先带入设置值；可修改以覆盖，或清空表示不使用项目。',
+        'osproj.hint': '选填 — 仅为本次运行选择该项目的 Guard 策略。运行级 ID 预先带入设置值；各检查点字段（留空＝沿用运行级 ID）可将该检查点导向不同项目。全部清空表示不使用项目。',
+        'osproj.perCp': '各检查点覆盖（选填）',
+        'osproj.cp1Placeholder': 'CP1 — 输入',
+        'osproj.cp2Placeholder': 'CP2 — RAG',
+        'osproj.cp3Placeholder': 'CP3 — 输出',
         'os.rcUsed': '已使用',
         'os.rcNoSp': '未使用 — 本次运行没有系统提示词',
         'os.rcNoKb': '未使用 — 本次运行没有 RAG 文件',
@@ -3110,7 +3132,11 @@
         'osproj.label': 'この実行の Lakera プロジェクト ID',
         'osproj.placeholder': '設定から既定値',
         'osproj.reset': '既定',
-        'osproj.hint': '任意 — この実行のみ、そのプロジェクトの Guard ポリシーを選択します。設定値を初期表示。編集で上書き、空欄でプロジェクトなし。',
+        'osproj.hint': '任意 — この実行のみ、そのプロジェクトの Guard ポリシーを選択します。実行レベル ID は設定値を初期表示。各チェックポイント欄（空欄＝実行レベル ID を継承）でそのチェックポイントを別プロジェクトに振り向けられます。すべて空欄でプロジェクトなし。',
+        'osproj.perCp': 'チェックポイント別の上書き（任意）',
+        'osproj.cp1Placeholder': 'CP1 — 入力',
+        'osproj.cp2Placeholder': 'CP2 — RAG',
+        'osproj.cp3Placeholder': 'CP3 — 出力',
         'os.rcUsed': '使用',
         'os.rcNoSp': '未使用 — この実行ではシステムプロンプトなし',
         'os.rcNoKb': '未使用 — この実行では RAG ファイルなし',
@@ -4689,18 +4715,24 @@
     if (close) close.focus();
   }
 
-  // Per-run Lakera Project ID override (defaults to the global Settings value).
+  // Per-run Lakera Project ID override (defaults to the global Settings value),
+  // plus optional per-checkpoint (CP1/CP2/CP3) project overrides.
   let osProjDirty = false;
+  const OS_PROJ_CP = ['os-proj-cp1', 'os-proj-cp2', 'os-proj-cp3'];
   function onOsProjInput() { osProjDirty = true; updateOsProjCount(); }
+  const cpProjVal = id => { const v = document.getElementById(id).value.trim(); return v === '' ? null : v; };
   function resetOsProj() {
     document.getElementById('os-proj-id').value = globalProjectId;
+    OS_PROJ_CP.forEach(id => { document.getElementById(id).value = ''; });   // per-CP → inherit
     osProjDirty = false;
     updateOsProjCount();
   }
   function updateOsProjCount() {
-    // Badge shows "•" only when the effective value differs from the default.
+    // Badge shows "•" when the run-level value differs from the default OR any
+    // per-checkpoint override is set.
     const v = document.getElementById('os-proj-id').value.trim();
-    document.getElementById('os-proj-count').textContent = v === globalProjectId ? '' : '•';
+    const anyCp = OS_PROJ_CP.some(id => document.getElementById(id).value.trim() !== '');
+    document.getElementById('os-proj-count').textContent = (v !== globalProjectId || anyCp) ? '•' : '';
   }
   function closeOneShot() {
     document.getElementById('oneshot-overlay').classList.remove('open');
@@ -5018,6 +5050,12 @@
           cp3: document.getElementById('os-cp3').checked,
         },
         lakera_project_id: document.getElementById('os-proj-id').value.trim(),
+        checkpoint_projects: {
+          // blank per-checkpoint box → null (inherit the run-level project id)
+          cp1: cpProjVal('os-proj-cp1'),
+          cp2: cpProjVal('os-proj-cp2'),
+          cp3: cpProjVal('os-proj-cp3'),
+        },
       };
       const res = await fetch(API + '/api/oneshot/stream', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -5241,6 +5279,15 @@
       h += rc.lakera_project_id
         ? `<span class="os-runcfg-tag used">${esc(rc.lakera_project_id)}</span>`
         : `<span class="os-runcfg-tag none">${esc(t('os.rcProjectDefault'))}</span>`;
+      // Per-checkpoint projects, shown only when a checkpoint diverges from the run-level id.
+      const cpp = rc.checkpoint_projects;
+      if (cpp && ['cp1', 'cp2', 'cp3'].some(cp => cpp[cp] !== rc.lakera_project_id)) {
+        h += '<div class="os-runcfg-cp">';
+        ['cp1', 'cp2', 'cp3'].forEach(cp => {
+          h += `<span class="os-runcfg-tag ${cpp[cp] ? 'used' : 'none'}">${cp.toUpperCase()} · ${esc(cpp[cp] || t('os.rcProjectDefault'))}</span> `;
+        });
+        h += '</div>';
+      }
       h += '</div>';
     }
     h += '</div>';
@@ -5702,8 +5749,14 @@
           + `</div></div>`;
       }
       if (s.run_config.lakera_project_id !== undefined) {
-        runcfgHtml += `<div class="dt"><h4>${esc(t('os.rcProjectId'))}</h4><div class="none">`
-          + esc(s.run_config.lakera_project_id || t('os.rcProjectDefault')) + `</div></div>`;
+        const rid = s.run_config.lakera_project_id;
+        let projHtml = esc(rid || t('os.rcProjectDefault'));
+        const cpp = s.run_config.checkpoint_projects;
+        if (cpp && ['cp1', 'cp2', 'cp3'].some(cp => cpp[cp] !== rid)) {
+          projHtml += '<br>' + ['cp1', 'cp2', 'cp3'].map(cp =>
+            `${cp.toUpperCase()} · ${esc(cpp[cp] || t('os.rcProjectDefault'))}`).join(' &nbsp;·&nbsp; ');
+        }
+        runcfgHtml += `<div class="dt"><h4>${esc(t('os.rcProjectId'))}</h4><div class="none">${projHtml}</div></div>`;
       }
       runcfgHtml += `</div>`;
     }

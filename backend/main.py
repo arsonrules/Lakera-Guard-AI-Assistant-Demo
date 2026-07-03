@@ -380,6 +380,15 @@ class CheckpointConfig(BaseModel):
     cp3: bool = True
 
 
+class CheckpointProjects(BaseModel):
+    # Per-checkpoint Lakera Project ID override. null → inherit the run-level
+    # lakera_project_id; "" → no project for that checkpoint; str → that project.
+    # Lets one run route CP1/CP2/CP3 to different projects' Guard policies.
+    cp1: str | None = Field(default=None, max_length=200)
+    cp2: str | None = Field(default=None, max_length=200)
+    cp3: str | None = Field(default=None, max_length=200)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(max_length=16_000)
     simulate_output: str | None = Field(default=None, max_length=16_000)
@@ -467,6 +476,9 @@ class OneShotRequest(BaseModel):
     # Lakera Project ID whose Guard policy applies to this run. null → use the
     # global Settings value; "" → run with no project (the key's default policy).
     lakera_project_id: str | None = Field(default=None, max_length=200)
+    # Optional per-checkpoint Project ID overrides (each inherits lakera_project_id
+    # when null), so CP1/CP2/CP3 can scan under different projects' Guard policies.
+    checkpoint_projects: CheckpointProjects = Field(default_factory=CheckpointProjects)
 
 
 class LakeraKeyRequest(BaseModel):
@@ -1174,7 +1186,8 @@ async def _grade_attack(prompt: str, category_id: str, override: str | None, raw
 
 async def _run_dynamic(base: dict, row: dict, *, system_prompt: str | None,
                        llm_config: dict, lakera_key: str, lakera_project_id: str = "", judge_config: dict,
-                       max_rounds: int, checkpoints: dict | None = None) -> dict:
+                       max_rounds: int, checkpoints: dict | None = None,
+                       checkpoint_projects: dict | None = None) -> dict:
     """
     Adaptive attacker loop: an attacker LLM refines its prompt up to `max_rounds`
     until the guarded target is compromised, or the budget runs out. The judge
@@ -1199,6 +1212,7 @@ async def _run_dynamic(base: dict, row: dict, *, system_prompt: str | None,
             message=atk_prompt, doc_mode=row["doc_mode"], simulate_output=None,
             system_prompt=system_prompt, llm_config=llm_config, lakera_key=lakera_key,
             lakera_project_id=lakera_project_id, checkpoints=checkpoints,
+            checkpoint_projects=checkpoint_projects,
         )
         trace = result.get("trace", {})
         final_trace = trace
@@ -1264,7 +1278,8 @@ async def _run_dynamic(base: dict, row: dict, *, system_prompt: str | None,
 async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare: bool,
                    system_prompt: str | None = None, *,
                    llm_config: dict, lakera_key: str, lakera_project_id: str = "", judge_config: dict,
-                   max_rounds: int = 4, checkpoints: dict | None = None) -> dict:
+                   max_rounds: int = 4, checkpoints: dict | None = None,
+                   checkpoint_projects: dict | None = None) -> dict:
     async with sem:
         base = {
             "id": row["id"], "label": row["label"],
@@ -1292,18 +1307,21 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                 return await _run_dynamic(
                     base, row, system_prompt=system_prompt, llm_config=llm_config,
                     lakera_key=lakera_key, lakera_project_id=lakera_project_id,
-                    judge_config=judge_config, max_rounds=max_rounds, checkpoints=checkpoints)
+                    judge_config=judge_config, max_rounds=max_rounds, checkpoints=checkpoints,
+                    checkpoint_projects=checkpoint_projects)
             if row.get("turns"):
                 result = await chat.process_multiturn(
                     row["turns"], doc_mode=row["doc_mode"],
                     system_prompt=system_prompt, llm_config=llm_config, lakera_key=lakera_key,
                     lakera_project_id=lakera_project_id, checkpoints=checkpoints,
+                    checkpoint_projects=checkpoint_projects,
                 )
             elif row.get("tools"):
                 result = await chat.process_agentic(
                     row["prompt"], tools.openai_tools(row["tools"]), doc_mode=row["doc_mode"],
                     system_prompt=system_prompt, llm_config=llm_config, lakera_key=lakera_key,
                     lakera_project_id=lakera_project_id, checkpoints=checkpoints,
+                    checkpoint_projects=checkpoint_projects,
                 )
             else:
                 result = await chat.process(
@@ -1315,6 +1333,7 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                     lakera_key=lakera_key,
                     lakera_project_id=lakera_project_id,
                     checkpoints=checkpoints,
+                    checkpoint_projects=checkpoint_projects,
                 )
             trace = result.get("trace", {})
             # Checkpoint (Lakera guard) latency = CP1 + CP2 + CP3 only. The LLM
@@ -1428,7 +1447,8 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
 async def _run_one_resilient(row: dict, sem: asyncio.Semaphore, do_judge: bool,
                              do_compare: bool, system_prompt: str | None = None, *,
                              llm_config: dict, lakera_key: str, lakera_project_id: str = "", judge_config: dict,
-                             max_rounds: int = 4, checkpoints: dict | None = None) -> dict:
+                             max_rounds: int = 4, checkpoints: dict | None = None,
+                             checkpoint_projects: dict | None = None) -> dict:
     """
     Run one scenario, retrying TRANSIENT failures with exponential backoff. The
     sleep happens between tries (outside the semaphore, since _run_one re-acquires
@@ -1441,7 +1461,7 @@ async def _run_one_resilient(row: dict, sem: asyncio.Semaphore, do_judge: bool,
                              llm_config=llm_config, lakera_key=lakera_key,
                              lakera_project_id=lakera_project_id,
                              judge_config=judge_config, max_rounds=max_rounds,
-                             checkpoints=checkpoints)
+                             checkpoints=checkpoints, checkpoint_projects=checkpoint_projects)
         if res["outcome"] != "error" or not res.get("error_transient") or attempt > ONESHOT_RETRIES:
             res["attempts"] = attempt
             return res
@@ -1642,10 +1662,11 @@ def _run_config(req: OneShotRequest) -> dict:
     # Which guard checkpoints were active for the run (so a report reflects a
     # deliberately-disabled layer).
     cps = req.checkpoints.model_dump()
-    # Effective Lakera Project ID (per-run override or the global default).
+    # Effective Lakera Project ID (per-run override or the global default), plus
+    # the resolved per-checkpoint projects (each inherits the run-level value).
     proj = _oneshot_project_id(req)
     return {"system_prompt": sysp, "knowledge_base": kb, "checkpoints": cps,
-            "lakera_project_id": proj}
+            "lakera_project_id": proj, "checkpoint_projects": _oneshot_cp_projects(req)}
 
 
 def _oneshot_system_prompt(req: OneShotRequest) -> str | None:
@@ -1669,14 +1690,26 @@ def _oneshot_project_id(req: OneShotRequest) -> str:
     return _lakera_project_id
 
 
+def _oneshot_cp_projects(req: OneShotRequest) -> dict:
+    """Resolve the concrete Lakera Project ID each checkpoint scans under: a
+    per-checkpoint override when set, else the run-level project id."""
+    run_proj = _oneshot_project_id(req)
+    cpp = req.checkpoint_projects
+    resolve = lambda v: run_proj if v is None else _clean(v)  # noqa: E731
+    return {"cp1": resolve(cpp.cp1), "cp2": resolve(cpp.cp2), "cp3": resolve(cpp.cp3)}
+
+
 async def run_oneshot(req: OneShotRequest, *, llm_config: dict, lakera_key: str,
-                      lakera_project_id: str = "", judge_config: dict | None = None) -> dict:
+                      lakera_project_id: str = "", judge_config: dict | None = None,
+                      checkpoint_projects: dict | None = None) -> dict:
     """
     Prepare → execute → summarize a one-shot run. Shared by the /api/oneshot
     endpoint and the headless CLI (`python -m backend.oneshot`). The caller passes
     a config + key snapshot so a mid-run change can't affect in-flight scenarios.
     `judge_config` lets the judge use a different (typically stronger) model than
-    the target; None → judge with the target `llm_config`.
+    the target; None → judge with the target `llm_config`. `checkpoint_projects`
+    routes CP1/CP2/CP3 to per-checkpoint Lakera projects (None → all use
+    `lakera_project_id`).
     Raises HTTPException on bad input (the CLI maps that to a usage-error exit).
     """
     rows, scope = _prepare_oneshot_rows(req)
@@ -1688,7 +1721,8 @@ async def run_oneshot(req: OneShotRequest, *, llm_config: dict, lakera_key: str,
         *[_run_one_resilient(r, sem, do_judge, req.compare, sp,
                              llm_config=llm_config, lakera_key=lakera_key,
                              lakera_project_id=lakera_project_id, judge_config=jc,
-                             max_rounds=req.max_rounds, checkpoints=req.checkpoints.model_dump())
+                             max_rounds=req.max_rounds, checkpoints=req.checkpoints.model_dump(),
+                             checkpoint_projects=checkpoint_projects)
           for r in rows]
     )
     results.sort(key=lambda r: r.get("order", 0))
@@ -1700,7 +1734,8 @@ async def api_oneshot(req: OneShotRequest):
     # Snapshot the provider config + key once (see run_oneshot).
     out = await run_oneshot(req, llm_config=dict(_llm_config), lakera_key=_lakera_key,
                             lakera_project_id=_oneshot_project_id(req),
-                            judge_config=_effective_judge_config())
+                            judge_config=_effective_judge_config(),
+                            checkpoint_projects=_oneshot_cp_projects(req))
     return {**out, "llm": _public_llm_config(), "judge": _public_judge_config(),
             "category_id": req.category_id}
 
@@ -1718,6 +1753,7 @@ async def api_oneshot_stream(req: OneShotRequest):
     sp = _oneshot_system_prompt(req)
     cfg, key = dict(_llm_config), _lakera_key   # snapshot (see api_oneshot)
     proj = _oneshot_project_id(req)
+    cp_proj = _oneshot_cp_projects(req)
     jc = _effective_judge_config()
     sem = asyncio.Semaphore(req.concurrency or ONESHOT_CONCURRENCY)
     total = len(rows)
@@ -1728,7 +1764,8 @@ async def api_oneshot_stream(req: OneShotRequest):
             _run_one_resilient(r, sem, do_judge, req.compare, sp,
                                llm_config=cfg, lakera_key=key, lakera_project_id=proj,
                                judge_config=jc, max_rounds=req.max_rounds,
-                               checkpoints=req.checkpoints.model_dump())
+                               checkpoints=req.checkpoints.model_dump(),
+                               checkpoint_projects=cp_proj)
         ) for r in rows]
 
         async def producer():

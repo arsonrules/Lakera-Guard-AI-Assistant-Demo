@@ -124,6 +124,48 @@ def test_run_config_records_project_id(monkeypatch):
         main.OneShotRequest(lakera_project_id="run-proj"))["lakera_project_id"] == "run-proj"
 
 
+def test_per_checkpoint_projects_inherit_and_override(monkeypatch):
+    monkeypatch.setattr(main, "_lakera_project_id", "global")
+    # No overrides → every checkpoint uses the run-level (here, global) project.
+    assert main._oneshot_cp_projects(main.OneShotRequest()) == {
+        "cp1": "global", "cp2": "global", "cp3": "global"}
+    # A per-checkpoint override wins; the others inherit; "" means no project.
+    req = main.OneShotRequest(lakera_project_id="run",
+                              checkpoint_projects={"cp1": "proj-input", "cp3": ""})
+    assert main._oneshot_cp_projects(req) == {
+        "cp1": "proj-input", "cp2": "run", "cp3": ""}
+    # Control chars are stripped, like the key/project id.
+    req2 = main.OneShotRequest(checkpoint_projects={"cp2": "p\nrag"})
+    assert main._oneshot_cp_projects(req2)["cp2"] == "prag"
+    # run_config carries the resolved per-checkpoint mapping for the report.
+    assert main._run_config(req)["checkpoint_projects"] == {
+        "cp1": "proj-input", "cp2": "run", "cp3": ""}
+
+
+def test_chat_cp_projects_helper():
+    from backend import chat
+    # No overrides → all checkpoints fall back to the run-level project id.
+    assert chat._cp_projects("base", None) == {"cp1": "base", "cp2": "base", "cp3": "base"}
+    # A resolved override map is used as-is.
+    assert chat._cp_projects("base", {"cp1": "a", "cp2": "b", "cp3": "c"}) == {
+        "cp1": "a", "cp2": "b", "cp3": "c"}
+
+
+async def test_run_one_forwards_per_checkpoint_projects(monkeypatch):
+    seen = {}
+
+    async def stub_process(**kw):
+        seen["cpp"] = kw.get("checkpoint_projects")
+        return {"message": "m", "blocked": False, "blocked_at": None, "fallback_used": False,
+                "trace": _trace(), "raw_response": "ok"}
+    monkeypatch.setattr(main.chat, "process", stub_process)
+    sem = asyncio.Semaphore(2)
+    await main._run_one(_row(), sem, do_judge=False, do_compare=False, system_prompt=None,
+                        llm_config={}, lakera_key="k", judge_config={},
+                        checkpoint_projects={"cp1": "a", "cp2": "b", "cp3": "c"})
+    assert seen["cpp"] == {"cp1": "a", "cp2": "b", "cp3": "c"}
+
+
 async def test_assertion_detects_leak_without_judge(monkeypatch):
     # --no-judge: a deterministic assertion still flags the compromise (free).
     async def stub_process(**kw):
