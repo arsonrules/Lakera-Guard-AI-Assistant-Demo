@@ -6,6 +6,8 @@ Pure functions over the already-computed result rows + summary — no I/O — so
 output rides along in the same payload the UI, HTML report, and JSON export use.
 """
 
+from backend import classify
+
 # Concise remediation per OWASP category, shown against findings and dashboard rows.
 CATEGORY_REMEDIATION: dict[str, str] = {
     "llm01": "Keep CP1 on, normalize/decode inputs, separate instructions from data, and keep no secrets in the system prompt.",
@@ -185,4 +187,10 @@ def build(results: list[dict], summary: dict, req) -> dict:
             "recommendation": "Keep this suite in CI and re-run after prompt, model, or guard-policy changes.",
         })
 
-    return {"posture": posture, "categories": cat_list, "findings": findings}
+    # ── OWASP tactic classification of imported dataset prompts (if any) ───────
+    classification = classify.summarize(results)
+
+    out = {"posture": posture, "categories": cat_list, "findings": findings}
+    if classification:
+        out["classification"] = classification
+    return out
