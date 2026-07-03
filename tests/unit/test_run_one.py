@@ -81,6 +81,28 @@ async def test_cp1_block_is_prevented_and_not_judged(monkeypatch):
     assert r["judge"] is None                   # nothing delivered → nothing judged
 
 
+async def test_checkpoints_forwarded_to_process(monkeypatch):
+    # The per-run checkpoint config reaches chat.process for each scenario.
+    seen = {}
+
+    async def stub_process(**kw):
+        seen["checkpoints"] = kw.get("checkpoints")
+        return {"message": "m", "blocked": False, "blocked_at": None, "fallback_used": False,
+                "trace": _trace(), "raw_response": "ok"}
+    monkeypatch.setattr(main.chat, "process", stub_process)
+    sem = asyncio.Semaphore(2)
+    await main._run_one(_row(), sem, do_judge=False, do_compare=False, system_prompt=None,
+                        llm_config={}, lakera_key="k", judge_config={},
+                        checkpoints={"cp1": False, "cp2": True, "cp3": True})
+    assert seen["checkpoints"] == {"cp1": False, "cp2": True, "cp3": True}
+
+
+def test_run_config_records_checkpoints():
+    req = main.OneShotRequest(checkpoints={"cp1": False, "cp2": True, "cp3": True})
+    rc = main._run_config(req)
+    assert rc["checkpoints"] == {"cp1": False, "cp2": True, "cp3": True}
+
+
 async def test_assertion_detects_leak_without_judge(monkeypatch):
     # --no-judge: a deterministic assertion still flags the compromise (free).
     async def stub_process(**kw):

@@ -272,6 +272,8 @@ The bar beneath the header contains two rows:
 
 2. **Scenario buttons** — the individual attack or safe prompts within the selected category. Clicking a button auto-populates the chat and fires the request immediately. The inspector shows a description of what the scenario tests.
 
+> **Localized prompts:** the scenario **prompt text** (and the "Clean/Malicious Example" system-prompt presets) is localized to the selected language, so a fired scenario reads natively in English, 繁體中文, 简体中文, or 日本語. Translations live in [`backend/scenarios_i18n.py`](backend/scenarios_i18n.py) and are served via `GET /api/scenario-categories?lang=…`; attack payloads (Base64, SQL, markup, URLs, opaque tokens) are kept verbatim so the technique — and Lakera's multilingual detection of it — is unchanged.
+
 ### Knowledge Base mode
 
 The **KNOWLEDGE BASE** button in the header controls which set of documents the RAG retriever uses:
@@ -588,6 +590,25 @@ scenarios*.)
 > There is **no limit on which** public dataset you import — any with the Dataset Viewer enabled works. The caps above are on **how many** you keep (12) and **how many rows** each holds (100,000). For large corpora, keep the row count modest or point the LLM provider at a local model to avoid cost/latency — fetching 100k rows is ~1,000 paginated API calls and runs a full pipeline pass per prompt.
 
 > **Multi-config datasets:** many datasets are split into *configs* (e.g. SALAD-Data → `base_set` 21,318, `attack_enhanced_set` 5,000, `defense_enhanced_set` 200, `mcq_set` 3,840 ≈ 30,358 total). **Import** (with a row count) defaults to the **largest** config; **All** spans **every** config + split to pull the whole dataset, streaming live progress against the combined total. Because the pull is paginated and HuggingFace rate-limits the free API, a very large **All** may finish as a (large) **partial** sample within the time budget — re-run for more, or use a local model.
+
+#### OWASP tactic classification (imported datasets)
+
+Imported datasets arrive as raw prompts with (at best) a source-specific label. To make
+a run over them intelligible, **every imported prompt is classified by its content** into
+an **OWASP LLM Top 10 (2025)** tactic (`LLM01:2025` … `LLM10:2025`) or an **OWASP Agentic
+AI Threats** tactic (`AAI-T1` … `AAI-T15`), and the report gains an **OWASP Tactic
+Classification** section (modal + HTML report):
+
+- a **family breakdown** — how many prompts map to *LLM Top 10*, *Agentic Threats*, or are *Unmapped* (no signal / likely benign);
+- a **per-tactic bar** — each tactic's share of the dataset, with the guard's **detection rate** for that tactic and a breach count when the model complied;
+- an **inferred OWASP code** on each row in the results table (and an `owasp_class` column in the CSV / a per-row `owasp_class` object in the JSON).
+
+Classification is a **deterministic, offline heuristic** (keyword/regex signals in
+[`backend/classify.py`](backend/classify.py)) — no extra LLM calls, so it scales to the
+whole dataset at zero cost and is reproducible. It is a **triage aid, not a definitive
+label**: each prompt is scored against every tactic and assigned the highest-scoring one.
+Built-in catalogue scenarios already carry their own OWASP id, so the section appears only
+for runs that include an imported dataset.
 
 #### Custom system prompt (per run)
 

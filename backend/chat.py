@@ -15,6 +15,11 @@ class LakeraNotConfigured(RuntimeError):
     """Raised when a checkpoint is reached but no Lakera Guard key is set."""
 
 
+def _cp_flags(checkpoints: dict | None) -> dict:
+    """Normalize the per-checkpoint enablement config (all on by default)."""
+    return {"cp1": True, "cp2": True, "cp3": True, **(checkpoints or {})}
+
+
 async def scan_system_prompt(text: str, lakera_key: str, lakera_project_id: str = "") -> dict:
     """
     CP0: run Lakera Guard on a candidate system prompt before it is activated.
@@ -119,72 +124,91 @@ async def process(
     llm_config: dict | None = None,
     lakera_key: str = "",
     lakera_project_id: str = "",
+    checkpoints: dict | None = None,
 ) -> dict:
     if not lakera_key:
         raise LakeraNotConfigured()
+    # Per-checkpoint enablement (all on by default). A disabled checkpoint is
+    # skipped so the demo can show what gets through without that protection.
+    cp = _cp_flags(checkpoints)
     trace = _empty_trace()
 
     # ── Checkpoint 1: user input ────────────────────────────────────────────
-    cp1 = await lakera.check(message, lakera_key, lakera_project_id)
-    trace["cp1"]["latency_ms"] = cp1["latency_ms"]
+    if not cp["cp1"]:
+        trace["cp1"]["status"] = "disabled"
+    else:
+        cp1 = await lakera.check(message, lakera_key, lakera_project_id)
+        trace["cp1"]["latency_ms"] = cp1["latency_ms"]
 
-    if lakera.is_flagged(cp1):
-        trace["cp1"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp1))
-        trace["cp2"]["status"] = "skipped"
-        trace["cp3"]["status"] = "skipped"
-        # raw_response stays None: the model never ran, so the attack was prevented
-        # before it could reach (or compromise) the LLM.
-        return _blocked(1, FALLBACK_CP1, trace, raw_response=None)
+        if lakera.is_flagged(cp1):
+            trace["cp1"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp1))
+            trace["cp2"]["status"] = "skipped"
+            trace["cp3"]["status"] = "skipped"
+            # raw_response stays None: the model never ran, so the attack was prevented
+            # before it could reach (or compromise) the LLM.
+            return _blocked(1, FALLBACK_CP1, trace, raw_response=None)
 
-    trace["cp1"].update(status="passed", flagged=False)
+        trace["cp1"].update(status="passed", flagged=False)
 
     # ── Checkpoint 2: RAG documents ─────────────────────────────────────────
     docs = rag.retrieve(message, mode=doc_mode)
-    clean_docs: list[str] = []
-    cp2_latency = 0
-    flagged_names: list[str] = []
-    passed_names: list[str] = []
-    all_cp2_categories: list[str] = []
-
-    for doc in docs:
-        cp2 = await lakera.check(doc["content"], lakera_key, lakera_project_id)
-        cp2_latency += cp2["latency_ms"]
-        if lakera.is_flagged(cp2):
-            flagged_names.append(doc["filename"])
-            all_cp2_categories.extend(lakera.flagged_categories(cp2))
-        else:
-            clean_docs.append(doc["content"])
-            passed_names.append(doc["filename"])
-
-    trace["cp2"].update(
-        latency_ms=cp2_latency,
-        docs_checked=len(docs),
-        docs_flagged=flagged_names,
-        docs_passed=passed_names,
-        categories=list(set(all_cp2_categories)),
-    )
-
-    if not docs:
-        trace["cp2"]["status"] = "skipped"
-    elif flagged_names:
-        trace["cp2"].update(status="redacted", flagged=True)
+    if not cp["cp2"]:
+        # Skipped: every retrieved doc reaches the model unredacted.
+        clean_docs = [doc["content"] for doc in docs]
+        trace["cp2"].update(
+            status="disabled",
+            docs_checked=len(docs),
+            docs_passed=[doc["filename"] for doc in docs],
+        )
     else:
-        trace["cp2"].update(status="passed", flagged=False)
+        clean_docs = []
+        cp2_latency = 0
+        flagged_names: list[str] = []
+        passed_names: list[str] = []
+        all_cp2_categories: list[str] = []
+
+        for doc in docs:
+            cp2 = await lakera.check(doc["content"], lakera_key, lakera_project_id)
+            cp2_latency += cp2["latency_ms"]
+            if lakera.is_flagged(cp2):
+                flagged_names.append(doc["filename"])
+                all_cp2_categories.extend(lakera.flagged_categories(cp2))
+            else:
+                clean_docs.append(doc["content"])
+                passed_names.append(doc["filename"])
+
+        trace["cp2"].update(
+            latency_ms=cp2_latency,
+            docs_checked=len(docs),
+            docs_flagged=flagged_names,
+            docs_passed=passed_names,
+            categories=list(set(all_cp2_categories)),
+        )
+
+        if not docs:
+            trace["cp2"]["status"] = "skipped"
+        elif flagged_names:
+            trace["cp2"].update(status="redacted", flagged=True)
+        else:
+            trace["cp2"].update(status="passed", flagged=False)
 
     # ── LLM call ────────────────────────────────────────────────────────────
     response_text = await _call_llm(message, clean_docs, simulate_output, system_prompt, llm_config)
 
     # ── Checkpoint 3: LLM output ────────────────────────────────────────────
-    cp3 = await lakera.check(response_text, lakera_key, lakera_project_id)
-    trace["cp3"]["latency_ms"] = cp3["latency_ms"]
+    if not cp["cp3"]:
+        trace["cp3"]["status"] = "disabled"
+    else:
+        cp3 = await lakera.check(response_text, lakera_key, lakera_project_id)
+        trace["cp3"]["latency_ms"] = cp3["latency_ms"]
 
-    if lakera.is_flagged(cp3):
-        trace["cp3"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp3))
-        # The model DID produce this response; CP3 caught it before delivery.
-        # Surface it (internally) so a judge can tell whether it was a "guard save".
-        return _blocked(3, FALLBACK_CP3, trace, raw_response=response_text)
+        if lakera.is_flagged(cp3):
+            trace["cp3"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp3))
+            # The model DID produce this response; CP3 caught it before delivery.
+            # Surface it (internally) so a judge can tell whether it was a "guard save".
+            return _blocked(3, FALLBACK_CP3, trace, raw_response=response_text)
 
-    trace["cp3"].update(status="passed", flagged=False)
+        trace["cp3"].update(status="passed", flagged=False)
 
     return {
         "message": response_text,
@@ -220,31 +244,41 @@ async def process_agentic(
     llm_config: dict | None = None,
     lakera_key: str = "",
     lakera_project_id: str = "",
+    checkpoints: dict | None = None,
 ) -> dict:
     if not lakera_key:
         raise LakeraNotConfigured()
+    cp = _cp_flags(checkpoints)
     trace = _empty_trace()
 
-    cp1 = await lakera.check(message, lakera_key, lakera_project_id)
-    trace["cp1"]["latency_ms"] = cp1["latency_ms"]
-    if lakera.is_flagged(cp1):
-        trace["cp1"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp1))
-        trace["cp2"]["status"] = "skipped"
-        trace["cp3"]["status"] = "skipped"
-        return {**_blocked(1, FALLBACK_CP1, trace, raw_response=None), "tool_calls": []}
-    trace["cp1"].update(status="passed", flagged=False)
+    if not cp["cp1"]:
+        trace["cp1"]["status"] = "disabled"
+    else:
+        cp1 = await lakera.check(message, lakera_key, lakera_project_id)
+        trace["cp1"]["latency_ms"] = cp1["latency_ms"]
+        if lakera.is_flagged(cp1):
+            trace["cp1"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp1))
+            trace["cp2"]["status"] = "skipped"
+            trace["cp3"]["status"] = "skipped"
+            return {**_blocked(1, FALLBACK_CP1, trace, raw_response=None), "tool_calls": []}
+        trace["cp1"].update(status="passed", flagged=False)
 
     docs = rag.retrieve(message, mode=doc_mode)
-    clean, flagged_names, passed_names, cp2_lat = [], [], [], 0
-    for doc in docs:
-        cp2 = await lakera.check(doc["content"], lakera_key, lakera_project_id)
-        cp2_lat += cp2["latency_ms"]
-        (flagged_names if lakera.is_flagged(cp2) else passed_names).append(doc["filename"])
-        if not lakera.is_flagged(cp2):
-            clean.append(doc["content"])
-    trace["cp2"].update(latency_ms=cp2_lat, docs_checked=len(docs),
-                        docs_flagged=flagged_names, docs_passed=passed_names,
-                        status=("skipped" if not docs else ("redacted" if flagged_names else "passed")))
+    if not cp["cp2"]:
+        clean = [doc["content"] for doc in docs]
+        trace["cp2"].update(status="disabled", docs_checked=len(docs),
+                            docs_passed=[doc["filename"] for doc in docs])
+    else:
+        clean, flagged_names, passed_names, cp2_lat = [], [], [], 0
+        for doc in docs:
+            cp2 = await lakera.check(doc["content"], lakera_key, lakera_project_id)
+            cp2_lat += cp2["latency_ms"]
+            (flagged_names if lakera.is_flagged(cp2) else passed_names).append(doc["filename"])
+            if not lakera.is_flagged(cp2):
+                clean.append(doc["content"])
+        trace["cp2"].update(latency_ms=cp2_lat, docs_checked=len(docs),
+                            docs_flagged=flagged_names, docs_passed=passed_names,
+                            status=("skipped" if not docs else ("redacted" if flagged_names else "passed")))
 
     cfg = llm_config or {}
     messages = llm.build_messages([{"role": "user", "content": message}], clean, system_prompt)
@@ -257,12 +291,15 @@ async def process_agentic(
     )
     content, tool_calls = out["content"], out["tool_calls"]
 
-    cp3 = await lakera.check(content or "", lakera_key, lakera_project_id)
-    trace["cp3"]["latency_ms"] = cp3["latency_ms"]
-    if lakera.is_flagged(cp3):
-        trace["cp3"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp3))
-        return {**_blocked(3, FALLBACK_CP3, trace, raw_response=content), "tool_calls": tool_calls}
-    trace["cp3"].update(status="passed", flagged=False)
+    if not cp["cp3"]:
+        trace["cp3"]["status"] = "disabled"
+    else:
+        cp3 = await lakera.check(content or "", lakera_key, lakera_project_id)
+        trace["cp3"]["latency_ms"] = cp3["latency_ms"]
+        if lakera.is_flagged(cp3):
+            trace["cp3"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp3))
+            return {**_blocked(3, FALLBACK_CP3, trace, raw_response=content), "tool_calls": tool_calls}
+        trace["cp3"].update(status="passed", flagged=False)
 
     return {"message": content, "blocked": False, "blocked_at": None, "fallback_used": False,
             "trace": trace, "raw_response": content, "tool_calls": tool_calls}
@@ -293,10 +330,13 @@ async def process_multiturn(
     llm_config: dict | None = None,
     lakera_key: str = "",
     lakera_project_id: str = "",
+    checkpoints: dict | None = None,
 ) -> dict:
-    """Run a multi-turn conversation through the full guard pipeline, turn by turn."""
+    """Run a multi-turn conversation through the full guard pipeline, turn by turn.
+    A disabled checkpoint is skipped on every turn."""
     if not lakera_key:
         raise LakeraNotConfigured()
+    cp = _cp_flags(checkpoints)
     trace = _empty_trace()
     turn_log: list[dict] = []
     cp1_lat = cp2_lat = cp3_lat = 0
@@ -305,23 +345,27 @@ async def process_multiturn(
     last_response: str | None = None
 
     for i, user_turn in enumerate(turns, 1):
-        cp1 = await lakera.check(user_turn, lakera_key, lakera_project_id)
-        cp1_lat += cp1["latency_ms"]
-        if lakera.is_flagged(cp1):
-            trace["cp1"].update(status="blocked", flagged=True,
-                                categories=lakera.flagged_categories(cp1), latency_ms=cp1_lat)
-            trace["cp2"]["status"] = "skipped"
-            trace["cp3"]["status"] = "skipped"
-            turn_log.append({"turn": i, "user": user_turn, "blocked_at": "cp1"})
-            trace["turns"] = turn_log
-            return {"message": FALLBACK_CP1, "blocked": True, "blocked_at": 1,
-                    "fallback_used": True, "trace": trace, "raw_response": None,
-                    "blocked_turn": i}
+        if cp["cp1"]:
+            cp1 = await lakera.check(user_turn, lakera_key, lakera_project_id)
+            cp1_lat += cp1["latency_ms"]
+            if lakera.is_flagged(cp1):
+                trace["cp1"].update(status="blocked", flagged=True,
+                                    categories=lakera.flagged_categories(cp1), latency_ms=cp1_lat)
+                trace["cp2"]["status"] = "skipped"
+                trace["cp3"]["status"] = "skipped"
+                turn_log.append({"turn": i, "user": user_turn, "blocked_at": "cp1"})
+                trace["turns"] = turn_log
+                return {"message": FALLBACK_CP1, "blocked": True, "blocked_at": 1,
+                        "fallback_used": True, "trace": trace, "raw_response": None,
+                        "blocked_turn": i}
 
         docs = rag.retrieve(user_turn, mode=doc_mode)
         clean: list[str] = []
         for d in docs:
             docs_checked += 1
+            if not cp["cp2"]:
+                clean.append(d["content"])          # unredacted — CP2 off
+                continue
             cp2 = await lakera.check(d["content"], lakera_key, lakera_project_id)
             cp2_lat += cp2["latency_ms"]
             if not lakera.is_flagged(cp2):
@@ -330,27 +374,33 @@ async def process_multiturn(
         history.append({"role": "user", "content": user_turn})
         resp = await _llm_with_history(history, clean, system_prompt, llm_config)
 
-        cp3 = await lakera.check(resp, lakera_key, lakera_project_id)
-        cp3_lat += cp3["latency_ms"]
-        if lakera.is_flagged(cp3):
-            trace["cp3"].update(status="blocked", flagged=True,
-                                categories=lakera.flagged_categories(cp3), latency_ms=cp3_lat)
-            trace["cp1"].update(status="passed", latency_ms=cp1_lat)
-            turn_log.append({"turn": i, "user": user_turn,
-                             "assistant": resp[:600], "blocked_at": "cp3"})
-            trace["turns"] = turn_log
-            return {"message": FALLBACK_CP3, "blocked": True, "blocked_at": 3,
-                    "fallback_used": True, "trace": trace, "raw_response": resp,
-                    "blocked_turn": i}
+        if cp["cp3"]:
+            cp3 = await lakera.check(resp, lakera_key, lakera_project_id)
+            cp3_lat += cp3["latency_ms"]
+            if lakera.is_flagged(cp3):
+                trace["cp3"].update(status="blocked", flagged=True,
+                                    categories=lakera.flagged_categories(cp3), latency_ms=cp3_lat)
+                trace["cp1"].update(status=("disabled" if not cp["cp1"] else "passed"), latency_ms=cp1_lat)
+                turn_log.append({"turn": i, "user": user_turn,
+                                 "assistant": resp[:600], "blocked_at": "cp3"})
+                trace["turns"] = turn_log
+                return {"message": FALLBACK_CP3, "blocked": True, "blocked_at": 3,
+                        "fallback_used": True, "trace": trace, "raw_response": resp,
+                        "blocked_turn": i}
 
         history.append({"role": "assistant", "content": resp})
         last_response = resp
         turn_log.append({"turn": i, "user": user_turn, "assistant": resp[:600]})
 
-    trace["cp1"].update(status="passed", flagged=False, latency_ms=cp1_lat)
-    trace["cp2"].update(status="passed" if docs_checked else "skipped",
-                        flagged=False, latency_ms=cp2_lat, docs_checked=docs_checked)
-    trace["cp3"].update(status="passed", flagged=False, latency_ms=cp3_lat)
+    trace["cp1"].update(status=("disabled" if not cp["cp1"] else "passed"),
+                        flagged=False, latency_ms=(cp1_lat or None))
+    if not cp["cp2"]:
+        trace["cp2"].update(status="disabled", docs_checked=docs_checked)
+    else:
+        trace["cp2"].update(status="passed" if docs_checked else "skipped",
+                            flagged=False, latency_ms=cp2_lat, docs_checked=docs_checked)
+    trace["cp3"].update(status=("disabled" if not cp["cp3"] else "passed"),
+                        flagged=False, latency_ms=(cp3_lat or None))
     trace["turns"] = turn_log
     return {"message": last_response, "blocked": False, "blocked_at": None,
             "fallback_used": False, "trace": trace, "raw_response": last_response,

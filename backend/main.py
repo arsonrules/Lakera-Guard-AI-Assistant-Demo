@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lakera_demo")
 
-from backend import assertions, attacker, chat, datasets, history, judge, lakera, llm, rag, report, strategies, tools
+from backend import assertions, attacker, chat, classify, datasets, history, judge, lakera, llm, rag, report, scenarios, strategies, tools
 from backend.config import ENV_PATH, settings
 from backend.llm import SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT
 from backend.scenarios import CATEGORIES
@@ -140,6 +140,23 @@ def _clean(value: str | None) -> str:
     (b) HTTP header injection when the value is placed in an Authorization header.
     """
     return _CTRL_CHARS.sub("", (value or "").strip())
+
+
+async def _read_capped(file: UploadFile, max_bytes: int) -> bytes:
+    """
+    Read an upload in bounded chunks, aborting as soon as it exceeds `max_bytes`.
+    `await file.read()` with no argument buffers the entire body into memory
+    before any size check, so an oversized POST is a memory-exhaustion (DoS)
+    vector. Reading incrementally caps memory at ~max_bytes + one chunk.
+    """
+    chunk_size = 64 * 1024
+    buf = bytearray()
+    while len(buf) <= max_bytes:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            return bytes(buf)
+        buf.extend(chunk)
+    raise HTTPException(413, f"File exceeds the {max_bytes // 1024} KB limit.")
 
 
 # Hostnames that resolve to a cloud instance-metadata service. Reaching these
@@ -354,12 +371,22 @@ async def security_middleware(request: Request, call_next):
 
 # ── Request / Response models ────────────────────────────────────────────────
 
+class CheckpointConfig(BaseModel):
+    # Per-checkpoint enablement (only applies when guard_enabled). A disabled
+    # checkpoint is skipped: CP1 lets input through unscanned, CP2 passes RAG
+    # docs unredacted, CP3 delivers the reply unscanned.
+    cp1: bool = True
+    cp2: bool = True
+    cp3: bool = True
+
+
 class ChatRequest(BaseModel):
     message: str = Field(max_length=16_000)
     simulate_output: str | None = Field(default=None, max_length=16_000)
     # When False, bypass Lakera entirely (talk straight to the model) — the live
     # "Guard OFF" toggle. No Lakera key required in that mode.
     guard_enabled: bool = True
+    checkpoints: CheckpointConfig = Field(default_factory=CheckpointConfig)
 
 
 class DocModeRequest(BaseModel):
@@ -433,6 +460,10 @@ class OneShotRequest(BaseModel):
     seed: int | None = Field(default=None)
     # Round budget for dynamic (adaptive attacker) scenarios.
     max_rounds: int = Field(default=4, ge=1, le=10)
+    # Per-checkpoint enablement for the guarded run (mirrors the live chat). A
+    # disabled checkpoint is skipped so a run can show what each layer catches on
+    # its own. The Guard-OFF comparison arm (compare=True) is unaffected.
+    checkpoints: CheckpointConfig = Field(default_factory=CheckpointConfig)
 
 
 class LakeraKeyRequest(BaseModel):
@@ -477,6 +508,7 @@ async def api_chat(req: ChatRequest):
                 llm_config=_llm_config,
                 lakera_key=_lakera_key,
                 lakera_project_id=_lakera_project_id,
+                checkpoints=req.checkpoints.model_dump(),
             )
         else:
             # Lakera OFF: straight to the model, no CP1/CP2/CP3, no key needed.
@@ -853,7 +885,7 @@ async def api_import_hf_stream(req: HFImportRequest):
 
 @app.post("/api/datasets/upload")
 async def api_upload_dataset(file: UploadFile = File(...), column: str | None = None):
-    content = await file.read()
+    content = await _read_capped(file, datasets.UPLOAD_MAX_BYTES)
     try:
         result = datasets.parse_upload(file.filename or "upload.txt", content, column)
     except datasets.DatasetError as exc:
@@ -944,8 +976,10 @@ async def api_scenarios():
 
 
 @app.get("/api/scenario-categories")
-async def api_scenario_categories():
-    return CATEGORIES
+async def api_scenario_categories(lang: str | None = None):
+    # `lang` localizes the scenario prompt text so a fired scenario reads in the
+    # selected UI language; labels/descriptions are localized client-side.
+    return scenarios.localized_categories(lang)
 
 
 @app.get("/api/strategies")
@@ -962,12 +996,16 @@ def _dataset_rows(slug: str) -> list[dict]:
         raise HTTPException(404, "Dataset not found — re-import it.")
     rows: list[dict] = []
     for i, item in enumerate(d["rows"], 1):
+        # Classify each imported prompt by OWASP LLM Top 10 / Agentic tactic so the
+        # report can break an otherwise-opaque dataset down by attack technique.
+        owasp_class = classify.classify(item["prompt"])
         rows.append({
             "id": f"{slug}-{i}",
             "label": (item["prompt"][:60] + ("…" if len(item["prompt"]) > 60 else "")),
             "category_id": "external",
             "owasp_id": None,
             "owasp_name": item.get("category") or d["name"],
+            "owasp_class": owasp_class,
             "color": "attack",          # external safety datasets are attack prompts
             "prompt": item["prompt"],
             "doc_mode": "clean",
@@ -1133,7 +1171,7 @@ async def _grade_attack(prompt: str, category_id: str, override: str | None, raw
 
 async def _run_dynamic(base: dict, row: dict, *, system_prompt: str | None,
                        llm_config: dict, lakera_key: str, lakera_project_id: str = "", judge_config: dict,
-                       max_rounds: int) -> dict:
+                       max_rounds: int, checkpoints: dict | None = None) -> dict:
     """
     Adaptive attacker loop: an attacker LLM refines its prompt up to `max_rounds`
     until the guarded target is compromised, or the budget runs out. The judge
@@ -1157,7 +1195,7 @@ async def _run_dynamic(base: dict, row: dict, *, system_prompt: str | None,
         result = await chat.process(
             message=atk_prompt, doc_mode=row["doc_mode"], simulate_output=None,
             system_prompt=system_prompt, llm_config=llm_config, lakera_key=lakera_key,
-            lakera_project_id=lakera_project_id,
+            lakera_project_id=lakera_project_id, checkpoints=checkpoints,
         )
         trace = result.get("trace", {})
         final_trace = trace
@@ -1223,12 +1261,14 @@ async def _run_dynamic(base: dict, row: dict, *, system_prompt: str | None,
 async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare: bool,
                    system_prompt: str | None = None, *,
                    llm_config: dict, lakera_key: str, lakera_project_id: str = "", judge_config: dict,
-                   max_rounds: int = 4) -> dict:
+                   max_rounds: int = 4, checkpoints: dict | None = None) -> dict:
     async with sem:
         base = {
             "id": row["id"], "label": row["label"],
             "category_id": row["category_id"], "owasp_id": row["owasp_id"],
             "owasp_name": row["owasp_name"], "color": row["color"],
+            # OWASP tactic classification (imported-dataset rows only; None otherwise).
+            "owasp_class": row.get("owasp_class"),
             "expected": "block" if row["color"] == "attack" else "allow",
             "doc_mode": row["doc_mode"],
             # Per-scenario inputs surfaced in the report's click-to-reveal panel.
@@ -1249,18 +1289,18 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                 return await _run_dynamic(
                     base, row, system_prompt=system_prompt, llm_config=llm_config,
                     lakera_key=lakera_key, lakera_project_id=lakera_project_id,
-                    judge_config=judge_config, max_rounds=max_rounds)
+                    judge_config=judge_config, max_rounds=max_rounds, checkpoints=checkpoints)
             if row.get("turns"):
                 result = await chat.process_multiturn(
                     row["turns"], doc_mode=row["doc_mode"],
                     system_prompt=system_prompt, llm_config=llm_config, lakera_key=lakera_key,
-                    lakera_project_id=lakera_project_id,
+                    lakera_project_id=lakera_project_id, checkpoints=checkpoints,
                 )
             elif row.get("tools"):
                 result = await chat.process_agentic(
                     row["prompt"], tools.openai_tools(row["tools"]), doc_mode=row["doc_mode"],
                     system_prompt=system_prompt, llm_config=llm_config, lakera_key=lakera_key,
-                    lakera_project_id=lakera_project_id,
+                    lakera_project_id=lakera_project_id, checkpoints=checkpoints,
                 )
             else:
                 result = await chat.process(
@@ -1271,6 +1311,7 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                     llm_config=llm_config,
                     lakera_key=lakera_key,
                     lakera_project_id=lakera_project_id,
+                    checkpoints=checkpoints,
                 )
             trace = result.get("trace", {})
             # Checkpoint (Lakera guard) latency = CP1 + CP2 + CP3 only. The LLM
@@ -1384,7 +1425,7 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
 async def _run_one_resilient(row: dict, sem: asyncio.Semaphore, do_judge: bool,
                              do_compare: bool, system_prompt: str | None = None, *,
                              llm_config: dict, lakera_key: str, lakera_project_id: str = "", judge_config: dict,
-                             max_rounds: int = 4) -> dict:
+                             max_rounds: int = 4, checkpoints: dict | None = None) -> dict:
     """
     Run one scenario, retrying TRANSIENT failures with exponential backoff. The
     sleep happens between tries (outside the semaphore, since _run_one re-acquires
@@ -1396,7 +1437,8 @@ async def _run_one_resilient(row: dict, sem: asyncio.Semaphore, do_judge: bool,
         res = await _run_one(row, sem, do_judge, do_compare, system_prompt,
                              llm_config=llm_config, lakera_key=lakera_key,
                              lakera_project_id=lakera_project_id,
-                             judge_config=judge_config, max_rounds=max_rounds)
+                             judge_config=judge_config, max_rounds=max_rounds,
+                             checkpoints=checkpoints)
         if res["outcome"] != "error" or not res.get("error_transient") or attempt > ONESHOT_RETRIES:
             res["attempts"] = attempt
             return res
@@ -1594,7 +1636,10 @@ def _run_config(req: OneShotRequest) -> dict:
              "content": d["content"][:RAG_PREVIEW_CHARS] + ("…" if len(d["content"]) > RAG_PREVIEW_CHARS else "")}
             for d in docs
         ]}
-    return {"system_prompt": sysp, "knowledge_base": kb}
+    # Which guard checkpoints were active for the run (so a report reflects a
+    # deliberately-disabled layer).
+    cps = req.checkpoints.model_dump()
+    return {"system_prompt": sysp, "knowledge_base": kb, "checkpoints": cps}
 
 
 def _oneshot_system_prompt(req: OneShotRequest) -> str | None:
@@ -1629,7 +1674,7 @@ async def run_oneshot(req: OneShotRequest, *, llm_config: dict, lakera_key: str,
         *[_run_one_resilient(r, sem, do_judge, req.compare, sp,
                              llm_config=llm_config, lakera_key=lakera_key,
                              lakera_project_id=lakera_project_id, judge_config=jc,
-                             max_rounds=req.max_rounds)
+                             max_rounds=req.max_rounds, checkpoints=req.checkpoints.model_dump())
           for r in rows]
     )
     results.sort(key=lambda r: r.get("order", 0))
@@ -1668,7 +1713,8 @@ async def api_oneshot_stream(req: OneShotRequest):
         tasks = [asyncio.create_task(
             _run_one_resilient(r, sem, do_judge, req.compare, sp,
                                llm_config=cfg, lakera_key=key, lakera_project_id=proj,
-                               judge_config=jc, max_rounds=req.max_rounds)
+                               judge_config=jc, max_rounds=req.max_rounds,
+                               checkpoints=req.checkpoints.model_dump())
         ) for r in rows]
 
         async def producer():
@@ -1773,13 +1819,9 @@ async def api_upload_custom_doc(file: UploadFile = File(...)):
     if pathlib.Path(original_name).suffix.lower() != ALLOWED_DOC_EXT:
         raise HTTPException(400, f"Only {ALLOWED_DOC_EXT} files are accepted.")
 
-    # Size check (read fully; multipart gives no reliable Content-Length)
-    content = await file.read()
-    if len(content) > MAX_FILE_SIZE_BYTES:
-        raise HTTPException(
-            400,
-            f"File is {len(content) // 1024} KB — exceeds the {MAX_FILE_SIZE_BYTES // 1024} KB limit.",
-        )
+    # Size check — read in bounded chunks so an oversized body can't exhaust memory
+    # before it is rejected (multipart gives no reliable Content-Length up front).
+    content = await _read_capped(file, MAX_FILE_SIZE_BYTES)
 
     # UTF-8 validity
     try:

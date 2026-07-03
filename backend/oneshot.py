@@ -289,6 +289,15 @@ def render_text(out: dict) -> str:
     for c in sec.get("categories", []):
         lines.append(f"    {c['owasp_id'] or c['id']:<12} {c['severity']:<9} "
                      f"det {_fmt_rate(c.get('detection_rate'))}")
+    cls = sec.get("classification")
+    if cls:
+        fam = cls.get("families", {})
+        lines.append(f"  owasp classify: {cls.get('total', 0)} prompts · "
+                     f"LLM {fam.get('llm', 0)} · agentic {fam.get('agentic', 0)} · "
+                     f"unmapped {fam.get('unmapped', 0)}")
+        for tac in cls.get("tactics", []):
+            lines.append(f"    {tac['code']:<12} {tac['count']:>5} ({tac['share']}%) "
+                         f"det {_fmt_rate(tac.get('detection_rate'))}")
     return "\n".join(lines)
 
 
@@ -320,7 +329,7 @@ def render_diff(diff: dict) -> str:
     return "\n".join(lines)
 
 
-CSV_COLUMNS = ["id", "label", "owasp_id", "category_id", "expected", "outcome",
+CSV_COLUMNS = ["id", "label", "owasp_id", "owasp_class", "category_id", "expected", "outcome",
                "blocked", "model_outcome", "risk", "strategy", "total_latency_ms",
                "judge_reason", "assertions_matched"]
 
@@ -332,8 +341,11 @@ def results_to_csv(results: list[dict]) -> str:
     w.writeheader()
     for r in results:
         checks = r.get("assertions") or []
+        cls = r.get("owasp_class") or {}
+        cls_code = cls.get("code") if cls.get("code") not in (None, "UNMAPPED") else ""
         w.writerow({
             "id": r.get("id"), "label": r.get("label"), "owasp_id": r.get("owasp_id"),
+            "owasp_class": cls_code,
             "category_id": r.get("category_id"), "expected": r.get("expected"),
             "outcome": r.get("outcome"), "blocked": r.get("blocked"),
             "model_outcome": r.get("model_outcome"), "risk": r.get("risk"),
@@ -359,6 +371,13 @@ def render_md(out: dict) -> str:
         md += ["", "| OWASP | Severity | Detection |", "|---|---|---|"]
         md += [f"| {c['owasp_id'] or c['id']} | {c['severity']} | {_fmt_rate(c.get('detection_rate'))} |"
                for c in sec["categories"]]
+    cls = sec.get("classification")
+    if cls:
+        md += ["", f"#### OWASP tactic classification ({cls.get('total', 0)} imported prompts)",
+               "", "| Tactic | Prompts | Share | Detection |", "|---|---|---|---|"]
+        md += [f"| {tac['code']} {tac['name']} | {tac['count']} | {tac['share']}% "
+               f"| {_fmt_rate(tac.get('detection_rate'))} |"
+               for tac in cls.get("tactics", [])]
     return "\n".join(md)
 
 
