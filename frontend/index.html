@@ -1632,6 +1632,17 @@
           <div class="cp0-result" id="os-kb-status"></div>
         </div>
       </details>
+      <details class="os-strats" id="os-proj">
+        <summary data-i18n-title="osproj.summaryTitle" title="Lakera Project ID whose Guard policy applies to this run"><span data-i18n="osproj.title">Project ID</span> <span class="os-strats-count" id="os-proj-count"></span></summary>
+        <div class="os-ds-panel">
+          <div class="os-ds-row">
+            <span class="os-ds-label" data-i18n="osproj.label">Lakera Project ID for this run</span>
+            <input type="text" id="os-proj-id" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.placeholder" placeholder="Default from Settings" />
+            <button class="sp-btn" onclick="resetOsProj()" data-i18n="osproj.reset">Default</button>
+          </div>
+          <div class="os-ds-allnote" data-i18n="osproj.hint">Optional — selects that project's Guard policy for this run only. Pre-filled from Settings; edit to override, clear for no project.</div>
+        </div>
+      </details>
       <button class="sp-btn primary" id="os-run-btn" onclick="runOneShot()"><svg class="ic"><use href="#i-play"></use></svg> <span data-i18n="os.run">Run Test</span></button>
       <span class="os-running" id="os-running" style="display:none"><svg class="ic" style="animation:spin 1s linear infinite"><use href="#i-loader"></use></svg><span id="os-progress"></span></span>
       <span style="flex:1"></span>
@@ -1867,6 +1878,14 @@
         'os.rcCheckpoints': 'Checkpoints',
         'os.rcCpOn': 'on',
         'os.rcCpOff': 'off',
+        'os.rcProjectId': 'Lakera Project ID',
+        'os.rcProjectDefault': 'None (key default policy)',
+        'osproj.title': 'Project ID',
+        'osproj.summaryTitle': 'Lakera Project ID whose Guard policy applies to this run',
+        'osproj.label': 'Lakera Project ID for this run',
+        'osproj.placeholder': 'Default from Settings',
+        'osproj.reset': 'Default',
+        'osproj.hint': "Optional — selects that project's Guard policy for this run only. Pre-filled from Settings; edit to override, clear for no project.",
         'os.rcUsed': 'Used',
         'os.rcNoSp': 'Not used — no system prompt for this run',
         'os.rcNoKb': 'Not used — no RAG file for this run',
@@ -2224,6 +2243,14 @@
         'os.rcCheckpoints': '檢查點',
         'os.rcCpOn': '開',
         'os.rcCpOff': '關',
+        'os.rcProjectId': 'Lakera 專案 ID',
+        'os.rcProjectDefault': '無（金鑰預設政策）',
+        'osproj.title': '專案 ID',
+        'osproj.summaryTitle': '本次執行套用該 Lakera 專案的 Guard 政策',
+        'osproj.label': '本次執行的 Lakera 專案 ID',
+        'osproj.placeholder': '預設取自設定',
+        'osproj.reset': '預設',
+        'osproj.hint': '選填 — 僅為本次執行選擇該專案的 Guard 政策。預先帶入設定值；可修改以覆寫，或清空表示不使用專案。',
         'os.rcUsed': '已使用',
         'os.rcNoSp': '未使用 — 本次執行沒有系統提示詞',
         'os.rcNoKb': '未使用 — 本次執行沒有 RAG 檔案',
@@ -2646,6 +2673,14 @@
         'os.rcCheckpoints': '检查点',
         'os.rcCpOn': '开',
         'os.rcCpOff': '关',
+        'os.rcProjectId': 'Lakera 项目 ID',
+        'os.rcProjectDefault': '无（密钥默认策略）',
+        'osproj.title': '项目 ID',
+        'osproj.summaryTitle': '本次运行套用该 Lakera 项目的 Guard 策略',
+        'osproj.label': '本次运行的 Lakera 项目 ID',
+        'osproj.placeholder': '默认取自设置',
+        'osproj.reset': '默认',
+        'osproj.hint': '选填 — 仅为本次运行选择该项目的 Guard 策略。预先带入设置值；可修改以覆盖，或清空表示不使用项目。',
         'os.rcUsed': '已使用',
         'os.rcNoSp': '未使用 — 本次运行没有系统提示词',
         'os.rcNoKb': '未使用 — 本次运行没有 RAG 文件',
@@ -3068,6 +3103,14 @@
         'os.rcCheckpoints': 'チェックポイント',
         'os.rcCpOn': 'オン',
         'os.rcCpOff': 'オフ',
+        'os.rcProjectId': 'Lakera プロジェクト ID',
+        'os.rcProjectDefault': 'なし（キーのデフォルトポリシー）',
+        'osproj.title': 'プロジェクト ID',
+        'osproj.summaryTitle': 'この実行に適用する Lakera プロジェクトの Guard ポリシー',
+        'osproj.label': 'この実行の Lakera プロジェクト ID',
+        'osproj.placeholder': '設定から既定値',
+        'osproj.reset': '既定',
+        'osproj.hint': '任意 — この実行のみ、そのプロジェクトの Guard ポリシーを選択します。設定値を初期表示。編集で上書き、空欄でプロジェクトなし。',
         'os.rcUsed': '使用',
         'os.rcNoSp': '未使用 — この実行ではシステムプロンプトなし',
         'os.rcNoKb': '未使用 — この実行では RAG ファイルなし',
@@ -4116,6 +4159,7 @@
 
   // ── Lakera Guard key (no .env required; set here, persist with Save to .env) ──
   let lakeraKeySet = false;
+  let globalProjectId = '';        // the Settings Project ID — one-shot defaults to it
   async function loadLakeraConfig() {
     try {
       const d = await (await fetch(API + '/api/lakera-config')).json();
@@ -4124,6 +4168,7 @@
       inp.placeholder = lakeraKeySet
         ? t('llm.lakeraStored', { masked: d.api_key_masked })
         : t('llm.lakeraPlaceholder');
+      globalProjectId = d.project_id || '';
       const proj = document.getElementById('lakera-project');
       if (proj) proj.value = d.project_id || '';   // not secret → prefill it
       const sel = document.getElementById('lakera-endpoint');
@@ -4634,11 +4679,28 @@
     _osLastFocus = document.activeElement;   // remember focus to restore on close
     loadDatasets();   // refresh imported datasets → also rebuilds scope options
     buildScopeOptions();
+    // Default the per-run Project ID to the current Settings value (fresh each
+    // open), unless the user has manually edited it this session.
+    loadLakeraConfig().then(() => { if (!osProjDirty) resetOsProj(); });
     const overlay = document.getElementById('oneshot-overlay');
     overlay.classList.add('open');
     // Move focus into the dialog for keyboard / screen-reader users.
     const close = overlay.querySelector('.modal-close');
     if (close) close.focus();
+  }
+
+  // Per-run Lakera Project ID override (defaults to the global Settings value).
+  let osProjDirty = false;
+  function onOsProjInput() { osProjDirty = true; updateOsProjCount(); }
+  function resetOsProj() {
+    document.getElementById('os-proj-id').value = globalProjectId;
+    osProjDirty = false;
+    updateOsProjCount();
+  }
+  function updateOsProjCount() {
+    // Badge shows "•" only when the effective value differs from the default.
+    const v = document.getElementById('os-proj-id').value.trim();
+    document.getElementById('os-proj-count').textContent = v === globalProjectId ? '' : '•';
   }
   function closeOneShot() {
     document.getElementById('oneshot-overlay').classList.remove('open');
@@ -4955,6 +5017,7 @@
           cp2: document.getElementById('os-cp2').checked,
           cp3: document.getElementById('os-cp3').checked,
         },
+        lakera_project_id: document.getElementById('os-proj-id').value.trim(),
       };
       const res = await fetch(API + '/api/oneshot/stream', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -5169,6 +5232,15 @@
         const on = rc.checkpoints[cp] !== false;
         h += `<span class="os-runcfg-tag ${on ? 'used' : 'none'}">${cp.toUpperCase()} · ${esc(t(on ? 'os.rcCpOn' : 'os.rcCpOff'))}</span> `;
       });
+      h += '</div>';
+    }
+
+    // Lakera Project ID used for the run (the key's default policy if blank).
+    if (rc.lakera_project_id !== undefined) {
+      h += '<div class="os-runcfg-item"><h4>' + esc(t('os.rcProjectId')) + '</h4>';
+      h += rc.lakera_project_id
+        ? `<span class="os-runcfg-tag used">${esc(rc.lakera_project_id)}</span>`
+        : `<span class="os-runcfg-tag none">${esc(t('os.rcProjectDefault'))}</span>`;
       h += '</div>';
     }
     h += '</div>';
@@ -5628,6 +5700,10 @@
           + ['cp1', 'cp2', 'cp3'].map(cp =>
               `${cp.toUpperCase()} · ${esc(t(cps[cp] !== false ? 'os.rcCpOn' : 'os.rcCpOff'))}`).join(' &nbsp;·&nbsp; ')
           + `</div></div>`;
+      }
+      if (s.run_config.lakera_project_id !== undefined) {
+        runcfgHtml += `<div class="dt"><h4>${esc(t('os.rcProjectId'))}</h4><div class="none">`
+          + esc(s.run_config.lakera_project_id || t('os.rcProjectDefault')) + `</div></div>`;
       }
       runcfgHtml += `</div>`;
     }

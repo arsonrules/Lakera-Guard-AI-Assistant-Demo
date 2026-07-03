@@ -464,6 +464,9 @@ class OneShotRequest(BaseModel):
     # disabled checkpoint is skipped so a run can show what each layer catches on
     # its own. The Guard-OFF comparison arm (compare=True) is unaffected.
     checkpoints: CheckpointConfig = Field(default_factory=CheckpointConfig)
+    # Lakera Project ID whose Guard policy applies to this run. null → use the
+    # global Settings value; "" → run with no project (the key's default policy).
+    lakera_project_id: str | None = Field(default=None, max_length=200)
 
 
 class LakeraKeyRequest(BaseModel):
@@ -1639,7 +1642,10 @@ def _run_config(req: OneShotRequest) -> dict:
     # Which guard checkpoints were active for the run (so a report reflects a
     # deliberately-disabled layer).
     cps = req.checkpoints.model_dump()
-    return {"system_prompt": sysp, "knowledge_base": kb, "checkpoints": cps}
+    # Effective Lakera Project ID (per-run override or the global default).
+    proj = _oneshot_project_id(req)
+    return {"system_prompt": sysp, "knowledge_base": kb, "checkpoints": cps,
+            "lakera_project_id": proj}
 
 
 def _oneshot_system_prompt(req: OneShotRequest) -> str | None:
@@ -1653,6 +1659,14 @@ def _oneshot_system_prompt(req: OneShotRequest) -> str | None:
         return ""
     sp = (req.system_prompt or "").strip()
     return sp or _custom_system_prompt
+
+
+def _oneshot_project_id(req: OneShotRequest) -> str:
+    """Effective Lakera Project ID for a run: the per-run override when given,
+    else the global Settings value. `null` = use global; `""` = no project."""
+    if req.lakera_project_id is not None:
+        return _clean(req.lakera_project_id)
+    return _lakera_project_id
 
 
 async def run_oneshot(req: OneShotRequest, *, llm_config: dict, lakera_key: str,
@@ -1685,7 +1699,7 @@ async def run_oneshot(req: OneShotRequest, *, llm_config: dict, lakera_key: str,
 async def api_oneshot(req: OneShotRequest):
     # Snapshot the provider config + key once (see run_oneshot).
     out = await run_oneshot(req, llm_config=dict(_llm_config), lakera_key=_lakera_key,
-                            lakera_project_id=_lakera_project_id,
+                            lakera_project_id=_oneshot_project_id(req),
                             judge_config=_effective_judge_config())
     return {**out, "llm": _public_llm_config(), "judge": _public_judge_config(),
             "category_id": req.category_id}
@@ -1703,7 +1717,7 @@ async def api_oneshot_stream(req: OneShotRequest):
     do_judge = req.judge or req.compare
     sp = _oneshot_system_prompt(req)
     cfg, key = dict(_llm_config), _lakera_key   # snapshot (see api_oneshot)
-    proj = _lakera_project_id
+    proj = _oneshot_project_id(req)
     jc = _effective_judge_config()
     sem = asyncio.Semaphore(req.concurrency or ONESHOT_CONCURRENCY)
     total = len(rows)

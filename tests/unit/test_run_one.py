@@ -103,6 +103,27 @@ def test_run_config_records_checkpoints():
     assert rc["checkpoints"] == {"cp1": False, "cp2": True, "cp3": True}
 
 
+def test_project_id_defaults_to_global(monkeypatch):
+    monkeypatch.setattr(main, "_lakera_project_id", "global-proj")
+    # null → global default
+    assert main._oneshot_project_id(main.OneShotRequest()) == "global-proj"
+    # an explicit value overrides for this run
+    assert main._oneshot_project_id(
+        main.OneShotRequest(lakera_project_id="run-proj")) == "run-proj"
+    # empty string = run with no project (the key's default policy)
+    assert main._oneshot_project_id(main.OneShotRequest(lakera_project_id="")) == ""
+    # control chars are stripped (env/header-injection defense, like the key)
+    assert main._oneshot_project_id(
+        main.OneShotRequest(lakera_project_id="p\nx")) == "px"
+
+
+def test_run_config_records_project_id(monkeypatch):
+    monkeypatch.setattr(main, "_lakera_project_id", "global-proj")
+    assert main._run_config(main.OneShotRequest())["lakera_project_id"] == "global-proj"
+    assert main._run_config(
+        main.OneShotRequest(lakera_project_id="run-proj"))["lakera_project_id"] == "run-proj"
+
+
 async def test_assertion_detects_leak_without_judge(monkeypatch):
     # --no-judge: a deterministic assertion still flags the compromise (free).
     async def stub_process(**kw):
