@@ -528,11 +528,14 @@ attempts (plaintext + variants) for back-compat.
 The **Limits** panel bounds a run so a large dataset can't accidentally fire tens
 of thousands of LLM/Lakera calls:
 
-- **Max scenarios** (default 100, max 1000) — caps the base scenarios executed. A
+- **Max scenarios** (default 100, max 100,000) — caps the base scenarios executed. A
   dataset larger than this is **randomly sampled** down to it; the report shows
   *“Sampled N of M scenarios”* and the run is reproducible via a `seed`.
-- **Concurrency** (default 4, max 16) — parallel scenario workers.
-- A run executes at most **2000 rows** including obfuscation variants
+- **Concurrency** (default 4, max 100) — parallel scenario workers. The guard
+  checkpoints share a keep-alive connection pool, so high concurrency scans in
+  parallel without a fresh TLS handshake per checkpoint. Raise it to run large
+  suites much faster; lower it if your Lakera/LLM provider rate-limits.
+- A run executes at most **100,000 rows** including obfuscation variants
   (`base × (1 + strategies)`); exceeding this returns an error asking you to lower
   *Max scenarios* or pick fewer strategies.
 
@@ -668,6 +671,10 @@ The same prepare → run → summarize pipeline is available without the UI, so 
 can be a **config-as-code** suite and a **CI gate** that fails the build on a
 regression. Secrets come from the environment only — the suite never holds keys.
 
+> 📖 **New to the CLI?** See [**CLI_ONESHOT_GUIDE.md**](CLI_ONESHOT_GUIDE.md) for a
+> step-by-step manual: dependencies, environment setup, verification, running your
+> own / HuggingFace datasets, and troubleshooting.
+
 ```bash
 # Run a suite and fail (exit 1) if a gate threshold is violated
 python -m backend.oneshot --suite suite.yaml
@@ -693,6 +700,33 @@ Any flag overrides its suite value. The gate is evaluated against the run summar
 `min_detection` uses the **base** (plaintext) detection rate, and breaches /
 evasions / landed-evasions / false-positives have ceilings (a `null` threshold is
 not enforced).
+
+### Running selected datasets from the CLI
+
+The CLI runs the same **multi-dataset, high-concurrency** pipeline as the UI — point
+it at local files, a directory, or public HuggingFace datasets, and they run
+**together** through the guard (attacks are graded exactly as in the web report):
+
+```bash
+# Several local dataset files together (.csv/.json/.jsonl/.txt), 32 workers in parallel
+python -m backend.oneshot \
+  --dataset-file attacks/prompt_injection.csv \
+  --dataset-file attacks/pii_leak.jsonl \
+  --concurrency 32 --no-judge --csv results.csv
+
+# Every dataset file in a directory
+python -m backend.oneshot --dataset-dir ./attack_corpora --concurrency 64
+
+# Import public HuggingFace datasets and run them (repeatable; --hf-all pulls every row)
+python -m backend.oneshot \
+  --hf-dataset OpenSafetyLab/Salad-Data --hf-dataset Babelscape/ALERT \
+  --hf-limit 500 --concurrency 100 --out report.json
+```
+
+- **`--dataset-file PATH`** (repeatable) — local `.csv/.json/.jsonl/.txt` (prompt column auto-detected; `.txt` = one prompt per line).
+- **`--dataset-dir DIR`** — every supported file in a directory, run together.
+- **`--hf-dataset OWNER/NAME`** (repeatable) with **`--hf-limit`** / **`--hf-column`** / **`--hf-all`** — import public HuggingFace datasets (not imported during `--dry-run`).
+- **`--concurrency N`** (1–100) runs *N* scenarios in parallel; the guard checkpoints share a keep-alive connection pool, so high concurrency is fast. Combine with a local model (`--provider lmstudio|ollama|omlx`) to run large corpora at zero cost.
 
 **Exit codes** (for CI): `0` gates passed · `1` a gate was violated · `2`
 configuration error · `3` execution error (LLM/Lakera unreachable). `--out
@@ -822,7 +856,7 @@ AI assistant demo/
 | `GET`/`POST` | `/api/history` | List saved runs / save a run for regression tracking |
 | `GET`/`DELETE` | `/api/history/{id}` | Fetch / delete a saved run |
 | `POST` | `/api/history/diff` | Diff two saved runs (`base_id`, `head_id`) → per-metric deltas + `regressed` |
-| `POST` | `/api/oneshot` | Run a category, dataset, or all scenarios through the pipeline; optional LLM-judge grading, guard ON/OFF comparison, obfuscation strategies, and a per-run system-prompt override; returns results + summary. Scale controls: `max_scenarios` (default 100, ≤1000; larger datasets are sampled), `concurrency` (default 4, ≤16), `seed` (reproducible sampling) |
+| `POST` | `/api/oneshot` | Run a category, dataset, or all scenarios through the pipeline; optional LLM-judge grading, guard ON/OFF comparison, obfuscation strategies, and a per-run system-prompt override; returns results + summary. Scale controls: `max_scenarios` (default 100, ≤100,000; larger datasets are sampled), `concurrency` (default 4, ≤100), `seed` (reproducible sampling) |
 | `POST` | `/api/oneshot/stream` | Same run as `/api/oneshot` but streams NDJSON progress (one event per finished scenario) so the UI counter ticks live |
 | `GET` | `/api/strategies` | List available attack-obfuscation strategies |
 | `GET` | `/api/datasets` | List imported external datasets |
