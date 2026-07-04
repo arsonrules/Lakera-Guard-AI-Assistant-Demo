@@ -30,7 +30,7 @@ import sys
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from backend import datasets, history, llm
+from backend import datasets, history, lakera, llm
 from backend import main as core
 from backend.main import OneShotRequest
 
@@ -44,7 +44,7 @@ class ConfigError(Exception):
 # ── Effective configuration (defaults ← suite ← CLI flags) ────────────────────
 
 DEFAULTS: dict = {
-    "scope": {"category": None, "include_safe": True, "dataset": None,
+    "scope": {"category": None, "include_safe": True, "dataset": None, "datasets": [],
               "max_scenarios": 100, "seed": None},
     "options": {"judge": True, "compare": False, "strategies": [], "doc_mode": None,
                 "system_prompt": None, "no_system_prompt": False, "concurrency": None,
@@ -132,7 +132,14 @@ def build_effective_config(args: argparse.Namespace) -> dict:
                      ("max_false_positives", args.max_false_positives)):
         if val is not None:
             g[key] = val
-    cfg["_dataset_file"] = args.dataset_file
+    # Dataset sources resolved to slugs in main(): local files/dir (offline) and
+    # HuggingFace imports (network). Multiple run together as req.datasets.
+    cfg["_dataset_files"] = list(args.dataset_file or [])   # --dataset-file is repeatable
+    cfg["_dataset_dir"] = args.dataset_dir
+    cfg["_hf_datasets"] = list(args.hf_dataset or [])       # --hf-dataset is repeatable
+    cfg["_hf_limit"] = args.hf_limit
+    cfg["_hf_column"] = args.hf_column
+    cfg["_hf_all"] = args.hf_all
     return cfg
 
 
@@ -194,6 +201,7 @@ def build_request(cfg: dict) -> OneShotRequest:
     try:
         return OneShotRequest(
             category_id=s["category"], include_safe=s["include_safe"], dataset=s["dataset"],
+            datasets=s.get("datasets") or [],
             max_scenarios=s["max_scenarios"], seed=s["seed"],
             judge=o["judge"], compare=o["compare"], strategies=o["strategies"] or [],
             doc_mode=o["doc_mode"], system_prompt=o["system_prompt"],
@@ -204,6 +212,17 @@ def build_request(cfg: dict) -> OneShotRequest:
         raise ConfigError(f"invalid run configuration: {exc.errors()[0].get('msg', exc)}")
 
 
+DATASET_EXTS = {".csv", ".json", ".jsonl", ".txt"}
+
+
+def _store_cli_dataset(name: str, source: str, column: str | None, rows: list[dict]) -> str:
+    """Register an in-memory dataset for the run (no MAX_DATASETS cap for the CLI)."""
+    slug = core._slugify(name)
+    core._datasets[slug] = {"slug": slug, "name": name, "source": source,
+                            "count": len(rows), "column": column, "rows": rows}
+    return slug
+
+
 def load_dataset_file(path: str) -> str:
     """Parse a local CSV/JSON/JSONL/TXT into an in-memory dataset; return its slug."""
     p = pathlib.Path(path)
@@ -212,12 +231,43 @@ def load_dataset_file(path: str) -> str:
     try:
         parsed = datasets.parse_upload(p.name, p.read_bytes())
     except datasets.DatasetError as exc:
-        raise ConfigError(f"dataset file: {exc}")
-    slug = core._slugify(p.stem)
-    core._datasets[slug] = {"slug": slug, "name": p.name, "source": "cli-file",
-                            "count": len(parsed["rows"]), "column": parsed["column"],
-                            "rows": parsed["rows"]}
-    return slug
+        raise ConfigError(f"dataset file '{path}': {exc}")
+    return _store_cli_dataset(p.name, "cli-file", parsed["column"], parsed["rows"])
+
+
+def load_dataset_dir(path: str) -> list[str]:
+    """Load every .csv/.json/.jsonl/.txt in a directory; return their slugs (sorted)."""
+    p = pathlib.Path(path)
+    if not p.is_dir():
+        raise ConfigError(f"dataset dir not found: {path}")
+    files = sorted(f for f in p.iterdir() if f.is_file() and f.suffix.lower() in DATASET_EXTS)
+    if not files:
+        raise ConfigError(f"no .csv/.json/.jsonl/.txt files in {path}")
+    return [load_dataset_file(str(f)) for f in files]
+
+
+async def import_hf_dataset(dataset_id: str, *, limit: int, column: str | None,
+                            all_configs: bool) -> str:
+    """Fetch a HuggingFace dataset (network) into an in-memory dataset; return its slug."""
+    try:
+        result = await datasets.fetch_hf(dataset_id, column=column, limit=limit,
+                                         all_configs=all_configs)
+    except datasets.DatasetError as exc:
+        raise ConfigError(f"HuggingFace '{dataset_id}': {exc}")
+    return _store_cli_dataset(dataset_id, "cli-hf", result["column"], result["rows"])
+
+
+def _local_scope_slugs(cfg: dict) -> list[str]:
+    """Resolve the offline dataset sources (single --dataset slug, --dataset-file(s),
+    --dataset-dir) into slugs. HuggingFace imports are resolved separately (network)."""
+    slugs: list[str] = []
+    if cfg["scope"].get("dataset"):          # legacy single imported slug / suite value
+        slugs.append(cfg["scope"]["dataset"])
+    for f in cfg.get("_dataset_files", []):
+        slugs.append(load_dataset_file(f))
+    if cfg.get("_dataset_dir"):
+        slugs.extend(load_dataset_dir(cfg["_dataset_dir"]))
+    return slugs
 
 
 # ── Gate evaluation (pure) ────────────────────────────────────────────────────
@@ -256,11 +306,17 @@ def render_plan(scope: dict, req: OneShotRequest, llm_config: dict,
                 judge_config: dict | None = None) -> str:
     judge = (f"{judge_config['provider']} · {judge_config['model']}"
              if judge_config else "same as target")
+    if req.datasets:
+        scope_str = f"datasets [{', '.join(req.datasets)}]"
+    elif req.dataset:
+        scope_str = f"dataset {req.dataset}"
+    else:
+        scope_str = req.category_id or "all categories"
     return "\n".join([
         "Run plan (dry-run — no API calls):",
         f"  provider     : {llm_config['provider']} · {llm_config['model']}",
         f"  judge model  : {judge}",
-        f"  scope        : {'dataset ' + req.dataset if req.dataset else (req.category_id or 'all categories')}",
+        f"  scope        : {scope_str}",
         f"  scenarios    : {scope['base_executed']} of {scope['available']}"
         + (" (sampled)" if scope['sampled'] else ""),
         f"  strategies   : {', '.join(req.strategies) or 'none'}",
@@ -391,7 +447,18 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--category", help="run a single OWASP category id (e.g. llm01)")
     g.add_argument("--all-categories", action="store_true", help="run the whole catalogue")
     g.add_argument("--dataset", help="run an imported dataset slug")
-    g.add_argument("--dataset-file", help="load a local CSV/JSON/JSONL/TXT dataset and run it")
+    g.add_argument("--dataset-file", action="append", metavar="PATH",
+                   help="load a local CSV/JSON/JSONL/TXT dataset and run it; repeatable "
+                        "to run several datasets together")
+    g.add_argument("--dataset-dir", metavar="DIR",
+                   help="load every .csv/.json/.jsonl/.txt file in a directory and run them together")
+    g.add_argument("--hf-dataset", action="append", metavar="OWNER/NAME",
+                   help="import a public HuggingFace dataset and run it; repeatable")
+    g.add_argument("--hf-limit", type=int, default=100,
+                   help="rows to import per --hf-dataset (default 100; ignored with --hf-all)")
+    g.add_argument("--hf-column", help="prompt column override for --hf-dataset (default: auto-detect)")
+    g.add_argument("--hf-all", action="store_true",
+                   help="import every row of each --hf-dataset (up to 100,000)")
     g.add_argument("--max-scenarios", type=int)
     g.add_argument("--seed", type=int)
     o = ap.add_argument_group("options")
@@ -438,9 +505,9 @@ def main(argv: list[str] | None = None) -> int:
         llm_config = resolve_llm_config(cfg["llm"], dry_run=args.dry_run)
         judge_config = resolve_judge_config(cfg["judge_llm"], dry_run=args.dry_run)
         lakera_key = resolve_lakera_key(dry_run=args.dry_run)
-        if cfg.get("_dataset_file"):
-            cfg["scope"]["dataset"] = load_dataset_file(cfg["_dataset_file"])
-        req = build_request(cfg)
+        # Offline dataset sources (files/dir); HuggingFace imports happen at run time.
+        local_slugs = _local_scope_slugs(cfg)
+        hf_ids = cfg["_hf_datasets"]
         # Load the baseline up front so a bad path fails before any API spend.
         baseline = load_baseline(args.baseline) if args.baseline else None
     except ConfigError as exc:
@@ -453,11 +520,31 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.dry_run:
+            cfg["scope"]["datasets"] = local_slugs
+            req = build_request(cfg)
             rows, scope = core._prepare_oneshot_rows(req)
-            print(render_plan(scope, req, llm_config, judge_config))
+            plan = render_plan(scope, req, llm_config, judge_config)
+            if hf_ids:   # not imported in a dry-run (that's a network call)
+                plan += "\n  hf (at run)  : " + ", ".join(hf_ids)
+            print(plan)
             return EXIT_OK
-        out = asyncio.run(core.run_oneshot(req, llm_config=llm_config, lakera_key=lakera_key,
-                                           judge_config=judge_config))
+
+        async def _run_and_close():
+            try:
+                # Import HuggingFace datasets (network), then run everything together.
+                hf_slugs = [await import_hf_dataset(hid, limit=cfg["_hf_limit"],
+                                                    column=cfg["_hf_column"], all_configs=cfg["_hf_all"])
+                            for hid in hf_ids]
+                cfg["scope"]["datasets"] = local_slugs + hf_slugs
+                req = build_request(cfg)
+                return await core.run_oneshot(req, llm_config=llm_config, lakera_key=lakera_key,
+                                              judge_config=judge_config)
+            finally:
+                await lakera.aclose()   # release the shared Guard connection pool
+        out = asyncio.run(_run_and_close())
+    except ConfigError as exc:          # HuggingFace import / dataset errors
+        print(f"config error: {exc}", file=sys.stderr)
+        return EXIT_CONFIG
     except HTTPException as exc:
         print(f"config error: {exc.detail}", file=sys.stderr)
         return EXIT_CONFIG

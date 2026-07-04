@@ -1,3 +1,4 @@
+import asyncio
 import time
 from urllib.parse import urlsplit
 
@@ -61,20 +62,48 @@ def _build_body(text: str, project_id: str = "") -> dict:
     return body
 
 
+# Shared, connection-pooled HTTP client. One Guard scan happens per checkpoint,
+# so a high-concurrency one-shot run fires hundreds of scans; reusing keep-alive
+# connections (instead of a fresh TLS handshake per `httpx.AsyncClient()`) is
+# what makes 100-way parallelism fast. The client isn't bound to a host — every
+# call passes the full URL — so switching Guard regions just pools new
+# connections for the new host. Sized comfortably above MAX_CONCURRENCY.
+_LIMITS = httpx.Limits(max_connections=128, max_keepalive_connections=64)
+_client: httpx.AsyncClient | None = None
+_client_lock = asyncio.Lock()
+
+
+async def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        async with _client_lock:            # guard against a concurrent first-use race
+            if _client is None or _client.is_closed:
+                _client = httpx.AsyncClient(limits=_LIMITS, timeout=10.0)
+    return _client
+
+
+async def aclose() -> None:
+    """Close the shared client (call on app shutdown / after a CLI run)."""
+    global _client
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+    _client = None
+
+
 async def check(text: str, api_key: str, project_id: str = "", endpoint: str = "") -> dict:
     """Run Lakera Guard v2 on a text string. Returns response dict + latency_ms.
 
     `endpoint` overrides the configured regional endpoint when given (mainly for
     tests); otherwise the current runtime endpoint is used."""
     start = time.monotonic()
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            endpoint or _endpoint,
-            headers={"Authorization": f"Bearer {api_key}"},
-            json=_build_body(text, project_id),
-            timeout=10.0,
-        )
-        resp.raise_for_status()
+    client = await _get_client()
+    resp = await client.post(
+        endpoint or _endpoint,
+        headers={"Authorization": f"Bearer {api_key}"},
+        json=_build_body(text, project_id),
+        timeout=10.0,
+    )
+    resp.raise_for_status()
     data = resp.json()
     data["latency_ms"] = int((time.monotonic() - start) * 1000)
     return data

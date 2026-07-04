@@ -30,7 +30,7 @@ ALLOWED_DOC_EXT     = ".txt"
 
 # Concurrency cap for one-shot batch runs (protects Lakera/LLM rate limits).
 ONESHOT_CONCURRENCY = 4
-MAX_CONCURRENCY = 16            # upper bound the UI/API may request
+MAX_CONCURRENCY = 100           # upper bound the UI/API may request
 
 # Per-scenario retry for TRANSIENT failures (rate limits, timeouts, 5xx) that a
 # concurrent batch otherwise surfaces as a spurious "error" row.
@@ -330,6 +330,8 @@ DEMO_SCENARIOS = [
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+    # Release the shared Guard connection pool on shutdown.
+    await lakera.aclose()
 
 
 app = FastAPI(title="Lakera Guard Demo", lifespan=lifespan)
