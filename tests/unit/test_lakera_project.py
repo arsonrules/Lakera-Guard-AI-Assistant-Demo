@@ -41,8 +41,11 @@ def test_control_chars_stripped_from_project_id():
 
 @pytest.fixture(autouse=True)
 def _restore_endpoint():
-    # Region is module-global on lakera; restore the default after each test.
+    # Region is a module global on lakera and is seeded from .env at import, so
+    # pin a deterministic Community baseline for each test (independent of the
+    # developer's local .env), then restore the original afterwards.
     saved = lakera.current_endpoint()
+    lakera.set_endpoint(lakera.COMMUNITY_ENDPOINT)
     yield
     lakera.set_endpoint(saved)
 

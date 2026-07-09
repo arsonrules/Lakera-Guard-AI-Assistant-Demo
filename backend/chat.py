@@ -36,9 +36,12 @@ async def scan_system_prompt(text: str, lakera_key: str, lakera_project_id: str 
     if not lakera_key:
         raise LakeraNotConfigured()
     result = await lakera.check(text, lakera_key, lakera_project_id)
+    summary = lakera.results_summary(result)
     return {
         "flagged": lakera.is_flagged(result),
         "categories": lakera.flagged_categories(result),
+        "detectors": summary["detectors"],          # L1–L5 per fired detector
+        "flagged_count": summary["flagged_count"],
         "latency_ms": result["latency_ms"],
     }
 
@@ -58,17 +61,21 @@ FALLBACK_CP3 = (
 
 def _empty_trace() -> dict:
     return {
-        "cp1": {"status": "pending", "flagged": None, "categories": [], "latency_ms": None},
+        "cp1": {"status": "pending", "flagged": None, "categories": [], "detectors": [],
+                "flagged_count": 0, "latency_ms": None},
         "cp2": {
             "status": "pending",
             "flagged": None,
             "categories": [],
+            "detectors": [],
+            "flagged_count": 0,
             "latency_ms": None,
             "docs_checked": 0,
             "docs_flagged": [],
             "docs_passed": [],
         },
-        "cp3": {"status": "pending", "flagged": None, "categories": [], "latency_ms": None},
+        "cp3": {"status": "pending", "flagged": None, "categories": [], "detectors": [],
+                "flagged_count": 0, "latency_ms": None},
     }
 
 
@@ -148,7 +155,9 @@ async def process(
         trace["cp1"]["status"] = "disabled"
     else:
         cp1 = await lakera.check(message, lakera_key, proj["cp1"])
-        trace["cp1"]["latency_ms"] = cp1["latency_ms"]
+        s1 = lakera.results_summary(cp1)
+        trace["cp1"].update(latency_ms=cp1["latency_ms"],
+                            detectors=s1["detectors"], flagged_count=s1["flagged_count"])
 
         if lakera.is_flagged(cp1):
             trace["cp1"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp1))
@@ -176,10 +185,12 @@ async def process(
         flagged_names: list[str] = []
         passed_names: list[str] = []
         all_cp2_categories: list[str] = []
+        all_cp2_detectors: list[dict] = []
 
         for doc in docs:
             cp2 = await lakera.check(doc["content"], lakera_key, proj["cp2"])
             cp2_latency += cp2["latency_ms"]
+            all_cp2_detectors.extend(lakera.detector_results(cp2))   # L1–L5 across docs
             if lakera.is_flagged(cp2):
                 flagged_names.append(doc["filename"])
                 all_cp2_categories.extend(lakera.flagged_categories(cp2))
@@ -193,6 +204,8 @@ async def process(
             docs_flagged=flagged_names,
             docs_passed=passed_names,
             categories=list(set(all_cp2_categories)),
+            detectors=all_cp2_detectors,
+            flagged_count=len(all_cp2_detectors),
         )
 
         if not docs:
@@ -210,7 +223,9 @@ async def process(
         trace["cp3"]["status"] = "disabled"
     else:
         cp3 = await lakera.check(response_text, lakera_key, proj["cp3"])
-        trace["cp3"]["latency_ms"] = cp3["latency_ms"]
+        s3 = lakera.results_summary(cp3)
+        trace["cp3"].update(latency_ms=cp3["latency_ms"],
+                            detectors=s3["detectors"], flagged_count=s3["flagged_count"])
 
         if lakera.is_flagged(cp3):
             trace["cp3"].update(status="blocked", flagged=True, categories=lakera.flagged_categories(cp3))

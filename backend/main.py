@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lakera_demo")
@@ -43,6 +44,8 @@ ONESHOT_STREAM_KEEPALIVE = 5.0
 
 def _is_transient(exc: Exception) -> bool:
     """A failure worth retrying: rate limit, timeout, connection, or 5xx."""
+    if isinstance(exc, lakera.LakeraAPIError):
+        return exc.status_code in (429, 500, 502, 503, 504)
     if isinstance(exc, httpx.HTTPStatusError):
         return bool(exc.response is not None
                     and exc.response.status_code in (429, 500, 502, 503, 504))
@@ -539,6 +542,11 @@ async def api_chat(req: ChatRequest):
         return result
     except chat.LakeraNotConfigured:
         raise HTTPException(status_code=400, detail=LAKERA_NOT_SET_MSG)
+    except lakera.LakeraAPIError as exc:
+        # A Guard failure (e.g. invalid region, bad key) — attribute it to Lakera,
+        # NOT the LLM provider, so the user fixes the right setting.
+        logger.warning("Lakera Guard error: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
     except httpx.HTTPStatusError as exc:
         # The LLM provider rejected the request (bad model, auth, etc.).
         # Surface the real reason so the user can fix their provider config.
@@ -1006,38 +1014,41 @@ async def api_strategies():
 
 # ── One-shot batch testing ───────────────────────────────────────────────────
 
+def dataset_row(slug: str, index: int, item: dict, dataset_name: str) -> dict:
+    """Build one one-shot attack-scenario row from an imported dataset prompt.
+    Shared by the batch path (_dataset_rows) and the CLI streaming pipeline."""
+    prompt = item["prompt"]
+    return {
+        "id": f"{slug}-{index}",
+        "label": (prompt[:60] + ("…" if len(prompt) > 60 else "")),
+        "category_id": "external",
+        "owasp_id": None,
+        "owasp_name": item.get("category") or dataset_name,
+        # Classify each imported prompt by OWASP LLM Top 10 / Agentic tactic so the
+        # report can break an otherwise-opaque dataset down by attack technique.
+        "owasp_class": classify.classify(prompt),
+        "color": "attack",          # external safety datasets are attack prompts
+        "prompt": prompt,
+        "doc_mode": "clean",
+        "simulate_output": None,
+        "description": f"From {dataset_name}",
+        "success_criteria": judge.criteria_for("external"),
+        "strategy": None,
+        "strategy_label": None,
+        "assertions": None,
+        "turns": None,
+        "tools": None,
+        "goal": None,
+        "dynamic": False,
+    }
+
+
 def _dataset_rows(slug: str) -> list[dict]:
     """Turn an imported dataset's prompts into one-shot attack-scenario rows."""
     d = _datasets.get(slug)
     if not d:
         raise HTTPException(404, "Dataset not found — re-import it.")
-    rows: list[dict] = []
-    for i, item in enumerate(d["rows"], 1):
-        # Classify each imported prompt by OWASP LLM Top 10 / Agentic tactic so the
-        # report can break an otherwise-opaque dataset down by attack technique.
-        owasp_class = classify.classify(item["prompt"])
-        rows.append({
-            "id": f"{slug}-{i}",
-            "label": (item["prompt"][:60] + ("…" if len(item["prompt"]) > 60 else "")),
-            "category_id": "external",
-            "owasp_id": None,
-            "owasp_name": item.get("category") or d["name"],
-            "owasp_class": owasp_class,
-            "color": "attack",          # external safety datasets are attack prompts
-            "prompt": item["prompt"],
-            "doc_mode": "clean",
-            "simulate_output": None,
-            "description": f"From {d['name']}",
-            "success_criteria": judge.criteria_for("external"),
-            "strategy": None,
-            "strategy_label": None,
-            "assertions": None,
-            "turns": None,
-            "tools": None,
-            "goal": None,
-            "dynamic": False,
-        })
-    return rows
+    return [dataset_row(slug, i, item, d["name"]) for i, item in enumerate(d["rows"], 1)]
 
 
 def _flatten_scenarios(category_id: str | None, include_safe: bool) -> list[dict]:
@@ -1433,7 +1444,13 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                 "error": None,
             }
         except Exception as exc:  # noqa: BLE001 — record, don't abort the whole batch
-            logger.exception("One-shot scenario %s failed", row["id"])
+            # A concise, actionable reason (kept in the result + summary) instead of a
+            # raw httpx traceback. Logging happens once per scenario in the resilient
+            # wrapper (not per retry here), so a run over thousands of rows against a
+            # down endpoint can't bury the terminal in identical stack traces.
+            friendly = llm.describe_error(exc)
+            logger.debug("one-shot scenario %s attempt failed: %s", row["id"], friendly,
+                         exc_info=True)
             return {
                 **base,
                 "blocked": None, "blocked_at": None, "outcome": "error",
@@ -1441,7 +1458,7 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                 "tool_calls": None, "model_response": None,
                 "alone_outcome": None, "alone_reason": None, "alone_response": None,
                 "trace": {}, "rag": [], "total_latency_ms": None, "judge_latency_ms": None,
-                "error": f"{type(exc).__name__}: {exc}",
+                "error": friendly,
                 "error_transient": _is_transient(exc),
             }
 
@@ -1466,11 +1483,37 @@ async def _run_one_resilient(row: dict, sem: asyncio.Semaphore, do_judge: bool,
                              checkpoints=checkpoints, checkpoint_projects=checkpoint_projects)
         if res["outcome"] != "error" or not res.get("error_transient") or attempt > ONESHOT_RETRIES:
             res["attempts"] = attempt
+            if res["outcome"] == "error":       # one concise line per failed scenario
+                logger.warning("scenario %s failed after %d attempt(s): %s",
+                               row.get("id"), attempt, res.get("error"))
             return res
         await asyncio.sleep(min(ONESHOT_RETRY_BACKOFF * (2 ** (attempt - 1)), 10)
                             + random.uniform(0, 0.5))
     res["attempts"] = ONESHOT_RETRIES + 1
     return res
+
+
+async def _run_rows_bounded(rows: list[dict], worker_count: int, run_row) -> list[dict]:
+    """
+    Run `run_row(row)` over `rows` with at most `worker_count` coroutines in flight,
+    WITHOUT creating one task per row. A fixed pool of workers pulls from a shared
+    iterator, so live memory stays ~`worker_count` coroutines + the results list —
+    instead of `asyncio.gather(*[...])`, which materialises N pending tasks (and
+    their frames) up front and blows up for a large batch (e.g. 100k scenarios).
+
+    Safe on the single-threaded event loop: `next(row_iter)` runs to completion
+    with no `await` in between, so two workers never receive the same row.
+    """
+    results: list[dict] = []
+    row_iter = iter(rows)
+
+    async def worker() -> None:
+        for row in row_iter:          # atomic hand-off; no await between next() calls
+            results.append(await run_row(row))
+
+    pool = max(1, min(worker_count, len(rows)))
+    await asyncio.gather(*[asyncio.create_task(worker()) for _ in range(pool)])
+    return results
 
 
 def _prepare_oneshot_rows(req: OneShotRequest) -> tuple[list[dict], dict]:
@@ -1718,15 +1761,22 @@ async def run_oneshot(req: OneShotRequest, *, llm_config: dict, lakera_key: str,
     do_judge = req.judge or req.compare
     sp = _oneshot_system_prompt(req)
     jc = judge_config or llm_config
-    sem = asyncio.Semaphore(req.concurrency or ONESHOT_CONCURRENCY)
-    results = await asyncio.gather(
-        *[_run_one_resilient(r, sem, do_judge, req.compare, sp,
-                             llm_config=llm_config, lakera_key=lakera_key,
-                             lakera_project_id=lakera_project_id, judge_config=jc,
-                             max_rounds=req.max_rounds, checkpoints=req.checkpoints.model_dump(),
-                             checkpoint_projects=checkpoint_projects)
-          for r in rows]
-    )
+    concurrency = req.concurrency or ONESHOT_CONCURRENCY
+    checkpoints = req.checkpoints.model_dump()
+    # A bounded worker pool (not gather-all) so a very large `rows` batch doesn't
+    # spawn one live coroutine per row. The semaphore still guards concurrency for
+    # any direct _run_one_resilient callers; here the pool already bounds it.
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _run_row(r: dict) -> dict:
+        return await _run_one_resilient(
+            r, sem, do_judge, req.compare, sp,
+            llm_config=llm_config, lakera_key=lakera_key,
+            lakera_project_id=lakera_project_id, judge_config=jc,
+            max_rounds=req.max_rounds, checkpoints=checkpoints,
+            checkpoint_projects=checkpoint_projects)
+
+    results = await _run_rows_bounded(rows, concurrency, _run_row)
     results.sort(key=lambda r: r.get("order", 0))
     return {"summary": _oneshot_summary(results, req, scope), "results": results}
 
@@ -1935,3 +1985,9 @@ async def api_delete_custom_doc(filename: str):
 @app.get("/")
 async def serve_index():
     return FileResponse(FRONTEND_DIR / "index.html")
+
+
+# Serve the modular frontend assets (onboarding wizard, scenario cards, styles)
+# that index.html loads by URL. Mounted at a dedicated prefix so it never shadows
+# an /api route or the "/" handler above.
+app.mount("/assets", StaticFiles(directory=FRONTEND_DIR), name="assets")

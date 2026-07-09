@@ -4,6 +4,8 @@ import urllib.parse
 
 import httpx
 
+from backend import ratelimit
+
 
 def _in_container() -> bool:
     """Best-effort detection of running inside Docker/a container."""
@@ -23,9 +25,9 @@ def _connection_hint(base_url: str) -> str:
     container, localhost/127.0.0.1 is the container itself.
     """
     host = (urllib.parse.urlsplit(base_url).hostname or "").lower()
+    port = urllib.parse.urlsplit(base_url).port or ""
+    suffix = f":{port}" if port else ""
     if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
-        port = urllib.parse.urlsplit(base_url).port or ""
-        suffix = f":{port}" if port else ""
         if _in_container():
             return (
                 f" This app is running in a container, so '{host}' points at the "
@@ -36,7 +38,53 @@ def _connection_hint(base_url: str) -> str:
             f" Nothing is listening on '{host}{suffix}'. Confirm the LLM server is "
             f"running and the host/port are correct."
         )
+    # The reverse of the above: 'host.docker.internal' is a Docker-only DNS name.
+    # Run from the host shell (not in a container), it doesn't resolve — the #1
+    # cause of a connection failure when a base-url is copied from a Docker setup.
+    if host == "host.docker.internal" and not _in_container():
+        return (
+            f" 'host.docker.internal' only resolves *inside* a Docker container; "
+            f"you're running on the host, so use http://localhost{suffix}/v1 (or "
+            f"http://127.0.0.1{suffix}/v1) to reach a local server."
+        )
     return " Confirm the server is running and reachable from this app."
+
+
+def _error_target(exc: Exception) -> str:
+    """The 'scheme://host:port' an httpx error was aimed at, for messages."""
+    req = getattr(exc, "request", None)
+    url = getattr(req, "url", None)
+    if url is None:
+        return "the endpoint"
+    port = f":{url.port}" if url.port else ""
+    return f"{url.scheme}://{url.host}{port}"
+
+
+def describe_error(exc: Exception) -> str:
+    """
+    A concise, actionable one-line reason for a failed request — used for logs and
+    per-scenario error fields instead of dumping a raw httpx/httpcore traceback.
+    Recognises the common misconfigurations (unreachable host, bad key, timeout).
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        resp = exc.response
+        code = resp.status_code if resp is not None else "?"
+        body = (resp.text[:200].strip() if resp is not None else "")
+        hint = ""
+        if code in (401, 403):
+            hint = " — check the API key."
+        elif code == 404:
+            hint = " — check the base-url path and model id."
+        elif code == 429:
+            hint = " — rate limited; lower --rate-limit/--concurrency."
+        return f"HTTP {code} from {_error_target(exc)}{(': ' + body) if body else ''}{hint}"
+    if isinstance(exc, httpx.ConnectError):
+        return f"cannot connect to {_error_target(exc)}.{_connection_hint(_error_target(exc))}"
+    if isinstance(exc, httpx.TimeoutException):
+        return f"timed out talking to {_error_target(exc)} — the server is slow or unreachable."
+    if isinstance(exc, httpx.RequestError):
+        return f"request to {_error_target(exc)} failed: {type(exc).__name__}."
+    return f"{type(exc).__name__}: {exc}"
 
 # No PII is kept in the system prompt. The CP2 (poisoned RAG docs) and CP3
 # (simulated LLM output) scenarios provide their own synthetic PII for the demo.
@@ -149,6 +197,7 @@ async def complete_chat(
 ) -> str:
     """Post a fully-assembled message list and return the assistant's text."""
     endpoint = f"{_normalize_base_url(base_url)}/chat/completions"
+    await ratelimit.acquire()          # share the global outbound-request rate cap
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             endpoint,
@@ -175,6 +224,7 @@ async def complete_with_tools(
     call means — we never execute it.
     """
     endpoint = f"{_normalize_base_url(base_url)}/chat/completions"
+    await ratelimit.acquire()          # share the global outbound-request rate cap
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             endpoint,
@@ -215,6 +265,7 @@ async def test_connection(
     Calls GET {base_url}/models and reports reachability + available model ids.
     """
     endpoint = f"{_normalize_base_url(base_url)}/models"
+    await ratelimit.acquire()          # share the global outbound-request rate cap
     start = time.monotonic()
     try:
         async with httpx.AsyncClient() as client:

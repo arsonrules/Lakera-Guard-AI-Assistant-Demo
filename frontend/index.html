@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&family=Source+Sans+3:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/onboarding.css?v=2" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -874,6 +875,15 @@
     /* Per-checkpoint project boxes: three share a row, so keep them compact. */
     .os-ds-panel input.os-proj-cp { flex: 1 1 120px; font-size: 0.74rem; }
     .os-ds-panel input.os-proj-cp:not(:placeholder-shown) { border-color: var(--brand-br); }
+    /* Merged Checkpoints · Project ID panel (req 5). */
+    .os-cps-merged { display: flex; flex-direction: column; gap: 9px; }
+    .os-cps-default { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 9px; border-bottom: 1px solid var(--border); }
+    .os-cps-default .os-ds-label { flex: 1 1 100%; font-size: 0.72rem; color: var(--muted); }
+    .os-cps-default input[type=text] { flex: 1 1 160px; min-width: 0; padding: 7px 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; border-radius: var(--radius-sm); }
+    .os-cp-row { display: flex; align-items: center; gap: 10px; }
+    .os-cp-row > label { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; min-width: 160px; }
+    .os-cp-row input.os-proj-cp { flex: 1 1 auto; min-width: 0; padding: 6px 9px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; border-radius: var(--radius-sm); }
+    .os-cp-row input.os-proj-cp:not(:placeholder-shown) { border-color: var(--brand-br); }
     .os-ds-examples { display: flex; align-items: center; gap: 8px; font-size: 0.74rem; color: var(--muted); margin-bottom: 10px; }
     .os-ds-list { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
     .os-ds-item { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
@@ -999,7 +1009,7 @@
     }
     .sec-dash .rem { color: var(--muted); font-size: 0.74rem; }
 
-    /* Summary stat chips */
+    /* Summary stat chips (clickable → metric popover, req 8) */
     .os-summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
     .os-stat {
       flex: 1; min-width: 110px;
@@ -1007,12 +1017,108 @@
       border-radius: var(--radius-sm);
       background: var(--panel-2);
       padding: 10px 13px;
+      font: inherit; text-align: center; cursor: pointer; position: relative;
+      transition: border-color 0.15s var(--ease), transform 0.1s var(--ease);
     }
+    .os-stat:hover { border-color: var(--brand-br); }
+    .os-stat:active { transform: translateY(1px); }
+    .os-stat::after { content: '?'; position: absolute; top: 5px; right: 7px; font-size: 0.56rem; font-weight: 700; color: var(--muted); opacity: 0.5; }
     .os-stat .num { font-family: 'Lexend', sans-serif; font-size: 1.4rem; font-weight: 700; color: var(--heading); }
     .os-stat .lbl { font-family: 'JetBrains Mono', monospace; font-size: 0.64rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
     .os-stat.good .num   { color: var(--pass); }
     .os-stat.bad .num    { color: var(--block); }
     .os-stat.warn .num   { color: var(--redact); }
+
+    /* req 7: Detection-rate hero + shrunken secondary stats */
+    .os-hero {
+      display: block; width: 100%; text-align: center; cursor: pointer; font: inherit;
+      border: 1px solid var(--brand-br); border-radius: var(--radius);
+      background: linear-gradient(135deg, rgba(230,0,126,0.10), rgba(129,140,248,0.07));
+      padding: 20px; margin-bottom: 12px; position: relative; transition: border-color 0.15s var(--ease);
+    }
+    .os-hero:hover { border-color: var(--brand); }
+    .os-hero::after { content: '?'; position: absolute; top: 10px; right: 12px; font-size: 0.7rem; font-weight: 700; color: var(--muted); opacity: 0.55; }
+    .os-hero-num { font-family: 'Lexend', sans-serif; font-size: 3rem; font-weight: 800; line-height: 1; color: var(--heading); }
+    .os-hero-lbl { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-top: 8px; }
+    .os-summary-secondary { gap: 8px; }
+    .os-summary-secondary .os-stat { min-width: 92px; padding: 7px 10px; }
+    .os-summary-secondary .os-stat .num { font-size: 1.05rem; }
+
+    /* req 8: metric popover */
+    .os-popover {
+      position: absolute; z-index: 1200; max-width: 260px; display: none;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+      padding: 11px 13px; box-shadow: 0 12px 34px rgba(0,0,0,0.45);
+    }
+    .os-popover.show { display: block; animation: obPop2 0.14s ease; }
+    @keyframes obPop2 { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+    .os-popover-title { font-family: 'Lexend', sans-serif; font-weight: 700; font-size: 0.8rem; color: var(--heading); margin-bottom: 4px; }
+    .os-popover-body { font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+    .os-compare .cell { cursor: pointer; }
+    .os-compare .cell:hover { background: var(--panel-2); }
+
+    /* Judge model info (req 1) */
+    .os-judge-info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 9px 13px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel-2); }
+    .os-judge-badge { display: inline-flex; align-items: center; gap: 5px; font-family: 'Lexend', sans-serif; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--brand); }
+    .os-judge-badge .ic { width: 13px; height: 13px; }
+    .os-judge-model { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--text); }
+    .os-judge-note { font-size: 0.72rem; color: var(--muted); }
+
+    /* Lakera L1–L5 legend + badges (req 3 & 4) */
+    .os-legend { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel); margin-bottom: 12px; overflow: hidden; }
+    .os-legend > summary { cursor: pointer; list-style: none; padding: 9px 13px; font-family: 'Lexend', sans-serif; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+    .os-legend > summary::-webkit-details-marker { display: none; }
+    .os-legend > summary::before { content: '▸'; color: var(--muted); transition: transform 0.15s var(--ease); }
+    .os-legend[open] > summary::before { transform: rotate(90deg); color: var(--brand); }
+    .os-legend-body { padding: 6px 13px 12px; display: flex; flex-direction: column; gap: 6px; }
+    .os-legend-row { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; color: var(--text); }
+    .lk-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; padding: 2px 6px; border-radius: 6px; border: 1px solid; font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; font-weight: 700; }
+    .lk-l1 { color: var(--block); border-color: var(--block-br); background: var(--block-bg); }
+    .lk-l2 { color: #ff8a4c; border-color: rgba(255,138,76,0.4); background: rgba(255,138,76,0.1); }
+    .lk-l3 { color: var(--redact); border-color: var(--redact-br); background: var(--redact-bg); }
+    .lk-l4 { color: #86bbe0; border-color: rgba(134,187,224,0.4); background: rgba(134,187,224,0.08); }
+    .lk-l5 { color: var(--pass); border-color: var(--pass-br); background: var(--pass-bg); }
+    .lk-none { color: var(--muted); border-color: var(--border); background: var(--panel-2); }
+    .lk-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .lk-item { display: inline-flex; align-items: center; gap: 5px; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text); }
+    .lk-type { color: var(--muted); }
+
+    /* Lakera run-level summary (req 4) */
+    .os-lakera-summary { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel); padding: 12px 14px; margin-bottom: 14px; }
+    .lk-summary-grid { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; margin-top: 8px; }
+    .lk-summary-cell.wide { flex: 1; min-width: 200px; }
+    .lk-summary-num { font-family: 'Lexend', sans-serif; font-size: 1.6rem; font-weight: 700; color: var(--heading); }
+    .lk-summary-lbl { font-family: 'JetBrains Mono', monospace; font-size: 0.64rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+    .lk-cats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .lk-cat { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text); background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
+    .lk-cat b { color: var(--brand); }
+
+    /* Per-scenario CP detector rows (req 4) */
+    .lk-cp { display: flex; align-items: flex-start; gap: 9px; padding: 4px 0; }
+    .lk-cp-tag { font-family: 'Lexend', sans-serif; font-size: 0.66rem; font-weight: 700; color: var(--brand); min-width: 34px; padding-top: 2px; }
+    .cp-detectors { margin-top: 6px; width: 100%; }
+
+    /* Collapsible vulnerability dashboard (req 2) */
+    .os-dash-collapsible { margin-top: 6px; }
+    .os-dash-collapsible > summary { cursor: pointer; list-style: none; }
+    .os-dash-collapsible > summary::-webkit-details-marker { display: none; }
+    .os-dash-collapsible > summary::before { content: '▸ '; color: var(--muted); }
+    .os-dash-collapsible[open] > summary::before { content: '▾ '; color: var(--brand); }
+
+    /* ── req 6 · UI/UX polish (UI/UX Pro Max review) ──────────────────────────
+       Tabular figures so counts/percentages don't shift width; keyboard-visible
+       focus rings on the clickable stat tiles; motion respects user preference. */
+    .os-hero-num, .os-stat .num, .lk-summary-num, .lk-badge, .lk-cat b,
+    .os-compare .big, .os-report-meta { font-variant-numeric: tabular-nums; }
+    .os-stat:focus-visible, .os-hero:focus-visible, .os-compare .cell:focus-visible,
+    .os-legend > summary:focus-visible, .os-dash-collapsible > summary:focus-visible {
+      outline: 2px solid var(--brand); outline-offset: 2px; border-radius: var(--radius-sm);
+    }
+    .os-legend > summary, .os-dash-collapsible > summary { border-radius: var(--radius-sm); }
+    @media (prefers-reduced-motion: reduce) {
+      .os-hero, .os-stat, .os-compare .cell, .os-legend > summary::before,
+      .os-dash-collapsible > summary::before, .os-popover { transition: none !important; animation: none !important; }
+    }
 
     /* Results table */
     .os-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
@@ -1094,6 +1200,22 @@
     .rs-redacted    { color: var(--redact); border-color: var(--redact-br); background: var(--redact-bg); }
     .rs-not_reached { color: var(--skip);   border-color: var(--skip-br);   background: var(--skip-bg); }
     .os-detail-none { color: var(--muted); font-size: 0.8rem; font-style: italic; }
+    /* Collapsible sub-sections inside a per-scenario detail (default collapsed to
+       save vertical space — model response / judge verdict / guard-off response). */
+    .os-acc { border: 1px solid var(--border-soft); border-radius: 6px; background: var(--panel-2, var(--panel)); overflow: hidden; }
+    .os-acc > summary {
+      list-style: none; cursor: pointer; user-select: none; display: flex; align-items: center; gap: 8px;
+      padding: 8px 11px; font-family: 'Lexend', sans-serif; font-size: 0.68rem; font-weight: 600;
+      letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); transition: color 0.15s var(--ease);
+    }
+    .os-acc > summary::-webkit-details-marker { display: none; }
+    .os-acc > summary::before {
+      content: '▸'; color: var(--muted); font-size: 0.72rem; line-height: 1; transition: transform 0.15s var(--ease);
+    }
+    .os-acc > summary:hover { color: var(--text); }
+    .os-acc[open] > summary { color: var(--text); border-bottom: 1px solid var(--border-soft); }
+    .os-acc[open] > summary::before { transform: rotate(90deg); color: var(--brand); }
+    .os-acc-body { padding: 10px 11px; display: flex; flex-direction: column; gap: 8px; }
     /* Run configuration panel */
     .os-runcfg { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel); padding: 12px 14px; margin-bottom: 16px; }
     .os-runcfg-title { font-family: 'Lexend', sans-serif; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
@@ -1262,7 +1384,13 @@
         <option value="ja">日本語</option>
       </select>
     </label>
-    <button id="sp-mode-badge" class="ctl" onclick="toggleSpPanel()" data-i18n-title="sp.badgeTitle" title="Click to edit system prompt">
+    <button id="env-switch" class="ctl" onclick="Onboarding.toggleEnv()" title="Switch between Basic and Advanced views">
+      <svg class="ic"><use href="#i-sliders"></use></svg><span class="env-mode">Advanced</span>
+    </button>
+    <button id="setup-btn" class="ctl" data-adv onclick="Onboarding.restart()" title="Re-run the setup wizard">
+      <svg class="ic"><use href="#i-activity"></use></svg><span>Setup</span>
+    </button>
+    <button id="sp-mode-badge" class="ctl" data-adv onclick="toggleSpPanel()" data-i18n-title="sp.badgeTitle" title="Click to edit system prompt">
       <svg class="ic"><use href="#i-sliders"></use></svg><span>Prompt: Default</span>
     </button>
     <button id="llm-mode-badge" class="ctl" onclick="toggleLlmPanel()" data-i18n-title="llm.badgeTitle" title="Configure the LLM provider">
@@ -1271,10 +1399,10 @@
     <button id="guard-toggle" class="ctl guard-on" onclick="toggleGuard()" data-i18n-title="guard.toggleTitle" title="Turn Lakera Guard on/off for the chat">
       <svg class="ic"><use href="#i-shield-check"></use></svg><span id="guard-toggle-label">Guard: ON</span>
     </button>
-    <button id="oneshot-btn" class="ctl" onclick="openOneShot()" data-i18n-title="os.btnTitle" title="Run every scenario at once">
+    <button id="oneshot-btn" class="ctl" data-adv onclick="openOneShot()" data-i18n-title="os.btnTitle" title="Run every scenario at once">
       <svg class="ic"><use href="#i-play"></use></svg><span data-i18n="os.btn">One-Shot Test</span>
     </button>
-    <div class="doc-toggle">
+    <div class="doc-toggle" data-adv>
       <span data-i18n="header.knowledgeBase">Knowledge Base</span>
       <button id="doc-mode-btn" class="ctl" onclick="toggleDocMode()">
         <svg class="ic"><use href="#i-file-text"></use></svg><span>Clean Docs</span>
@@ -1285,6 +1413,13 @@
     </div>
   </div>
 </header>
+
+<!-- Basic-mode pipeline tutorial (req 4): globally accessible + collapsible.
+     Shown only in Basic mode; body is filled by scenarios.js. -->
+<details id="pipeline-tutorial" class="pipeline-tut">
+  <summary><svg class="ic"><use href="#i-activity"></use></svg> <span>How a message flows through Lakera Guard</span></summary>
+  <div id="pipeline-tut-body"></div>
+</details>
 
 <!-- System Prompt panel -->
 <div class="sp-panel" id="sp-panel">
@@ -1539,11 +1674,26 @@
         <span data-i18n="os.compareToggle">Guard ON vs OFF</span>
       </label>
       <details class="os-strats" id="os-cps">
-        <summary data-i18n-title="os.cpsTitle" title="Enable or disable individual guard checkpoints for this run"><span data-i18n="os.cps">Checkpoints</span> <span class="os-strats-count" id="os-cps-count"></span></summary>
-        <div class="os-strats-list">
-          <label><input type="checkbox" id="os-cp1" checked onchange="onOsCpChange()"> <b>CP1</b> <span data-i18n="os.cpsInput">User input</span></label>
-          <label><input type="checkbox" id="os-cp2" checked onchange="onOsCpChange()"> <b>CP2</b> <span data-i18n="os.cpsRag">RAG documents</span></label>
-          <label><input type="checkbox" id="os-cp3" checked onchange="onOsCpChange()"> <b>CP3</b> <span data-i18n="os.cpsOutput">LLM output</span></label>
+        <summary data-i18n-title="os.cpsTitle" title="Enable or disable individual guard checkpoints for this run — and route each to a Lakera Project"><span data-i18n="os.cps">Checkpoints</span> · <span data-i18n="osproj.title">Project ID</span> <span class="os-strats-count" id="os-cps-count"></span></summary>
+        <div class="os-cps-merged">
+          <div class="os-cps-default">
+            <span class="os-ds-label" data-i18n="osproj.label">Default Project ID for this run</span>
+            <input type="text" id="os-proj-id" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.placeholder" placeholder="Default from Settings" />
+            <button class="sp-btn" onclick="resetOsProj()" data-i18n="osproj.reset">Default</button>
+          </div>
+          <div class="os-cp-row" id="os-cp1-row">
+            <label><input type="checkbox" id="os-cp1" checked onchange="onOsCpChange()"> <b>CP1</b> <span data-i18n="os.cpsInput">User input</span></label>
+            <input type="text" id="os-proj-cp1" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp1Placeholder" placeholder="CP1 — input" />
+          </div>
+          <div class="os-cp-row" id="os-cp2-row">
+            <label><input type="checkbox" id="os-cp2" checked onchange="onOsCpChange()"> <b>CP2</b> <span data-i18n="os.cpsRag">RAG documents</span></label>
+            <input type="text" id="os-proj-cp2" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp2Placeholder" placeholder="CP2 — RAG" />
+          </div>
+          <div class="os-cp-row" id="os-cp3-row">
+            <label><input type="checkbox" id="os-cp3" checked onchange="onOsCpChange()"> <b>CP3</b> <span data-i18n="os.cpsOutput">LLM output</span></label>
+            <input type="text" id="os-proj-cp3" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp3Placeholder" placeholder="CP3 — output" />
+          </div>
+          <div class="os-ds-allnote" data-i18n="osproj.hint">Optional — a checkpoint's box selects that project's Guard policy for this run; blank inherits the default Project ID above. The Project ID input appears only for enabled checkpoints.</div>
         </div>
       </details>
       <details class="os-strats" id="os-strats">
@@ -1634,23 +1784,6 @@
           </div>
           <div class="os-ds-list" id="os-kb-list"></div>
           <div class="cp0-result" id="os-kb-status"></div>
-        </div>
-      </details>
-      <details class="os-strats" id="os-proj">
-        <summary data-i18n-title="osproj.summaryTitle" title="Lakera Project ID whose Guard policy applies to this run"><span data-i18n="osproj.title">Project ID</span> <span class="os-strats-count" id="os-proj-count"></span></summary>
-        <div class="os-ds-panel">
-          <div class="os-ds-row">
-            <span class="os-ds-label" data-i18n="osproj.label">Lakera Project ID for this run</span>
-            <input type="text" id="os-proj-id" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.placeholder" placeholder="Default from Settings" />
-            <button class="sp-btn" onclick="resetOsProj()" data-i18n="osproj.reset">Default</button>
-          </div>
-          <div class="os-ds-row">
-            <span class="os-ds-label" data-i18n="osproj.perCp">Per-checkpoint override (optional)</span>
-            <input type="text" id="os-proj-cp1" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp1Placeholder" placeholder="CP1 — input" />
-            <input type="text" id="os-proj-cp2" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp2Placeholder" placeholder="CP2 — RAG" />
-            <input type="text" id="os-proj-cp3" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp3Placeholder" placeholder="CP3 — output" />
-          </div>
-          <div class="os-ds-allnote" data-i18n="osproj.hint">Optional — selects that project's Guard policy for this run only. The run-level ID is pre-filled from Settings; a per-checkpoint box (blank = inherit the run-level ID) routes that checkpoint to a different project. Clear all for no project.</div>
         </div>
       </details>
       <button class="sp-btn primary" id="os-run-btn" onclick="runOneShot()"><svg class="ic"><use href="#i-play"></use></svg> <span data-i18n="os.run">Run Test</span></button>
@@ -1750,6 +1883,7 @@
         'chat.placeholder': 'Type a message or pick a scenario above…',
         'chat.send': 'Send',
         'chat.thinking': 'Lakera Guard processing…',
+        'chat.awaitingModel': 'Awaiting Model Response...',
         'chat.blockedBadge': 'Blocked by Lakera Guard',
         'chat.errorPrefix': 'Error: ',
         'chat.networkError': 'Network error: ',
@@ -2001,6 +2135,16 @@
         'os.secFindings': 'Findings & recommendations',
         'os.secDashboard': 'Vulnerability dashboard (by OWASP category)',
         'os.secRecommend': 'Recommendation',
+        'os.judgeModelLabel': 'Judge model',
+        'os.judgeDedicated': 'dedicated judge',
+        'os.judgeSameAsTarget': 'same as target model',
+        'os.lakeraLegendTitle': 'Lakera confidence levels (L1–L5)',
+        'os.lakeraSummaryTitle': 'Lakera detections',
+        'os.lakeraFlaggedCount': 'Flagged count',
+        'os.lakeraCategories': 'Detector type categories',
+        'os.lakeraDetectors': 'Lakera detectors (per checkpoint)',
+        'os.lakeraNone': 'No detectors fired.',
+        'os.lakeraCp': 'Detector results',
         'os.dashCategory': 'Category',
         'os.dashAttacks': 'Attacks',
         'os.dashDetection': 'Detection',
@@ -2119,6 +2263,7 @@
         'chat.placeholder': '輸入訊息，或從上方挑選一個情境…',
         'chat.send': '送出',
         'chat.thinking': 'Lakera Guard 處理中…',
+        'chat.awaitingModel': '等待模型回應…',
         'chat.blockedBadge': '已被 Lakera Guard 封鎖',
         'chat.errorPrefix': '錯誤：',
         'chat.networkError': '網路錯誤：',
@@ -2553,6 +2698,7 @@
         'chat.placeholder': '输入消息，或从上方选择一个场景…',
         'chat.send': '发送',
         'chat.thinking': 'Lakera Guard 处理中…',
+        'chat.awaitingModel': '等待模型响应…',
         'chat.blockedBadge': '已被 Lakera Guard 拦截',
         'chat.errorPrefix': '错误：',
         'chat.networkError': '网络错误：',
@@ -2987,6 +3133,7 @@
         'chat.placeholder': 'メッセージを入力するか、上のシナリオを選択してください…',
         'chat.send': '送信',
         'chat.thinking': 'Lakera Guard が処理中…',
+        'chat.awaitingModel': 'モデルの応答を待機中…',
         'chat.blockedBadge': 'Lakera Guard によりブロック',
         'chat.errorPrefix': 'エラー：',
         'chat.networkError': 'ネットワークエラー：',
@@ -3698,6 +3845,7 @@
         catContainer.appendChild(tag);
       });
     }
+    setDetectors('cp0', d.scan.detectors);   // req 4: CP0 Lakera detector results (L1–L5)
     // Update CP0 card class
     card.className = 'cp0-inspector-card show ' + (d.activated ? 'passed-card' : 'blocked-card');
   }
@@ -4032,7 +4180,16 @@
   function appendThinking() {
     const div = document.createElement('div');
     div.className = 'thinking';
-    div.innerHTML = '<span class="dots"><i></i><i></i><i></i></span><span>' + t('chat.thinking') + '</span>';
+    // Two rules decide the loading text:
+    //  • A 'Safe' prompt category strictly shows "Awaiting Model Response...",
+    //    regardless of whether Guard is on or off (it's a benign baseline).
+    //  • Otherwise: only when Guard is ON *and* every checkpoint is active do we
+    //    show "Lakera Guard processing…"; if Guard is off or any CP is disabled,
+    //    the guard isn't what we're waiting on, so we show the model-await text.
+    const isSafe = currentCategory && currentCategory.color === 'safe';
+    const guardFullyActive = guardEnabled && cpEnabled.cp1 && cpEnabled.cp2 && cpEnabled.cp3;
+    const label = (isSafe || !guardFullyActive) ? t('chat.awaitingModel') : t('chat.thinking');
+    div.innerHTML = '<span class="dots"><i></i><i></i><i></i></span><span>' + label + '</span>';
     document.getElementById('messages').appendChild(div);
     div.scrollIntoView({ behavior: 'smooth' });
     return div;
@@ -4138,6 +4295,12 @@
         `<div class="row"><span>${t('cp.disabledNote')}</span></div>`;
       document.getElementById('cp3-card').className = 'cp-card disabled-card';
     }
+
+    // req 4: show each active checkpoint's Lakera detector results (L1–L5).
+    ['cp1', 'cp2', 'cp3'].forEach(cp => {
+      const c = trace[cp] || {};
+      if (['passed', 'blocked', 'redacted'].includes(c.status)) setDetectors(cp, c.detectors);
+    });
   }
 
   function setMeta(id, latency, docsChecked, docsFlagged) {
@@ -4157,6 +4320,18 @@
       tag.innerHTML = icon('alert-triangle') + '<span>' + esc(cat).replace(/_/g, ' ').toUpperCase() + '</span>';
       container.appendChild(tag);
     });
+  }
+
+  // req 4: inject the mapped Lakera detector results (detector type + L1–L5) into
+  // a checkpoint card, using the same renderer as the one-shot report.
+  function setDetectors(id, detectors) {
+    if (!detectors || !detectors.length) return;
+    const container = document.getElementById(`${id}-categories`);
+    if (!container) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'cp-detectors';
+    wrap.innerHTML = lakeraDetectorsHtml(detectors);
+    container.appendChild(wrap);
   }
 
   function setDocTags(id, filenames, type) {
@@ -4708,6 +4883,7 @@
     // Default the per-run Project ID to the current Settings value (fresh each
     // open), unless the user has manually edited it this session.
     loadLakeraConfig().then(() => { if (!osProjDirty) resetOsProj(); });
+    onOsCpChange();   // init per-checkpoint Project ID visibility + merged badge
     const overlay = document.getElementById('oneshot-overlay');
     overlay.classList.add('open');
     // Move focus into the dialog for keyboard / screen-reader users.
@@ -4728,11 +4904,9 @@
     updateOsProjCount();
   }
   function updateOsProjCount() {
-    // Badge shows "•" when the run-level value differs from the default OR any
-    // per-checkpoint override is set.
-    const v = document.getElementById('os-proj-id').value.trim();
-    const anyCp = OS_PROJ_CP.some(id => document.getElementById(id).value.trim() !== '');
-    document.getElementById('os-proj-count').textContent = (v !== globalProjectId || anyCp) ? '•' : '';
+    // Project ID now lives in the merged Checkpoints · Project ID panel, so the
+    // dirty indicator shares that one badge.
+    updateCpsBadge();
   }
   function closeOneShot() {
     document.getElementById('oneshot-overlay').classList.remove('open');
@@ -4804,8 +4978,29 @@
 
   // Checkpoint selection for the run — show a badge only when some are disabled.
   function onOsCpChange() {
+    // Show each checkpoint's Project ID input ONLY while that checkpoint is enabled
+    // (req 5). A disabled checkpoint isn't scanned, so its project routing is moot.
+    ['cp1', 'cp2', 'cp3'].forEach(cp => {
+      const checked = document.getElementById('os-' + cp).checked;
+      const proj = document.getElementById('os-proj-' + cp);
+      if (proj) proj.style.display = checked ? '' : 'none';
+    });
+    updateCpsBadge();
+  }
+  // One merged badge for the combined Checkpoints · Project ID panel: shows the
+  // enabled-checkpoint count and a "•" when any project override is set.
+  function updateCpsBadge() {
     const on = ['os-cp1', 'os-cp2', 'os-cp3'].filter(id => document.getElementById(id).checked).length;
-    document.getElementById('os-cps-count').textContent = on < 3 ? `(${on}/3)` : '';
+    const projInput = document.getElementById('os-proj-id');
+    const runLevel = projInput ? projInput.value.trim() : '';
+    const anyCp = OS_PROJ_CP.some(id => {
+      const el = document.getElementById(id);
+      return el && el.value.trim() !== '';
+    });
+    const dot = (runLevel !== globalProjectId || anyCp) ? ' •' : '';
+    const count = on < 3 ? `(${on}/3)` : '';
+    const badge = document.getElementById('os-cps-count');
+    if (badge) badge.textContent = (count + dot).trim();
   }
 
   // ── External datasets (HuggingFace / upload) ──────────────────────────────
@@ -5214,16 +5409,59 @@
     if (!s.compared) return '';
     const pct = v => v == null ? '—' : v + '%';
     const red = s.risk_reduction == null ? '—' : '−' + s.risk_reduction + '%';
+    const cell = (cls, big, key) =>
+      `<div class="cell ${cls}" data-info="${esc(key)}" role="button" tabindex="0" onclick="showStatInfo('${esc(key)}', event)">`
+      + `<div class="big">${esc(big)}</div><div class="cap">${esc(t(key))}</div></div>`;
     return `<div class="os-compare">
-      <div class="cell alone"><div class="big">${esc(pct(s.alone_success_rate))}</div>
-        <div class="cap">${esc(t('os.cmpAlone'))}</div></div>
+      ${cell('alone', pct(s.alone_success_rate), 'os.cmpAlone')}
       <div class="arrow">→</div>
-      <div class="cell guarded"><div class="big">${esc(pct(s.guarded_success_rate))}</div>
-        <div class="cap">${esc(t('os.cmpGuarded'))}</div></div>
-      <div class="cell reduction"><div class="big">${esc(red)}</div>
-        <div class="cap">${esc(t('os.cmpReduction'))}</div></div>
+      ${cell('guarded', pct(s.guarded_success_rate), 'os.cmpGuarded')}
+      ${cell('reduction', red, 'os.cmpReduction')}
     </div>`;
   }
+
+  // req 8: textual explanations for each summary metric, shown in a popover.
+  const STAT_INFO = {
+    'os.statDetection': 'Share of attack scenarios Lakera Guard correctly blocked. Higher is safer.',
+    'os.statTotal': 'Total scenarios executed in this run (attacks + safe baselines).',
+    'os.statBlocked': 'Attack scenarios the guard blocked before any harm.',
+    'os.statNotBlocked': 'Attack scenarios that slipped past the guard and reached the model.',
+    'os.statPassed': 'Safe (benign) scenarios correctly allowed through — the guard didn’t over-block.',
+    'os.statFalsePos': 'Safe scenarios the guard wrongly blocked (false positives).',
+    'os.statErrors': 'Scenarios that errored out (LLM/Guard unreachable, bad config, etc.).',
+    'os.statBreaches': 'Attacks that bypassed the guard AND compromised the model — real breaches.',
+    'os.statResisted': 'Attacks the model itself refused, even when the guard let them through.',
+    'os.statPrevented': 'Attacks the guard stopped before they reached the model or the user.',
+    'os.cmpAlone': 'How often the attack succeeded against the model with Lakera OFF (the baseline risk).',
+    'os.cmpGuarded': 'How often the attack still reached the user with Lakera ON.',
+    'os.cmpReduction': 'The risk Lakera removed: the drop from “model alone” to “with Lakera”.',
+  };
+  function showStatInfo(key, ev) {
+    if (ev) ev.stopPropagation();
+    const text = STAT_INFO[key];
+    if (!text) return;
+    let pop = document.getElementById('os-popover');
+    if (!pop) { pop = document.createElement('div'); pop.id = 'os-popover'; pop.className = 'os-popover'; document.body.appendChild(pop); }
+    pop.innerHTML = `<div class="os-popover-title">${esc(t(key))}</div><div class="os-popover-body">${esc(text)}</div>`;
+    pop.classList.add('show');
+    const target = ev && ev.currentTarget ? ev.currentTarget : null;
+    if (target) {
+      const rect = target.getBoundingClientRect();
+      pop.style.top = (rect.bottom + window.scrollY + 8) + 'px';
+      const maxLeft = window.scrollX + document.documentElement.clientWidth - pop.offsetWidth - 12;
+      pop.style.left = Math.min(rect.left + window.scrollX, Math.max(8, maxLeft)) + 'px';
+    }
+  }
+  // Dismiss the popover on an outside click or Escape.
+  document.addEventListener('click', e => {
+    const p = document.getElementById('os-popover');
+    if (p && p.classList.contains('show') && !p.contains(e.target) && !(e.target.closest && e.target.closest('[data-info]'))) {
+      p.classList.remove('show');
+    }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { const p = document.getElementById('os-popover'); if (p) p.classList.remove('show'); }
+  });
 
   // Severity label keys for the security dashboard/findings.
   const SEV_KEY = {
@@ -5363,9 +5601,9 @@
         + '</div></div>';
     });
 
-    // Per-OWASP dashboard table
+    // Per-OWASP dashboard table — collapsed by default to save space (req 2).
     if (sec.categories && sec.categories.length) {
-      h += `<div class="sec-title">${esc(t('os.secDashboard'))}</div>`;
+      h += `<details class="os-dash-collapsible"><summary class="sec-title">${esc(t('os.secDashboard'))}</summary>`;
       h += '<table class="sec-dash"><thead><tr>'
         + `<th>${esc(t('os.dashCategory'))}</th>`
         + `<th>${esc(t('os.dashAttacks'))}</th>`
@@ -5385,7 +5623,7 @@
           + `<td class="rem">${c.severity === 'secure' ? '—' : esc(c.remediation || '')}</td>`
           + '</tr>';
       });
-      h += '</tbody></table>';
+      h += '</tbody></table></details>';
     }
     h += '</div>';
     return h;
@@ -5423,13 +5661,109 @@
     return h;
   }
 
-  function renderOneShotResults(d) {
+  // ── Lakera L1–L5 result mapping (req 3 & 4) ─────────────────────────────────
+  // Shared by the one-shot result UI, the HTML report, and the live CP inspector
+  // so every surface shows the same badges (DRY). Mirrors backend lakera.LEVEL_LEGEND.
+  const LAKERA_LEVELS = [
+    { level: 'L1', desc: 'Confident — almost certainly a real detection' },
+    { level: 'L2', desc: 'Very likely' },
+    { level: 'L3', desc: 'Likely' },
+    { level: 'L4', desc: 'Less likely' },
+    { level: 'L5', desc: 'Unlikely — most likely benign' },
+    { level: '-',  desc: 'No graded confidence level for this detector' },
+  ];
+  const lkClass = lvl => 'lk-' + (lvl === '-' ? 'none' : String(lvl).toLowerCase());
+  const lkBadge = lvl => `<span class="lk-badge ${lkClass(lvl)}">${esc(lvl || '-')}</span>`;
+
+  // Collapsed-by-default legend explaining L1–L5 (req 3).
+  function lakeraLegendHtml() {
+    return `<details class="os-legend"><summary>${esc(t('os.lakeraLegendTitle'))}</summary>`
+      + '<div class="os-legend-body">'
+      + LAKERA_LEVELS.map(l => `<div class="os-legend-row">${lkBadge(l.level)}<span>${esc(l.desc)}</span></div>`).join('')
+      + '</div></details>';
+  }
+
+  // Compact badge list for a set of detectors [{type, category, level}] — used in
+  // the per-scenario reveal AND the live CP inspector (identical rendering, req 4).
+  function lakeraDetectorsHtml(detectors) {
+    if (!detectors || !detectors.length) return `<span class="os-detail-none">${esc(t('os.lakeraNone'))}</span>`;
+    return '<div class="lk-list">' + detectors.map(dt =>
+      `<span class="lk-item">${lkBadge(dt.level)}<span class="lk-type">${esc(dt.type)}</span></span>`).join('') + '</div>';
+  }
+
+  // Per-scenario Lakera detector results, grouped by checkpoint (req 4). Reuses
+  // lakeraDetectorsHtml so the scenario reveal and the live CP inspector match.
+  function lakeraCpDetailHtml(r) {
+    const tr = r.trace || {};
+    return ['cp1', 'cp2', 'cp3'].map(cp => {
+      const c = tr[cp] || {};
+      const inactive = ['disabled', 'off', 'skipped', 'pending'].includes(c.status);
+      const body = inactive
+        ? `<span class="os-detail-none">${esc(c.status || '—')}</span>`
+        : lakeraDetectorsHtml(c.detectors);
+      return `<div class="lk-cp"><span class="lk-cp-tag">${cp.toUpperCase()}</span>${body}</div>`;
+    }).join('');
+  }
+
+  // Aggregate per-scenario CP detectors into a run-level summary (req 4).
+  function lakeraAggregate(results) {
+    const catCounts = {}; let flagged = 0;
+    (results || []).forEach(r => {
+      const tr = r.trace || {};
+      ['cp1', 'cp2', 'cp3'].forEach(cp => {
+        ((tr[cp] && tr[cp].detectors) || []).forEach(dt => {
+          flagged++; catCounts[dt.category] = (catCounts[dt.category] || 0) + 1;
+        });
+      });
+    });
+    return { flagged_count: flagged, categories: Object.keys(catCounts).sort(), category_counts: catCounts };
+  }
+
+  // Run-level "Detector type category" + "Flagged count" summary block (req 4).
+  function lakeraSummaryHtml(d) {
+    const agg = lakeraAggregate(d.results);
+    const cats = agg.categories.length
+      ? agg.categories.map(c => `<span class="lk-cat">${esc(c)} <b>${agg.category_counts[c]}</b></span>`).join('')
+      : `<span class="os-detail-none">${esc(t('os.lakeraNone'))}</span>`;
+    return `<div class="os-lakera-summary"><div class="os-runcfg-title">${esc(t('os.lakeraSummaryTitle'))}</div>`
+      + `<div class="lk-summary-grid">`
+      + `<div class="lk-summary-cell"><div class="lk-summary-num">${agg.flagged_count}</div><div class="lk-summary-lbl">${esc(t('os.lakeraFlaggedCount'))}</div></div>`
+      + `<div class="lk-summary-cell wide"><div class="lk-summary-lbl">${esc(t('os.lakeraCategories'))}</div><div class="lk-cats">${cats}</div></div>`
+      + `</div></div>`;
+  }
+
+  // Judge model info — shown only when the run actually judged (req 1).
+  function judgeInfoHtml(d) {
+    const j = d.judge;
+    if (!j || !(d.summary && d.summary.judged)) return '';
+    const note = j.enabled ? t('os.judgeDedicated') : t('os.judgeSameAsTarget');
+    return `<div class="os-judge-info">`
+      + `<span class="os-judge-badge">${icon('activity')} ${esc(t('os.judgeModelLabel'))}</span>`
+      + `<span class="os-judge-model">${esc(j.provider || '')} · ${esc(j.model || '')}</span>`
+      + `<span class="os-judge-note">${esc(note)}</span></div>`;
+  }
+
+  // Build the full one-shot report body (returned as an HTML string). Shared by
+  // the modal UI (renderOneShotResults) and the exported HTML report (buildHtmlReport)
+  // so the two are structurally identical (req 5, DRY).
+  function buildReportBody(d) {
     const s = d.summary;
+    // Each stat is a button that opens a metric-explanation popover (req 8).
     const stat = (cls, num, key) =>
-      `<div class="os-stat ${cls}"><div class="num">${esc(num)}</div><div class="lbl">${esc(t(key))}</div></div>`;
+      `<button type="button" class="os-stat ${cls}" data-info="${esc(key)}" title="${esc(STAT_INFO[key] || '')}" onclick="showStatInfo('${esc(key)}', event)">`
+      + `<div class="num">${esc(num)}</div><div class="lbl">${esc(t(key))}</div></button>`;
     const detection = s.detection_rate == null ? '—' : s.detection_rate + '%';
 
-    let html = compareBannerHtml(s);
+    // Top strip: collapsed L1–L5 legend (req 3) + judge model info (req 1).
+    let html = lakeraLegendHtml();
+    html += judgeInfoHtml(d);
+    // req 7: Detection rate as the prominent hero, then the instant
+    // LLM-alone-vs-with-Lakera comparison, then the Lakera detections summary.
+    html += `<button type="button" class="os-hero" data-info="os.statDetection" title="${esc(STAT_INFO['os.statDetection'] || '')}" onclick="showStatInfo('os.statDetection', event)">`
+      + `<div class="os-hero-num">${esc(detection)}</div>`
+      + `<div class="os-hero-lbl">${esc(t('os.statDetection'))}</div></button>`;
+    html += compareBannerHtml(s);
+    html += lakeraSummaryHtml(d);        // req 4: detector categories + flagged count
     if (s.scope && s.scope.sampled) {
       html += `<div class="os-scope-note" style="font-size:0.78rem;opacity:0.75;margin:0 0 8px">`
         + esc(t('os.scopeSampled', {
@@ -5437,19 +5771,19 @@
             seed: s.scope.seed == null ? '—' : s.scope.seed,
           })) + '</div>';
     }
-    html += '<div class="os-summary">';
+    // Secondary details (Total, Attacks blocked, Model resisted, …) — smaller.
+    html += '<div class="os-summary os-summary-secondary">';
     html += stat('', s.total, 'os.statTotal');
     html += stat('good', s.blocked, 'os.statBlocked');
     html += stat('bad', s.not_blocked, 'os.statNotBlocked');
     html += stat('good', s.passed, 'os.statPassed');
     html += stat('warn', s.false_positive, 'os.statFalsePos');
     if (s.errors) html += stat('bad', s.errors, 'os.statErrors');
-    html += stat('', detection, 'os.statDetection');
     html += '</div>';
 
-    // Judge-derived risk summary (only when the LLM judge ran).
+    // Judge-derived risk summary (only when the LLM judge ran) — also secondary.
     if (s.judged) {
-      html += '<div class="os-summary">';
+      html += '<div class="os-summary os-summary-secondary">';
       html += stat('bad', s.breaches, 'os.statBreaches');
       html += stat('good', s.resisted, 'os.statResisted');
       html += stat('good', s.prevented, 'os.statPrevented');
@@ -5517,7 +5851,11 @@
         + `<tr class="os-detail-row" id="osd-${i}" style="display:none"><td colspan="${cols}">${osDetailHtml(r)}</td></tr>`;
     });
     html += '</tbody></table>';
-    document.getElementById('os-body').innerHTML = html;
+    return html;
+  }
+
+  function renderOneShotResults(d) {
+    document.getElementById('os-body').innerHTML = buildReportBody(d);
   }
 
   // Click-to-reveal panel: the exact user prompt, any simulated output, and the
@@ -5592,6 +5930,13 @@
     return `<div><h4>${esc(t('os.detailAssertions'))}</h4><pre>${lines}</pre></div>`;
   }
 
+  // A collapsible sub-section (native <details>, collapsed by default) used for the
+  // bulky per-scenario fields so the report stays compact until the user expands one.
+  function osAcc(label, bodyHtml) {
+    return `<details class="os-acc"><summary>${esc(label)}</summary>`
+      + `<div class="os-acc-body">${bodyHtml}</div></details>`;
+  }
+
   function osDetailHtml(r) {
     let h = `<div class="os-detail">`;
     if (r.error) {
@@ -5599,6 +5944,8 @@
       h += `<div><h4>${esc(t('os.detailError'))}${esc(att)}</h4><pre>${esc(r.error)}</pre></div>`;
     }
     h += cpLatencyHtml(r);
+    // req 4: this scenario's mapped Lakera detector results (collapsed by default).
+    h += osAcc(t('os.lakeraDetectors'), lakeraCpDetailHtml(r));
     if (r.strategy) {
       const ev = r.evaded ? ' — ' + t('os.evadedNote') : '';
       h += `<div class="os-detail-none">${esc(t('os.detailStrategy', { s: r.strategy_label }) + ev)}</div>`;
@@ -5613,13 +5960,14 @@
     }
     // Model's actual response + the judge's verdict (when judging ran). For
     // multi-turn / dynamic rows the replies are already shown in the transcript.
+    // These three fields are the bulkiest, so they collapse by default (osAcc).
     if (r.model_response && !r.turns && !r.dynamic) {
-      h += `<div><h4>${esc(t('os.detailModelResponse'))}</h4><pre>${esc(r.model_response)}</pre></div>`;
+      h += osAcc(t('os.detailModelResponse'), `<pre>${esc(r.model_response)}</pre>`);
     }
     if (r.judge && (r.judge.reason || r.judge.error)) {
       const verdict = modelMeta(r) ? t(modelMeta(r).key) : '';
       const reason = r.judge.error ? (t('os.judgeError') + ' ' + r.judge.error) : r.judge.reason;
-      h += `<div><h4>${esc(t('os.detailJudge'))}</h4><pre>${esc((verdict ? verdict + ' — ' : '') + reason)}</pre></div>`;
+      h += osAcc(t('os.detailJudge'), `<pre>${esc((verdict ? verdict + ' — ' : '') + reason)}</pre>`);
     }
     h += assertionsHtml(r);
     h += toolCallsHtml(r);
@@ -5627,17 +5975,18 @@
     if (r.alone_outcome) {
       const a = ALONE_META[r.alone_outcome] || ALONE_META.unknown;
       const v = t('os.aloneLabel') + ': ' + t(a.key) + (r.alone_reason ? ' — ' + r.alone_reason : '');
-      h += `<div><h4>${esc(t('os.detailAlone'))}</h4><pre>${esc(r.alone_response || '')}</pre>`;
-      h += `<div class="os-detail-none">${esc(v)}</div></div>`;
+      h += osAcc(t('os.detailAlone'),
+        `<pre>${esc(r.alone_response || '')}</pre><div class="os-detail-none">${esc(v)}</div>`);
     }
+    // RAG documents retrieved — collapsed by default to keep the report compact.
     const rag = r.rag || [];
-    h += `<div><h4>${esc(t('os.detailRag', { n: rag.length, mode: r.doc_mode }))}</h4>`;
+    let ragBody = '';
     if (!rag.length) {
-      h += `<div class="os-detail-none">${esc(t('os.detailNoRag'))}</div>`;
+      ragBody = `<div class="os-detail-none">${esc(t('os.detailNoRag'))}</div>`;
     } else {
       rag.forEach(doc => {
         const sk = { passed: 'os.ragPassed', redacted: 'os.ragRedacted', not_reached: 'os.ragNotReached' }[doc.status] || 'os.ragPassed';
-        h += `<div class="os-rag-doc">
+        ragBody += `<div class="os-rag-doc">
           <div class="os-rag-head">
             <span class="os-rag-name">${esc(doc.filename)}</span>
             <span class="os-rag-status rs-${esc(doc.status)}">${esc(t(sk))}</span>
@@ -5646,7 +5995,8 @@
         </div>`;
       });
     }
-    h += `</div></div>`;
+    h += osAcc(t('os.detailRag', { n: rag.length, mode: r.doc_mode }), ragBody);
+    h += `</div>`;
     return h;
   }
 
@@ -5713,326 +6063,38 @@
   }
 
   function buildHtmlReport(d) {
-    const s = d.summary;
-    const detection = s.detection_rate == null ? '—' : s.detection_rate + '%';
+    // req 5: reuse the EXACT same body renderer + the app's live stylesheet and
+    // icon sprite, so the exported report is structurally identical to the UI (DRY).
+    const styles = Array.prototype.map.call(document.querySelectorAll('style'), s => s.textContent).join('\n');
+    const spriteEl = Array.prototype.find.call(document.querySelectorAll('svg'), s => s.querySelector('symbol'));
+    const sprite = spriteEl ? spriteEl.outerHTML : '';
+    const body = buildReportBody(d);
     const llm = d.llm || {};
-    const when = new Date(d.generated_at).toLocaleString();
-
-    const judged = s.judged;
-    const strat = (s.strategies_used && s.strategies_used.length);
-    const sec = s.security;
-    const colspan = 6 + (judged ? 1 : 0) + (strat ? 1 : 0);
-    // Run configuration block (system prompt + RAG used) for the HTML report.
-    let runcfgHtml = '';
-    if (s.run_config) {
-      const sp = s.run_config.system_prompt || {}, kb = s.run_config.knowledge_base || {};
-      runcfgHtml = `<div class="sec"><h2>${esc(t('os.rcTitle'))}</h2>`
-        + `<div class="dt"><h4>${esc(t('os.rcSysPrompt'))}</h4>`
-        + (sp.used
-            ? `<div class="none">${esc(t('os.rcUsed'))} · ${esc(sp.source || '')}</div><pre>${esc(sp.text || '')}</pre>`
-            : `<div class="none">${esc(t('os.rcNoSp'))}</div>`)
-        + `</div><div class="dt"><h4>${esc(t('os.rcKb'))}</h4>`;
-      if (!kb.used) runcfgHtml += `<div class="none">${esc(t('os.rcNoKb'))}</div>`;
-      else if (kb.mode === 'per-scenario') runcfgHtml += `<div class="none">${esc(t('os.rcUsed'))} · ${esc(t('os.rcPerScenario'))}</div>`;
-      else {
-        runcfgHtml += `<div class="none">${esc(t('os.rcUsed'))} · ${esc(kb.mode)}</div>`;
-        (kb.documents || []).forEach(dc => {
-          runcfgHtml += `<div class="ragdoc"><span class="ragname">${esc(dc.filename)}</span><pre>${esc(dc.content || '')}</pre></div>`;
-        });
-      }
-      runcfgHtml += `</div>`;
-      if (s.run_config.checkpoints) {
-        const cps = s.run_config.checkpoints;
-        runcfgHtml += `<div class="dt"><h4>${esc(t('os.rcCheckpoints'))}</h4><div class="none">`
-          + ['cp1', 'cp2', 'cp3'].map(cp =>
-              `${cp.toUpperCase()} · ${esc(t(cps[cp] !== false ? 'os.rcCpOn' : 'os.rcCpOff'))}`).join(' &nbsp;·&nbsp; ')
-          + `</div></div>`;
-      }
-      if (s.run_config.lakera_project_id !== undefined) {
-        const rid = s.run_config.lakera_project_id;
-        let projHtml = esc(rid || t('os.rcProjectDefault'));
-        const cpp = s.run_config.checkpoint_projects;
-        if (cpp && ['cp1', 'cp2', 'cp3'].some(cp => cpp[cp] !== rid)) {
-          projHtml += '<br>' + ['cp1', 'cp2', 'cp3'].map(cp =>
-            `${cp.toUpperCase()} · ${esc(cpp[cp] || t('os.rcProjectDefault'))}`).join(' &nbsp;·&nbsp; ');
-        }
-        runcfgHtml += `<div class="dt"><h4>${esc(t('os.rcProjectId'))}</h4><div class="none">${projHtml}</div></div>`;
-      }
-      runcfgHtml += `</div>`;
-    }
-    // Visual attack-category dashboard (stacked bars) for the HTML report.
-    let catdashHtml = '';
-    if (sec && sec.categories && sec.categories.length) {
-      const segR = (cls, n, a) => a ? `<span class="seg ${cls}" style="width:${(n / a * 100).toFixed(2)}%"></span>` : '';
-      catdashHtml = `<div class="catdash"><h2>${esc(t('os.catDashTitle'))}${s.compared ? ` <span class="catdash-sub">${esc(t('os.catCompareNote'))}</span>` : ''}</h2>`
-        + sec.categories.map(c => {
-          const a = c.attacks || 0, breaches = c.breaches || 0;
-          const through = Math.max(0, (c.not_blocked || 0) - breaches);
-          const det = c.detection_rate == null ? '—' : c.detection_rate + '%';
-          const guardBar = `<div class="catbar">${segR('blk', c.blocked || 0, a)}${segR('amb', through, a)}${segR('brc', breaches, a)}</div>`;
-          const rpct = (n) => a ? Math.round(n / a * 100) : 0;
-          const rcnt = (n) => `<span class="bc">${n}/${a} · ${rpct(n)}%</span>`;
-          let barCell = guardBar;
-          const sevChip = `<span class="sev sv-${esc(c.severity)}" style="padding:2px 8px;border:1px solid;border-radius:999px;font-size:0.6rem;font-weight:700;text-transform:uppercase">${esc(sevLabel(c.severity))}</span>`;
-          let statCell = `<div class="catstat"><b>${esc(c.blocked || 0)}/${esc(a)}</b> ${esc(det)} ${sevChip}</div>`;
-          if (s.compared) {
-            const aloneBr = c.alone_breaches || 0, aloneOk = Math.max(0, a - aloneBr);
-            const aloneBar = `<div class="catbar">${segR('blk', aloneOk, a)}${segR('brc', aloneBr, a)}</div>`;
-            barCell = `<div class="catbars"><div class="catbarrow"><span class="bl">${esc(t('os.catGuardRow'))}</span>${guardBar}${rcnt(c.blocked || 0)}</div>`
-              + `<div class="catbarrow"><span class="bl bad">${esc(t('os.catAloneRow'))}</span>${aloneBar}${rcnt(aloneOk)}</div></div>`;
-            statCell = `<div class="catstat">${sevChip}</div>`;
-          }
-          return `<div class="catrow"><div class="catname"><span class="ow">${esc(c.owasp_id || '—')}</span> ${esc(c.owasp_name || '')}</div>`
-            + barCell + statCell + `</div>`;
-        }).join('')
-        + `<div class="catlegend"><span><i class="blk"></i>${esc(t('os.catBlocked'))}</span><span><i class="amb"></i>${esc(t('os.catThrough'))}</span><span><i class="brc"></i>${esc(t('os.statBreaches'))}</span></div></div>`;
-    }
-    // OWASP tactic classification of imported dataset prompts (HTML report).
-    let classifyHtml = '';
-    const cls = sec && sec.classification;
-    if (cls && cls.tactics && cls.tactics.length) {
-      const fam = cls.families || {};
-      const maxCount = Math.max(...cls.tactics.map(x => x.count), 1);
-      classifyHtml = `<div class="classify"><h2>${esc(t('os.clsTitle'))} <span class="catdash-sub">${esc(t('os.clsSub', { n: cls.total }))}</span></h2>`
-        + `<div class="clsfam"><span class="fc llm">${esc(t('os.clsLlm'))} · ${esc(fam.llm || 0)}</span>`
-        + `<span class="fc agentic">${esc(t('os.clsAgentic'))} · ${esc(fam.agentic || 0)}</span>`
-        + (fam.unmapped ? `<span class="fc unmapped">${esc(t('os.clsUnmapped'))} · ${esc(fam.unmapped)}</span>` : '')
-        + '</div>'
-        + cls.tactics.map(tac => {
-            const fc = famClass(tac.family);
-            const det = tac.detection_rate == null ? '—' : tac.detection_rate + '%';
-            return `<div class="clsrow"><div class="clsname"><span class="ow ${fc}">${esc(tac.code)}</span> ${esc(tac.name)}</div>`
-              + `<div class="clsbar"><span class="seg ${fc}" style="width:${(tac.count / maxCount * 100).toFixed(1)}%"></span></div>`
-              + `<div class="clsstat"><b>${esc(tac.count)} · ${esc(tac.share)}%</b> ${esc(det)}`
-              + (tac.breaches ? ` <span class="sev sv-critical" style="padding:2px 8px;border:1px solid;border-radius:999px;font-size:0.6rem;font-weight:700">${esc(tac.breaches)} ${esc(t('os.statBreaches'))}</span>` : '')
-              + '</div></div>';
-          }).join('')
-        + `<div class="clsnote">${esc(t('os.clsNote'))}</div></div>`;
-    }
-    const rows = d.results.map(r => {
-      const m = OUTCOME_META[r.outcome] || OUTCOME_META.error;
-      const exp = r.expected === 'block' ? t('os.expectBlock') : t('os.expectAllow');
-      const lat = r.total_latency_ms == null ? '—' : r.total_latency_ms + ' ms';
-      // The report is standalone (no SVG sprite), so use Unicode glyphs, colored by status.
-      const CP_GLYPH = { passed: '✓', blocked: '✗', redacted: '✂', skipped: '–', off: '–', pending: '–' };
-      const cps = ['cp1', 'cp2', 'cp3'].map((cp, i) => {
-        const st = (r.trace && r.trace[cp] && r.trace[cp].status) || 'skipped';
-        return `<span class="cpb s-${esc(st)}" title="CP${i + 1} — ${esc(st)}"><b>${i + 1}</b> ${CP_GLYPH[st] || '–'}</span>`;
-      }).join('');
-      const mm = modelMeta(r);
-      const modelCell = mm ? `<b class="${mm.cls}">${esc(t(mm.key))}</b>` : '<span class="muted">—</span>';
-      const variantCell = r.strategy ? esc(r.strategy_label) : esc(t('os.variantBase'));
-      const evadedFlag = r.evaded ? ` <b style="color:var(--block)">⚠ ${esc(t('os.evaded'))}</b>` : '';
-      // Click-to-reveal detail using a native <details> element (no JS in the report).
-      const rag = r.rag || [];
-      let detail = '';
-      if (r.error) {
-        const att = (r.attempts && r.attempts > 1) ? ' — ' + t('os.errAttempts', { n: r.attempts }) : '';
-        detail += `<div class="dt"><h4>${esc(t('os.detailError'))}${esc(att)}</h4><pre>${esc(r.error)}</pre></div>`;
-      }
-      if (r.strategy) detail += `<div class="dt"><h4>${esc(t('os.detailStrategy', { s: r.strategy_label }))}</h4></div>`;
-      detail += turnsHtml(r);     // multi-turn transcript (empty for single-shot)
-      detail += dynamicHtml(r);   // adaptive-attacker rounds (empty unless dynamic)
-      if (!r.turns && !r.dynamic) detail += `<div class="dt"><h4>${esc(t('os.detailPrompt'))}</h4><pre>${esc(r.prompt || '')}</pre></div>`;
-      if (r.simulate_output) detail += `<div class="dt"><h4>${esc(t('os.detailSimOutput'))}</h4><pre>${esc(r.simulate_output)}</pre></div>`;
-      if (r.model_response && !r.turns && !r.dynamic) detail += `<div class="dt"><h4>${esc(t('os.detailModelResponse'))}</h4><pre>${esc(r.model_response)}</pre></div>`;
-      if (r.judge && (r.judge.reason || r.judge.error)) {
-        const reason = r.judge.error ? (t('os.judgeError') + ' ' + r.judge.error) : r.judge.reason;
-        detail += `<div class="dt"><h4>${esc(t('os.detailJudge'))}</h4><pre>${esc((mm ? t(mm.key) + ' — ' : '') + reason)}</pre></div>`;
-      }
-      if (r.assertions && r.assertions.length) {
-        const lines = r.assertions.map(c => {
-          const status = c.error ? ('⚠ ' + c.error)
-            : (c.matched ? t('os.assertMatched') : t('os.assertNoMatch'));
-          return esc(`${c.type}: ${c.value} → `) + esc(status);
-        }).join('\n');
-        detail += `<div class="dt"><h4>${esc(t('os.detailAssertions'))}</h4><pre>${lines}</pre></div>`;
-      }
-      if (r.tool_calls && r.tool_calls.length) {
-        const tl = r.tool_calls.map(c =>
-          (c.dangerous ? '[DANGEROUS] ' : '') + c.name + '(' + (c.arguments || '') + ')').join('\n');
-        detail += `<div class="dt"><h4>${esc(t('os.detailTools'))}</h4><pre>${esc(tl)}</pre></div>`;
-      }
-      if (r.alone_outcome) {
-        const a = ALONE_META[r.alone_outcome] || ALONE_META.unknown;
-        const v = t('os.aloneLabel') + ': ' + t(a.key) + (r.alone_reason ? ' — ' + r.alone_reason : '');
-        detail += `<div class="dt"><h4>${esc(t('os.detailAlone'))}</h4><pre>${esc(r.alone_response || '')}</pre><div class="none">${esc(v)}</div></div>`;
-      }
-      detail += `<div class="dt"><h4>${esc(t('os.detailRag', { n: rag.length, mode: r.doc_mode }))}</h4>`;
-      if (!rag.length) {
-        detail += `<div class="none">${esc(t('os.detailNoRag'))}</div>`;
-      } else {
-        rag.forEach(doc => {
-          const sk = { passed: 'os.ragPassed', redacted: 'os.ragRedacted', not_reached: 'os.ragNotReached' }[doc.status] || 'os.ragPassed';
-          detail += `<div class="ragdoc"><span class="ragname">${esc(doc.filename)}</span> <span class="ragst rs-${esc(doc.status)}">${esc(t(sk))}</span><pre>${esc(doc.content || '')}</pre></div>`;
-        });
-      }
-      detail += `</div>`;
-      return `<tr class="r-${esc(r.outcome)}${r.evaded ? ' evaded' : ''}">
-        <td>${esc(r.label)} <span class="id">${esc(r.id)}</span></td>
-        <td>${r.owasp_id ? esc(r.owasp_id) : (r.owasp_class && r.owasp_class.code !== 'UNMAPPED' ? esc(r.owasp_class.code) + ' <span class="muted">' + esc(t('os.clsInferredShort')) + '</span>' : '—')}<br><span class="muted">${esc(r.owasp_id ? (r.owasp_name || '') : (r.owasp_class && r.owasp_class.code !== 'UNMAPPED' ? r.owasp_class.name : (r.owasp_name || '')))}</span></td>
-        ${strat ? `<td class="mono">${variantCell}</td>` : ''}
-        <td>${esc(exp)}</td>
-        <td class="mono">${cps}</td>
-        <td><b>${esc(t(m.key))}</b>${evadedFlag}</td>
-        ${judged ? `<td>${modelCell}</td>` : ''}
-        <td>${esc(lat)}</td></tr>
-        <tr class="detrow"><td colspan="${colspan}"><details><summary>${esc(t('os.revealReport'))}</summary>${detail}</details></td></tr>`;
-    }).join('');
-
-    return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${esc(t('os.reportTitle'))}</title>
-<style>
-  :root{--bg:#0B1120;--panel:#131C2E;--border:#243049;--text:#E6EDF7;--muted:#93A1B8;--brand:#818CF8;
-        --pass:#34D399;--block:#F87171;--redact:#FBBF24;--skip:#94A3B8;}
-  *{box-sizing:border-box;} body{margin:0;padding:32px;background:var(--bg);color:var(--text);
-    font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.5;}
-  h1{font-size:1.3rem;margin:0 0 4px;} .meta{color:var(--muted);font-size:0.82rem;margin-bottom:20px;}
-  .meta code{color:var(--brand);}
-  .cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px;}
-  .card{flex:1;min-width:130px;border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:14px 16px;}
-  .card .n{font-size:1.8rem;font-weight:700;} .card .l{color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;}
-  .good .n{color:var(--pass);} .bad .n{color:var(--block);} .warn .n{color:var(--redact);}
-  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
-  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid #1B2740;vertical-align:top;}
-  th{font-size:0.68rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);}
-  .id{color:var(--muted);font-family:monospace;font-size:0.72rem;} .muted{color:var(--muted);font-size:0.74rem;}
-  .mono{font-family:monospace;font-size:0.78rem;color:var(--muted);}
-  tr.r-not_blocked td b{color:var(--block);} tr.r-false_positive td b{color:var(--redact);}
-  tr.r-blocked td b,tr.r-passed td b{color:var(--pass);} tr.r-error td b{color:var(--skip);}
-  b.mo-breach{color:var(--block);} b.mo-guard_save{color:var(--redact);}
-  b.mo-resisted,b.mo-prevented{color:var(--pass);} b.mo-unknown,b.mo-not_judged{color:var(--skip);}
-  .legend{border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:14px 16px;margin-bottom:20px;}
-  .legend h2{font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:0 0 10px;}
-  .legend .row{display:flex;gap:8px;margin-bottom:6px;font-size:0.84rem;}
-  .legend .row b{color:var(--text);white-space:nowrap;} .legend .row span{color:var(--muted);}
-  .legend .status{margin-top:10px;color:var(--muted);font-size:0.78rem;}
-  tr.detrow td{padding:0 12px 10px;border-bottom:1px solid #1B2740;}
-  details{background:var(--bg);border:1px solid var(--border);border-left:3px solid var(--brand);border-radius:6px;padding:8px 12px;}
-  summary{cursor:pointer;color:var(--brand);font-size:0.78rem;font-weight:600;}
-  details[open] summary{margin-bottom:8px;}
-  .dt{margin-bottom:10px;} .dt h4{font-size:0.64rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);margin:0 0 4px;}
-  details pre{font-family:monospace;font-size:0.74rem;white-space:pre-wrap;word-break:break-word;background:#0B1120;border:1px solid var(--border);border-radius:5px;padding:8px 10px;margin:4px 0 0;max-height:240px;overflow:auto;}
-  .ragdoc{margin-top:8px;} .ragname{font-family:monospace;font-size:0.76rem;color:var(--text);}
-  .ragst{font-size:0.6rem;font-weight:600;text-transform:uppercase;padding:1px 7px;border:1px solid;border-radius:999px;margin-left:6px;}
-  .rs-passed{color:var(--pass);border-color:var(--pass);} .rs-redacted{color:var(--redact);border-color:var(--redact);} .rs-not_reached{color:var(--skip);border-color:var(--skip);}
-  .none{color:var(--muted);font-style:italic;font-size:0.8rem;}
-  .cpb{display:inline-flex;align-items:center;gap:3px;padding:1px 5px;margin-right:3px;border:1px solid var(--border);border-radius:4px;font-size:0.64rem;color:var(--muted);font-family:monospace;}
-  .cpb.s-passed{color:var(--pass);border-color:var(--pass);} .cpb.s-blocked{color:var(--block);border-color:var(--block);}
-  .cpb.s-redacted{color:var(--redact);border-color:var(--redact);} .cpb.s-skipped,.cpb.s-off{color:var(--skip);border-color:var(--skip);}
-  .compare{display:flex;border:1px solid var(--brand);border-radius:10px;overflow:hidden;margin-bottom:20px;}
-  .compare .c{flex:1;text-align:center;padding:16px;} .compare .c+.c{border-left:1px solid var(--border);}
-  .compare .b{font-size:1.9rem;font-weight:700;} .compare .k{font-size:0.66rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);margin-top:3px;}
-  .compare .alone .b{color:var(--block);} .compare .guarded .b{color:var(--pass);} .compare .red .b{color:var(--brand);}
-  tr.evaded td{background:rgba(248,113,113,0.12);}
-  .catdash{border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:14px 16px;margin-bottom:20px;}
-  .catdash h2{font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:0 0 10px;}
-  .catrow{display:grid;grid-template-columns:1.6fr 3fr auto;gap:12px;align-items:center;margin-bottom:7px;}
-  .catname{font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;} .catname .ow{font-family:monospace;color:var(--brand);font-size:0.74rem;}
-  .catbar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:#1B2740;} .catbar .seg{height:100%;}
-  .catbar .blk{background:var(--pass);} .catbar .amb{background:var(--redact);} .catbar .brc{background:var(--block);}
-  .catbars{display:flex;flex-direction:column;gap:4px;}
-  .catbarrow{display:grid;grid-template-columns:58px 1fr auto;gap:7px;align-items:center;}
-  .catbarrow .bl{font-size:0.6rem;color:var(--muted);text-transform:uppercase;text-align:right;} .catbarrow .bl.bad{color:var(--block);}
-  .catbarrow .bc{font-size:0.62rem;color:var(--muted);white-space:nowrap;min-width:56px;text-align:right;}
-  .catdash-sub{font-weight:400;text-transform:none;color:var(--muted);font-size:0.66rem;}
-  .catstat{display:flex;gap:8px;justify-content:flex-end;align-items:center;font-size:0.76rem;color:var(--muted);white-space:nowrap;}
-  .catlegend{display:flex;gap:16px;margin-top:10px;font-size:0.72rem;color:var(--muted);} .catlegend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;}
-  .catlegend i.blk{background:var(--pass);} .catlegend i.amb{background:var(--redact);} .catlegend i.brc{background:var(--block);}
-  .classify{border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:14px 16px;margin-bottom:20px;}
-  .classify h2{font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:0 0 10px;}
-  .clsfam{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
-  .clsfam .fc{font-size:0.66rem;font-weight:600;padding:3px 10px;border:1px solid;border-radius:999px;}
-  .clsfam .fc.llm{color:var(--brand);border-color:var(--brand);} .clsfam .fc.agentic{color:var(--redact);border-color:var(--redact);} .clsfam .fc.unmapped{color:var(--skip);border-color:var(--skip);}
-  .clsrow{display:grid;grid-template-columns:1.8fr 3fr auto;gap:12px;align-items:center;margin-bottom:7px;}
-  .clsname{font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;} .clsname .ow{font-family:monospace;font-size:0.74rem;color:var(--brand);} .clsname .ow.agentic{color:var(--redact);} .clsname .ow.unmapped{color:var(--skip);}
-  .clsbar{height:14px;border-radius:7px;overflow:hidden;background:#1B2740;} .clsbar .seg{display:block;height:100%;} .clsbar .seg.llm{background:var(--brand);} .clsbar .seg.agentic{background:var(--redact);} .clsbar .seg.unmapped{background:var(--skip);}
-  .clsstat{display:flex;gap:8px;justify-content:flex-end;align-items:center;font-size:0.76rem;color:var(--muted);white-space:nowrap;}
-  .clsnote{font-size:0.72rem;color:var(--muted);margin-top:10px;}
-  .sec{margin-bottom:22px;} .sec h2{font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:16px 0 8px;}
-  .posture{display:flex;align-items:center;gap:12px;padding:13px 16px;border:1px solid;border-radius:10px;font-size:0.95rem;font-weight:600;}
-  .posture .lvl{font-size:0.64rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:3px 10px;border:1px solid;border-radius:999px;}
-  .finding{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--border);border-left:3px solid var(--border);border-radius:8px;background:var(--panel);padding:11px 13px;margin-bottom:8px;}
-  .finding.f-critical,.finding.f-high{border-left-color:var(--block);} .finding.f-medium{border-left-color:var(--redact);}
-  .finding.f-low,.finding.f-info{border-left-color:var(--brand);} .finding.f-good{border-left-color:var(--pass);}
-  .finding .sev{flex-shrink:0;font-size:0.58rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;padding:2px 8px;border:1px solid;border-radius:999px;}
-  .finding .t{font-weight:600;color:var(--text);} .finding .d{color:var(--muted);font-size:0.82rem;margin-top:2px;} .finding .r{font-size:0.82rem;margin-top:5px;} .finding .r b{color:var(--brand);}
-  .dash{width:100%;border-collapse:collapse;font-size:0.82rem;} .dash th,.dash td{text-align:left;padding:7px 10px;border-bottom:1px solid #1B2740;}
-  .dash th{font-size:0.62rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);} .dash .ow{font-family:monospace;color:var(--brand);font-size:0.74rem;} .dash .rem{color:var(--muted);font-size:0.76rem;}
-  .sv-critical{color:var(--block);border-color:var(--block);background:rgba(248,113,113,0.16);}
-  .sv-high{color:var(--block);border-color:var(--block);} .sv-medium{color:var(--redact);border-color:var(--redact);}
-  .sv-low,.sv-info{color:var(--brand);border-color:var(--brand);} .sv-good,.sv-secure{color:var(--pass);border-color:var(--pass);}
-  footer{margin-top:20px;color:var(--muted);font-size:0.74rem;}
-  .rpt-head{display:flex;align-items:center;gap:12px;margin-bottom:6px;}
-  .rpt-logo{width:40px;height:40px;background:#fff;border-radius:10px;display:grid;place-items:center;flex-shrink:0;box-shadow:0 0 0 1px rgba(0,0,0,0.1);}
-  .rpt-logo svg{width:30px;height:30px;display:block;} .rpt-head h1{margin:0;}
-</style></head><body>
-<div class="rpt-head">
-  <span class="rpt-logo" aria-label="Check Point">
-    <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" role="img">
-      <circle cx="17" cy="23" r="14" fill="#E6007E"/>
-      <g fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round">
-        <circle cx="13.5" cy="25.5" r="4.4"/><line x1="16.6" y1="22.4" x2="23" y2="16"/>
-      </g>
-      <circle cx="23.5" cy="15.5" r="2.6" fill="#fff"/>
-      <circle cx="30.5" cy="9.5" r="5" fill="#1A1A1A"/>
-    </svg>
-  </span>
-  <h1>${esc(t('os.reportTitle'))}</h1>
-</div>
-<div class="meta">Generated ${esc(when)} · Provider <code>${esc(SHORT_PROVIDER[llm.provider] || llm.provider || '—')}</code>
-  · Model <code>${esc(llm.model || '—')}</code> · Endpoint <code>${esc(llm.base_url || '—')}</code></div>
-${(s.scope && s.scope.sampled) ? `<div class="meta">${esc(t('os.scopeSampled', { n: s.scope.base_executed, total: s.scope.available, seed: s.scope.seed == null ? '—' : s.scope.seed }))}</div>` : ''}
-${s.compared ? `<div class="compare">
-  <div class="c alone"><div class="b">${esc(s.alone_success_rate == null ? '—' : s.alone_success_rate + '%')}</div><div class="k">${esc(t('os.cmpAlone'))}</div></div>
-  <div class="c guarded"><div class="b">${esc(s.guarded_success_rate == null ? '—' : s.guarded_success_rate + '%')}</div><div class="k">${esc(t('os.cmpGuarded'))}</div></div>
-  <div class="c red"><div class="b">${esc(s.risk_reduction == null ? '—' : '−' + s.risk_reduction + '%')}</div><div class="k">${esc(t('os.cmpReduction'))}</div></div>
-</div>` : ''}
-<div class="cards">
-  <div class="card"><div class="n">${esc(s.total)}</div><div class="l">${esc(t('os.statTotal'))}</div></div>
-  <div class="card good"><div class="n">${esc(s.blocked)}</div><div class="l">${esc(t('os.statBlocked'))}</div></div>
-  <div class="card bad"><div class="n">${esc(s.not_blocked)}</div><div class="l">${esc(t('os.statNotBlocked'))}</div></div>
-  <div class="card good"><div class="n">${esc(s.passed)}</div><div class="l">${esc(t('os.statPassed'))}</div></div>
-  <div class="card warn"><div class="n">${esc(s.false_positive)}</div><div class="l">${esc(t('os.statFalsePos'))}</div></div>
-  ${s.errors ? `<div class="card bad"><div class="n">${esc(s.errors)}</div><div class="l">${esc(t('os.statErrors'))}</div></div>` : ''}
-  <div class="card"><div class="n">${esc(detection)}</div><div class="l">${esc(t('os.statDetection'))}</div></div>
-</div>
-${judged ? `<div class="cards">
-  <div class="card bad"><div class="n">${esc(s.breaches)}</div><div class="l">${esc(t('os.statBreaches'))}</div></div>
-  <div class="card good"><div class="n">${esc(s.resisted)}</div><div class="l">${esc(t('os.statResisted'))}</div></div>
-  <div class="card good"><div class="n">${esc(s.prevented)}</div><div class="l">${esc(t('os.statPrevented'))}</div></div>
-</div>` : ''}
-${strat ? `<div class="cards">
-  <div class="card"><div class="n">${esc(s.base_detection_rate == null ? '—' : s.base_detection_rate + '%')}</div><div class="l">${esc(t('os.statBaseDetection'))}</div></div>
-  <div class="card"><div class="n">${esc(s.variants)}</div><div class="l">${esc(t('os.statVariants'))}</div></div>
-  <div class="card ${s.evasions ? 'bad' : 'good'}"><div class="n">${esc(s.evasions)}</div><div class="l">${esc(t('os.statEvasions'))}</div></div>
-  ${s.effective_evasions != null ? `<div class="card ${s.effective_evasions ? 'bad' : 'good'}"><div class="n">${esc(s.effective_evasions)}</div><div class="l">${esc(t('os.statEffEvasions'))}</div></div>` : ''}
-</div>` : ''}
-${catdashHtml}
-${classifyHtml}
-${runcfgHtml}
-${sec ? `<div class="sec">
-  <div class="posture sv-${esc(sec.posture.level)}"><span class="lvl sv-${esc(sec.posture.level)}">${esc(sevLabel(sec.posture.level))}</span> ${esc(sec.posture.headline)}</div>
-  <h2>${esc(t('os.secFindings'))}</h2>
-  ${(sec.findings||[]).map(f=>`<div class="finding f-${esc(f.severity)}"><span class="sev sv-${esc(f.severity)}">${esc(sevLabel(f.severity))}</span><div><div class="t">${esc(f.title)}</div>${f.detail?`<div class="d">${esc(f.detail)}</div>`:''}${f.recommendation?`<div class="r"><b>${esc(t('os.secRecommend'))}:</b> ${esc(f.recommendation)}</div>`:''}</div></div>`).join('')}
-  ${(sec.categories&&sec.categories.length)?`<h2>${esc(t('os.secDashboard'))}</h2>
-  <table class="dash"><thead><tr><th>${esc(t('os.dashCategory'))}</th><th>${esc(t('os.dashAttacks'))}</th><th>${esc(t('os.dashDetection'))}</th><th>${esc(t('os.dashSeverity'))}</th><th>${esc(t('os.secRecommend'))}</th></tr></thead><tbody>
-  ${sec.categories.map(c=>`<tr><td><span class="ow">${esc(c.owasp_id||'—')}</span> ${esc(c.owasp_name||'')}</td><td>${esc(c.attacks)}</td><td>${esc(c.detection_rate==null?'—':c.detection_rate+'%')}${c.evasions?` · ${esc(c.evasions)} ${esc(t('os.evaded'))}`:''}${c.breaches?` · ${esc(c.breaches)} ${esc(t('os.statBreaches'))}`:''}</td><td><span class="sev sv-${esc(c.severity)}" style="padding:2px 8px;border:1px solid;border-radius:999px;font-size:0.6rem;font-weight:700;text-transform:uppercase">${esc(sevLabel(c.severity))}</span></td><td class="rem">${c.severity==='secure'?'—':esc(c.remediation||'')}</td></tr>`).join('')}
-  </tbody></table>`:''}
-</div>` : ''}
-<div class="legend">
-  <h2>${esc(t('os.cpLegendTitle'))}</h2>
-  ${CP_INFO.map(cp => `<div class="row"><b>${esc(t(cp.t))}</b><span>— ${esc(t(cp.d))}</span></div>`).join('')}
-  <div class="status">${esc(t('os.cpLegendStatus'))} ${['badge.passed','badge.blocked','badge.redacted','badge.skipped'].map(k=>esc(t(k))).join(' · ')}</div>
-</div>
-<table><thead><tr>
-  <th>${esc(t('os.colScenario'))}</th><th>${esc(t('os.colOwasp'))}</th>${strat ? `<th>${esc(t('os.colVariant'))}</th>` : ''}<th>${esc(t('os.colExpected'))}</th>
-  <th>${esc(t('os.colCheckpoints'))}</th><th>${esc(t('os.colGuard'))}</th>${judged ? `<th>${esc(t('os.colModel'))}</th>` : ''}<th>${esc(t('os.colLatency'))}</th>
-</tr></thead><tbody>${rows}</tbody></table>
-<footer>Lakera Guard AI Assistant Security Demo — checkpoint trace (CP1 user input · CP2 RAG docs · CP3 LLM output).
-"Not blocked" attack rows are expected for categories that depend on defence-in-depth beyond prompt scanning.</footer>
-</body></html>`;
+    const when = d.generated_at ? new Date(d.generated_at).toLocaleString() : '';
+    const head = '<div class="os-report-head"><div><h1>' + esc(t('os.modalTitle')) + '</h1>'
+      + '<div class="os-report-meta">' + esc(llm.provider || '') + (llm.model ? ' · ' + esc(llm.model) : '')
+      + (when ? ' · ' + esc(when) : '') + '</div></div></div>';
+    // Minimal interaction script so the static file behaves like the live UI:
+    // expandable scenario rows + clickable stat popovers. Native <details> (legend,
+    // dashboard, per-scenario Lakera + RAG sections) need no JS.
+    const script = '<' + 'script>'
+      + 'var STAT_INFO=' + JSON.stringify(STAT_INFO) + ';'
+      + 'function toggleOsDetail(i){var r=document.getElementById("osr-"+i),q=document.getElementById("osd-"+i);if(!r||!q)return;var o=q.style.display==="none";q.style.display=o?"":"none";r.classList.toggle("open",o);}'
+      + 'function osRowKey(e,i){if(e.key==="Enter"||e.key===" "){e.preventDefault();toggleOsDetail(i);}}'
+      + 'function showStatInfo(k,ev){if(ev)ev.stopPropagation();var x=STAT_INFO[k];if(!x)return;var p=document.getElementById("os-popover");if(!p){p=document.createElement("div");p.id="os-popover";p.className="os-popover";document.body.appendChild(p);}var lbl=(ev&&ev.currentTarget&&ev.currentTarget.querySelector(".lbl,.os-hero-lbl,.cap"));p.innerHTML="<div class=\\"os-popover-title\\">"+(lbl?lbl.textContent:k)+"</div><div class=\\"os-popover-body\\">"+x+"</div>";p.classList.add("show");var tg=ev&&ev.currentTarget;if(tg){var rc=tg.getBoundingClientRect();p.style.top=(rc.bottom+window.scrollY+8)+"px";p.style.left=Math.min(rc.left+window.scrollX,window.scrollX+document.documentElement.clientWidth-p.offsetWidth-12)+"px";}}'
+      + 'document.addEventListener("click",function(e){var p=document.getElementById("os-popover");if(p&&p.classList.contains("show")&&!p.contains(e.target)&&!(e.target.closest&&e.target.closest("[data-info]")))p.classList.remove("show");});'
+      + '<' + '/script>';
+    return '<!DOCTYPE html><html lang="' + esc(currentLang) + '"><head><meta charset="UTF-8">'
+      + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+      + '<title>' + esc(t('os.modalTitle')) + '</title>'
+      + '<style>' + styles
+      // The app's body is a fixed-viewport flex column (height:100dvh; overflow:hidden)
+      // for the SPA shell; the standalone report is a normal scrolling document, so
+      // override those layout props (padding/color alone left them clipping the page).
+      + '\nbody{display:block;height:auto;min-height:100dvh;overflow-x:hidden;overflow-y:auto;padding:20px 22px;max-width:1080px;margin:0 auto;background:var(--bg);color:var(--text);}'
+      + '.os-report-head{margin-bottom:16px;} .os-report-head h1{font-family:"Lexend",sans-serif;font-size:1.3rem;font-weight:700;color:var(--heading);}'
+      + '.os-report-meta{color:var(--muted);font-size:0.8rem;margin-top:3px;font-family:"JetBrains Mono",monospace;}</style>'
+      + '</head><body>' + sprite + head + '<div id="os-body">' + body + '</div>' + script + '</body></html>';
   }
 
   // ── Init ────────────────────────────────────────────────────────────────
@@ -6052,5 +6114,10 @@ ${sec ? `<div class="sec">
     }
   });
 </script>
+<!-- Modular add-ons (served from /assets). Loaded AFTER the inline app script so
+     they can use its globals (API, loadLakeraConfig, loadLlmConfig). -->
+<script src="/assets/scenarios.js?v=2"></script>
+<script src="/assets/appstate.js?v=2"></script>
+<script src="/assets/onboarding.js?v=2"></script>
 </body>
 </html>

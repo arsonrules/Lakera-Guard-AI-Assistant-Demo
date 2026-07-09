@@ -50,8 +50,10 @@ pip install -r requirements-dev.txt
 ```
 
 **Runtime dependencies** (`requirements.txt`): `fastapi`, `uvicorn[standard]`,
-`httpx`, `pydantic-settings`, `python-multipart`, `pyyaml`. Just install the whole
-file — it gives you one environment for both the CLI and the web app.
+`httpx`, `pydantic-settings`, `python-multipart`, `pyyaml`, and `rich` (for the
+CLI's progress bar and colored output — the CLI degrades to plain text if it's
+missing). Just install the whole file — it gives you one environment for both the
+CLI and the web app.
 
 > **Always run the CLI from the project root** (the directory containing the
 > `backend/` folder) with the venv activated, so the `backend` package is
@@ -65,8 +67,10 @@ The one-shot test needs a model to generate the "assistant" responses that CP3
 scans. Pick one:
 
 ### Option A — Cloud (OpenRouter, default)
-Get a key at <https://openrouter.ai/keys>. You'll set `OPENROUTER_API_KEY` (or
-`LLM_API_KEY`) in step 4. Default model: `anthropic/claude-sonnet-4.6`.
+Get a key at <https://openrouter.ai/keys>. Provide it via `OPENROUTER_API_KEY` /
+`LLM_API_KEY` (step 4) **or** the `--api-key` flag (env is preferred — a CLI key
+is visible in the process list and shell history). Default model:
+`anthropic/claude-sonnet-4.6`.
 
 ### Option B — Local model (no LLM key, zero cost)
 Run a local OpenAI-compatible server, then pass `--provider`:
@@ -78,7 +82,23 @@ Run a local OpenAI-compatible server, then pass `--provider`:
 | `--provider omlx` | `http://localhost:10240/v1` | No |
 | `--provider custom --base-url <url>` | you provide | optional |
 
-Override the model with `--model <id>` and the endpoint with `--base-url <url>`.
+**Provider routing flags:** `--provider`, `--base-url <url>`, `--model <id>`, and
+`--api-key <key>` fully control the target LLM (each overrides its provider
+preset / env var).
+
+### Guard region
+
+By default the checkpoints hit the **Community** endpoint (or `$LAKERA_ENDPOINT`).
+Point them at a specific region with either flag:
+
+```bash
+python -m backend.oneshot --all-categories --lakera-region eu-west-1
+python -m backend.oneshot --all-categories --lakera-endpoint https://us-east-1.api.lakera.ai
+```
+`--lakera-region` accepts `community, us, us-east-1, us-west-2, eu-west-1,
+ap-southeast-1`; `--lakera-endpoint` takes a full URL or a bare region host
+(`/v2/guard` is appended automatically). An invalid URL fails fast with a clear
+error.
 
 ---
 
@@ -103,12 +123,12 @@ set -a; source .env; set +a   # export every var from .env into this shell
 
 Variables the CLI uses:
 
-| Variable | Required? | Purpose |
-|---|---|---|
-| `LAKERA_GUARD_API_KEY` | **Yes** | Authenticates every CP1/CP2/CP3 Guard scan. |
-| `OPENROUTER_API_KEY` *or* `LLM_API_KEY` | Yes for cloud LLM | Target-model key (not needed for local providers). |
-| `JUDGE_API_KEY` | Optional | Only when using a dedicated `--judge-provider`. |
-| `LAKERA_ENDPOINT` | Optional | Regional Guard host, e.g. `https://eu-west-1.api.lakera.ai` (from `.env`; default is Community). |
+| Variable | Required? | Purpose | CLI alternative |
+|---|---|---|---|
+| `LAKERA_GUARD_API_KEY` | **Yes** | Authenticates every CP1/CP2/CP3 Guard scan. | — |
+| `OPENROUTER_API_KEY` *or* `LLM_API_KEY` | Yes for cloud LLM | Target-model key (not needed for local providers). | `--api-key` |
+| `JUDGE_API_KEY` | Optional | Only when using a dedicated `--judge-provider`. | `--judge-api-key` |
+| `LAKERA_ENDPOINT` | Optional | Regional Guard host, e.g. `https://eu-west-1.api.lakera.ai` (default is Community). | `--lakera-endpoint` / `--lakera-region` |
 
 > For a **`--dry-run`** (validate + print the plan, no API calls) you need **no
 > keys at all** — great for a first smoke test.
@@ -207,40 +227,119 @@ python -m backend.oneshot \
 
 ---
 
-## 8. Make it fast (concurrency)
+## 8. Make it fast — burst size & streaming
 
-`--concurrency N` runs **N scenarios in parallel** (1–100, default 4). The guard
-checkpoints share a keep-alive connection pool, so high concurrency scans in
-parallel without a fresh TLS handshake per checkpoint.
+**`--burst-size N`** (default 8) sets the **parallel scan pool** — how many
+scenarios are tested at once (1–100). `--concurrency` is its companion and wins
+if both are set. The guard checkpoints share a keep-alive connection pool, so a
+large burst scans in parallel without a fresh TLS handshake per checkpoint.
 
 ```bash
-python -m backend.oneshot --hf-dataset OpenSafetyLab/Salad-Data --hf-limit 2000 --concurrency 100
+python -m backend.oneshot --hf-dataset OpenSafetyLab/Salad-Data --hf-limit 2000 --burst-size 100
 ```
 
-Dial it back if your Lakera/LLM provider rate-limits (429s are retried with
-backoff, but heavy throttling slows the run). `--max-scenarios N` (default 100,
-max 100,000) caps the base scenarios; larger datasets are randomly **sampled**
-down (reproducibly with `--seed`).
+For HuggingFace datasets, scanning **streams as it downloads** by default — the
+script pages rows in and dispatches them to the scan pool immediately, so
+download and scan overlap instead of stalling on a full download first. Add
+`--no-stream` to import the whole dataset before scanning (the batch path).
+
+Dial the burst back if your Lakera/LLM provider rate-limits (429s are retried
+with backoff, but heavy throttling slows the run). `--max-scenarios N` (default
+100, max 100,000) caps the base scenarios; larger datasets are randomly
+**sampled** down (reproducibly with `--seed`).
+
+### Stay under a per-second quota — `--rate-limit`
+
+`--burst-size`/`--concurrency` bound *how many* requests run at once; **`--rate-limit
+RPS`** bounds *how fast* they start. Every outbound call — each CP1/CP2/CP3 Guard
+scan **and** every target/judge LLM request — passes through one shared,
+concurrency-safe **token bucket** (default **8 req/s**), so no matter how many
+workers you run, their combined request rate never exceeds the cap. This is the
+knob for providers that enforce a hard requests-per-second limit (e.g. the Lakera
+Community endpoint):
+
+```bash
+# 100 workers for throughput, but never more than 6 requests/second overall
+python -m backend.oneshot --hf-dataset OpenSafetyLab/Salad-Data --hf-limit 5000 \
+    --burst-size 100 --rate-limit 6
+```
+
+Pass `--rate-limit 0` to disable throttling entirely (rely on `--concurrency`
+alone). The limiter holds no per-request state and the batch runner uses a bounded
+worker pool, so even a 100,000-row run keeps memory flat rather than materialising
+a task per row.
 
 ---
 
-## 9. Read and save the results
+## 9. Scan a single checkpoint (`--project-id`)
 
-The stdout summary shows posture, blocked / not-blocked counts, base detection
-rate, a per-OWASP line, the imported-dataset tactic classification, and the gate
-verdict. Save machine-readable output:
+Restrict the run to one checkpoint with **`--project-id {CP1,CP2,CP3}`** — handy
+for isolating a layer or measuring what each catches on its own:
+
+```bash
+python -m backend.oneshot --hf-dataset OpenSafetyLab/Salad-Data --project-id CP1   # user input only
+python -m backend.oneshot --category llm05 --project-id CP3                         # output only
+```
+
+- **CP1** = user input · **CP2** = RAG documents · **CP3** = LLM output.
+- Default (flag omitted) runs all three. Restricting to **CP1** is also the
+  cheapest run: attacks that block at CP1 never reach the model.
+
+### Scoring: the LLM judge & Guard ON-vs-OFF
+
+For attacks that the guard *doesn't* block, an **LLM judge** reads the model's
+reply and decides whether it actually complied — turning "not blocked" into a
+real **breach / resisted / prevented** verdict. It's **on by default**
+(`--no-judge` to skip). Score with a separate, stronger model to avoid a weak
+target grading itself:
 
 ```bash
 python -m backend.oneshot --all-categories \
-  --out report.json \      # full JSON payload (results + summary + security report)
-  --csv results.csv \      # one row per scenario
-  --format md              # emit a Markdown summary to stdout (e.g. a CI step summary)
-python -m backend.oneshot --all-categories --quiet --out report.json   # suppress stdout summary
+  --judge-provider openrouter --judge-model anthropic/claude-opus-4.8 --judge-api-key "$JUDGE_KEY"
+```
+
+Add **`--compare`** to run each attack **twice — Guard ON and Guard OFF** — and
+report the guard's **risk reduction** (how many the model complied with alone vs.
+with Lakera). `--compare` implies `--judge` and doubles model calls:
+
+```bash
+python -m backend.oneshot --category llm02 --compare
 ```
 
 ---
 
-## 10. Use it as a CI gate
+## 10. Read and save the results — dual reports
+
+The stdout summary shows posture, blocked / not-blocked counts, base detection
+rate, a per-OWASP line, the imported-dataset tactic classification, and the gate
+verdict.
+
+**`--output-dir DIR`** writes **both** a structured `.json` (for downstream
+programmatic use) and a cleanly styled, self-contained `.html` report (for
+humans) — timestamped, into `DIR` (created if needed):
+
+```bash
+python -m backend.oneshot --hf-dataset OpenSafetyLab/Salad-Data --output-dir reports/
+# → reports/oneshot-YYYYmmdd-HHMMSS.json  and  reports/oneshot-YYYYmmdd-HHMMSS.html
+```
+
+`--out PATH` / `--csv PATH` still write a single JSON / CSV to an exact path, and
+`--format md` emits a Markdown summary to stdout (e.g. a CI step summary):
+
+```bash
+python -m backend.oneshot --all-categories \
+  --out report.json --csv results.csv --format md
+python -m backend.oneshot --all-categories --quiet --output-dir reports/   # suppress stdout summary
+```
+
+> **Terminal UX:** the CLI uses [`rich`](https://github.com/Textualize/rich) for a
+> live progress bar (during the scan/stream) and colored status lines — printed to
+> **stderr**, so stdout stays clean for piping `--format md`/`--quiet`. If `rich`
+> isn't installed it degrades to plain text automatically.
+
+---
+
+## 11. Use it as a CI gate
 
 Add thresholds; the process exits non-zero when one is violated, so a pipeline
 fails the build:
@@ -277,7 +376,7 @@ python -m backend.oneshot --suite suite.yaml \
 
 ---
 
-## 11. Full flag reference
+## 12. Full flag reference
 
 | Group | Flag | Meaning |
 |---|---|---|
@@ -287,34 +386,46 @@ python -m backend.oneshot --suite suite.yaml \
 | | `--dataset-file PATH` | Local `.csv/.json/.jsonl/.txt` — **repeatable**. |
 | | `--dataset-dir DIR` | Every supported file in a directory. |
 | | `--hf-dataset OWNER/NAME` | Import a public HuggingFace dataset — **repeatable**. |
+| | `--hf-dataset OWNER/NAME` | Import a public HuggingFace dataset — **repeatable**. |
 | | `--hf-limit N` / `--hf-column C` / `--hf-all` | Rows per HF dataset / prompt column override / import everything. |
+| | `--stream` / `--no-stream` | For `--hf-dataset`: scan chunks concurrently **as they download** (default on) vs. import fully first. |
 | | `--max-scenarios N` | Cap base scenarios (default 100, ≤100,000; larger datasets sampled). |
 | | `--seed N` | Reproducible sampling. |
-| **Options** | `--judge` / `--no-judge` | Grade responses with the LLM judge (default on). |
-| | `--compare` | Also run each attack with Lakera OFF (risk-reduction; doubles model calls). |
+| **Options** | `--project-id {CP1,CP2,CP3}` | Restrict the run to a **single checkpoint** (CP1 input · CP2 RAG · CP3 output). Default: all three. |
+| | `--burst-size N` | Parallel scan pool size (1–100, default 8). Companion of `--concurrency`, which wins if both set. |
+| | `--concurrency N` | Parallel workers (1–100). Overrides `--burst-size`. |
+| | `--rate-limit RPS` | Cap **all** outbound requests (Guard + LLM) through one shared token bucket (default 8; `0` = off). Bounds requests-per-second across workers — distinct from `--concurrency`. |
+| | `--judge` / `--no-judge` | **LLM judge** — grade each attack's model output for compromise/policy violation (default on). |
+| | `--compare` | **Guard ON vs OFF** — also run each attack with Lakera disabled to measure risk reduction (implies `--judge`; doubles model calls). |
 | | `--strategies a,b` | Obfuscation variants: `base64, hex, rot13, homoglyph, leetspeak, roleplay, reverse, zero_width, morse`. |
 | | `--doc-mode clean\|poisoned\|custom\|none` | Force the RAG knowledge base for the run. |
-| | `--concurrency N` | Parallel workers (1–100, default 4). |
 | | `--max-rounds N` | Round budget for dynamic (adaptive attacker) scenarios (1–10). |
-| **Provider** | `--provider` / `--base-url` / `--model` | Target LLM (`openrouter`, `lmstudio`, `ollama`, `omlx`, `custom`). |
-| **Judge** | `--judge-provider` / `--judge-base-url` / `--judge-model` | Optional stronger judge model (key from `JUDGE_API_KEY`). |
+| **Lakera** | `--lakera-endpoint URL` / `--lakera-region ID` | Custom Guard region — full URL / bare host, or a known region id (`community, us, us-east-1, us-west-2, eu-west-1, ap-southeast-1`). Default: Community / `$LAKERA_ENDPOINT`. |
+| **Provider** | `--provider` / `--base-url` / `--model` / `--api-key` | Target LLM (`openrouter`, `lmstudio`, `ollama`, `omlx`, `custom`); key overrides `$LLM_API_KEY`/`$OPENROUTER_API_KEY`. |
+| | `--preflight` / `--no-preflight` | Ping the target LLM once **before** the run and abort with a clear message if the host/port/model is wrong (default on). |
+| **Judge** | `--judge-provider` / `--judge-base-url` / `--judge-model` / `--judge-api-key` | Optional stronger judge model (key overrides `$JUDGE_API_KEY`). |
 | **Gate** | `--min-detection 0..1` · `--max-breaches` · `--max-evasions` · `--max-effective-evasions` · `--max-false-positives` | CI thresholds (a `null`/unset threshold isn't enforced). |
-| **Output** | `--out PATH` · `--csv PATH` · `--format text\|md` · `--quiet` | JSON / CSV / stdout format. |
+| **Output** | `--output-dir DIR` | Write **both** a timestamped JSON **and** a styled HTML report into DIR. |
+| | `--out PATH` · `--csv PATH` · `--format text\|md` · `--quiet` | Single JSON / CSV / stdout format. |
 | | `--dry-run` | Validate + print the plan, **no API calls**. |
 | **History** | `--save-history` · `--history-dir DIR` · `--baseline RUN.json` · `--fail-on-regression` | Save & diff runs over time. |
 
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
 | `config error: LAKERA_GUARD_API_KEY is not set.` | Export it (step 4) — the CLI reads the **shell environment**, not `.env` unless you `source` it. |
-| `config error: OpenRouter (cloud) requires an API key …` | Set `OPENROUTER_API_KEY`/`LLM_API_KEY`, or use a local `--provider` (step 3B). |
+| `config error: … requires an API key — pass --api-key …` | Set `OPENROUTER_API_KEY`/`LLM_API_KEY` (or `--api-key`), or use a local `--provider` (step 3B). |
+| `config error: invalid --lakera-endpoint: …` / `unknown --lakera-region …` | Endpoint must be an `http(s)://` URL; region must be one of the listed ids. |
 | `No module named backend` | Run from the **project root** with the venv activated. |
 | `config error: HuggingFace '…': …` | Dataset id must be `owner/name`, public, and have the Dataset Viewer enabled; try `--hf-column` if no prompt column is detected. |
-| `execution error: every scenario failed …` (exit 3) | The LLM/Lakera endpoint was unreachable, or the model/base-URL is wrong — verify keys, `--provider`, `--base-url`. |
-| Run is slow / lots of retries | Provider rate-limiting at high `--concurrency`; lower it, or reduce `--hf-limit`/`--max-scenarios`, or use a local model. |
+| `execution error: target LLM at … is unreachable …` (exit 3, **before** the run) | The **pre-flight check** pinged the target LLM and it didn't answer — the `--base-url`/host/port is wrong or the server is down. The message tells you exactly what to fix; `--no-preflight` skips the check. |
+| `… 'host.docker.internal' only resolves inside a Docker container …` | You copied a **Docker** base-url but are running the CLI **on the host**. Use `http://localhost:PORT/v1` (or `127.0.0.1`). `host.docker.internal` is only for when the *app* runs inside a container reaching the host. |
+| `execution error: every scenario failed …` (exit 3, **after** the run) | Every scenario errored; the line below (`→ …`) shows the most common reason and how many times it hit. Usually an unreachable/unauthorized LLM (an expired key returns `HTTP 401`) or wrong model id. `--compare` and the judge need a working LLM key even for CP1-blocked attacks. |
+| `scenario X failed after 3 attempt(s): …` | One concise line per failed scenario (the full traceback is DEBUG-only). The message names the cause — connection refused, `HTTP 401` (bad key), `HTTP 429` (rate limited), timeout, etc. |
+| Run is slow / lots of retries | Provider rate-limiting at high `--concurrency`; lower it (or `--rate-limit`), reduce `--hf-limit`/`--max-scenarios`, or use a local model. |
 | `This run would execute N scenarios (limit 100000) …` | `base × (1 + strategies)` exceeded the row cap; lower `--max-scenarios` or pick fewer `--strategies`. |
 
 ---
@@ -330,11 +441,12 @@ export LAKERA_GUARD_API_KEY="..."; export OPENROUTER_API_KEY="..."
 python -m backend.oneshot --all-categories --dry-run
 
 # 2) run the built-in catalogue
-python -m backend.oneshot --all-categories --no-judge --concurrency 16
+python -m backend.oneshot --all-categories --no-judge --burst-size 16
 
-# 3) import & run Salad-Data from HuggingFace, save results
+# 3) stream Salad-Data from HuggingFace (download + scan overlap), CP1 only,
+#    32 parallel workers, JSON + HTML reports
 python -m backend.oneshot --hf-dataset OpenSafetyLab/Salad-Data \
-  --hf-limit 500 --concurrency 100 --out report.json --csv results.csv
+  --hf-limit 500 --project-id CP1 --burst-size 32 --output-dir reports/
 
 # 4) CI gate
 python -m backend.oneshot --all-categories --min-detection 0.9 --max-breaches 0

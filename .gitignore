@@ -26,3 +26,6 @@ tests/fixtures/docs_custom/*.txt
 
 # Saved one-shot run history (regression baselines — local/CI state)
 runs/
+
+# Generated one-shot reports (CLI --output-dir artifacts)
+reports/

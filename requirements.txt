@@ -4,3 +4,6 @@ httpx>=0.27.0
 pydantic-settings>=2.3.0
 python-multipart>=0.0.9
 pyyaml>=6.0
+# Modern terminal UX for the headless one-shot CLI (progress bars, styled output).
+# The CLI degrades gracefully to plain text if rich is unavailable.
+rich>=13.0.0

@@ -259,6 +259,117 @@ async def fetch_hf(
     }
 
 
+async def stream_hf(
+    dataset_id: str,
+    *,
+    config: str | None = None,
+    split: str | None = None,
+    column: str | None = None,
+    category_column: str | None = None,
+    limit: int = 25,
+    all_configs: bool = False,
+    time_budget: float | None = None,
+):
+    """
+    Async generator that yields batches (pages) of {prompt, category} rows **as
+    they download** from HuggingFace, so a caller can scan chunks concurrently
+    instead of waiting for the whole dataset. Same source/selection logic as
+    `fetch_hf`, but streamed.
+
+    Yields dicts:
+      {"type": "meta",  "total": <combined rows across the splits we'll read>}   (first)
+      {"type": "batch", "rows": [{prompt, category}, …], "fetched": <cumulative>} (per page)
+      {"type": "end",   "fetched": <total kept>, "partial": <bool>}              (last)
+    """
+    if not _DATASET_ID_RE.match(dataset_id):
+        raise DatasetError("Dataset id must look like 'owner/name'.")
+    limit = max(1, min(int(limit or 25), MAX_ROWS))
+    start = time.monotonic()
+
+    splits = await list_splits(dataset_id)
+    if not splits:
+        raise DatasetError(f"No splits found for '{dataset_id}'. Is it a public dataset?")
+
+    async with httpx.AsyncClient() as client:
+        if all_configs:
+            targets = splits
+        elif config or split:
+            targets = [next(
+                (s for s in splits
+                 if (not config or s["config"] == config) and (not split or s["split"] == split)),
+                splits[0],
+            )]
+        elif len(splits) == 1:
+            targets = splits
+        else:
+            counts = [(s, await _probe_total(client, dataset_id, s["config"], s["split"])) for s in splits]
+            targets = [max(counts, key=lambda x: x[1])[0]]
+
+        combined_total = 0
+        for s in targets:
+            combined_total += await _probe_total(client, dataset_id, s["config"], s["split"])
+        yield {"type": "meta", "total": min(combined_total, limit) or limit}
+
+        fetched, partial, produced_any = 0, False, False
+        for s in targets:
+            if fetched >= limit:
+                break
+            cfg, spl = s["config"], s["split"]
+            detected_col, detected_cat, seen = column, category_column, False
+            pace, offset, first = 0.2, 0, True
+            while fetched < limit:
+                page = min(HF_PAGE, limit - fetched)
+                if not first:
+                    await asyncio.sleep(pace)
+                first = False
+                try:
+                    data = await _get_json(
+                        client, f"{HF_BASE}/rows",
+                        {"dataset": dataset_id, "config": cfg, "split": spl, "offset": offset, "length": page},
+                    )
+                except RateLimited:
+                    if produced_any:
+                        partial = True
+                        break
+                    raise
+                if not seen:
+                    seen = True
+                    feats = [f["name"] for f in data.get("features", [])]
+                    detected_col = detected_col or _pick(feats, PROMPT_COLS)
+                    detected_cat = detected_cat or _pick(feats, CATEGORY_COLS)
+                    if not detected_col:
+                        break  # this split has no usable prompt column — skip it
+                sub_total = data.get("num_rows_total", 0)
+                page_rows = data.get("rows", [])
+                if not page_rows:
+                    break
+                batch: list[dict] = []
+                for it in page_rows:
+                    prompt = _coerce(it.get("row", {}).get(detected_col))
+                    if not prompt:
+                        continue
+                    cat = _coerce(it.get("row", {}).get(detected_cat)) if detected_cat else cfg
+                    batch.append({"prompt": prompt, "category": cat})
+                    if fetched + len(batch) >= limit:
+                        break
+                if batch:
+                    fetched += len(batch)
+                    produced_any = True
+                    yield {"type": "batch", "rows": batch, "fetched": fetched}
+                offset += len(page_rows)
+                if offset >= sub_total:
+                    break
+                if time_budget and (time.monotonic() - start) > time_budget and produced_any:
+                    partial = True
+                    break
+            if partial:
+                break
+
+        if not produced_any:
+            raise DatasetError("No usable prompt rows were returned (no prompt column found in any config).")
+        yield {"type": "end", "fetched": fetched, "partial": partial}
+
+
 def parse_upload(filename: str, content: bytes, column: str | None = None) -> dict:
     """Parse an uploaded CSV/JSON/JSONL/TXT file into prompt rows."""
     if len(content) > UPLOAD_MAX_BYTES:

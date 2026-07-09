@@ -712,21 +712,27 @@ it at local files, a directory, or public HuggingFace datasets, and they run
 python -m backend.oneshot \
   --dataset-file attacks/prompt_injection.csv \
   --dataset-file attacks/pii_leak.jsonl \
-  --concurrency 32 --no-judge --csv results.csv
+  --burst-size 32 --no-judge --csv results.csv
 
 # Every dataset file in a directory
-python -m backend.oneshot --dataset-dir ./attack_corpora --concurrency 64
+python -m backend.oneshot --dataset-dir ./attack_corpora --burst-size 64
 
-# Import public HuggingFace datasets and run them (repeatable; --hf-all pulls every row)
+# Stream HuggingFace datasets (download + scan overlap), scan CP1 only,
+# and write BOTH a JSON and a styled HTML report
 python -m backend.oneshot \
   --hf-dataset OpenSafetyLab/Salad-Data --hf-dataset Babelscape/ALERT \
-  --hf-limit 500 --concurrency 100 --out report.json
+  --hf-limit 500 --project-id CP1 --burst-size 100 --output-dir reports/
 ```
 
 - **`--dataset-file PATH`** (repeatable) — local `.csv/.json/.jsonl/.txt` (prompt column auto-detected; `.txt` = one prompt per line).
 - **`--dataset-dir DIR`** — every supported file in a directory, run together.
-- **`--hf-dataset OWNER/NAME`** (repeatable) with **`--hf-limit`** / **`--hf-column`** / **`--hf-all`** — import public HuggingFace datasets (not imported during `--dry-run`).
-- **`--concurrency N`** (1–100) runs *N* scenarios in parallel; the guard checkpoints share a keep-alive connection pool, so high concurrency is fast. Combine with a local model (`--provider lmstudio|ollama|omlx`) to run large corpora at zero cost.
+- **`--hf-dataset OWNER/NAME`** (repeatable) with **`--hf-limit`** / **`--hf-column`** / **`--hf-all`** — import public HuggingFace datasets. By default the scan **streams as it downloads** (`--no-stream` to import fully first); not fetched during `--dry-run`.
+- **`--project-id {CP1,CP2,CP3}`** restricts the run to a single checkpoint (input / RAG / output); default runs all three.
+- **`--burst-size N`** (1–100, default 8; `--concurrency` is its companion) runs *N* scenarios in parallel over a keep-alive connection pool. Combine with a local model (`--provider lmstudio|ollama|omlx`) to run large corpora at zero cost.
+- **`--rate-limit RPS`** (default 8; `0` disables) caps *all* outbound requests — Guard scans and LLM calls — through one shared token-bucket limiter, so N parallel workers can't collectively exceed the rate (distinct from `--concurrency`, which bounds how many run at once). Keeps large runs under a provider's per-second quota.
+- **`--lakera-endpoint URL`** / **`--lakera-region ID`** point the Guard at a custom region (Community by default). **`--provider` / `--base-url` / `--model` / `--api-key`** route the target LLM; **`--judge-*`** (incl. `--judge-api-key`) set a separate judge model.
+- **`--judge` / `--no-judge`** grade each attack's output with the LLM judge (on by default); **`--compare`** runs each attack Guard-ON vs Guard-OFF for a risk-reduction score.
+- **`--output-dir DIR`** writes both a `.json` and a styled `.html` report; `--out` / `--csv` write single files. A live `rich` progress bar + colored status print to stderr (plain-text fallback if `rich` is absent).
 
 **Exit codes** (for CI): `0` gates passed · `1` a gate was violated · `2`
 configuration error · `3` execution error (LLM/Lakera unreachable). `--out
