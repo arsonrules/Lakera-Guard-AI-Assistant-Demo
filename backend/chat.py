@@ -141,6 +141,7 @@ async def process(
     lakera_project_id: str = "",
     checkpoints: dict | None = None,
     checkpoint_projects: dict | None = None,
+    extra_context: list[str] | None = None,
 ) -> dict:
     if not lakera_key:
         raise LakeraNotConfigured()
@@ -214,6 +215,11 @@ async def process(
             trace["cp2"].update(status="redacted", flagged=True)
         else:
             trace["cp2"].update(status="passed", flagged=False)
+
+    # Append any CLI-supplied knowledge base as extra RAG context (clean mode when
+    # None → clean_docs is unchanged, so the existing execution path is preserved).
+    if extra_context:
+        clean_docs = clean_docs + list(extra_context)
 
     # ── LLM call ────────────────────────────────────────────────────────────
     response_text = await _call_llm(message, clean_docs, simulate_output, system_prompt, llm_config)

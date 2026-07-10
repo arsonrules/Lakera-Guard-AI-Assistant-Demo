@@ -218,6 +218,15 @@ python -m backend.oneshot \
 - **`--hf-limit N`** — rows per dataset (default **100**). Salad-Data is large
   (~30k), so keep a limit unless you use **`--hf-all`** (every row, up to 100,000
   — slow; HuggingFace may rate-limit and keep a partial sample).
+- **`--hf-download`** — download each dataset's **original files** to
+  **`--datasets-dir`** (default `datasets/`) and **verify** their row count + total
+  size **strictly match the official HuggingFace metadata** before scanning the
+  cached files. Re-runs reuse the cache (a fully-cached run makes no network calls).
+  Verification output, e.g.:
+  ```
+  •   official: 4 data file(s) · 30358 rows · 29,532,676 bytes
+  •   ✓ verified: 29,532,676 bytes == official; rows 30358 == official (matched)
+  ```
 - HuggingFace datasets are **not** imported during `--dry-run` (that stays
   network-free); the plan lists them as `hf (at run)`.
 
@@ -382,12 +391,13 @@ python -m backend.oneshot --suite suite.yaml \
 |---|---|---|
 | **Scope** | `--category ID` | One OWASP category (`llm01`…`llm10`, `agentic`, `multiturn`, `dynamic`, `safe`). |
 | | `--all-categories` | The whole built-in catalogue. |
-| | `--dataset SLUG` | An already-imported dataset slug (mainly for suites). |
+| | `--dataset SPEC` | One-shot dataset source(s), **comma-separated**: a HuggingFace id (`owner/name`), a **local directory**, local file path(s), or a pre-imported slug — each token auto-routed to the right loader (an existing local dir like `datasets/OpenSafetyLab__Salad-Data` is never mistaken for a remote id). |
+| | `--mapping K=V,…` | Map dataset fields to run inputs: `prompt=<field>,category=<field>,tactics=<field>`. Omitted fields are auto-detected. Applies to every dataset source. |
 | | `--dataset-file PATH` | Local `.csv/.json/.jsonl/.txt` — **repeatable**. |
 | | `--dataset-dir DIR` | Every supported file in a directory. |
 | | `--hf-dataset OWNER/NAME` | Import a public HuggingFace dataset — **repeatable**. |
-| | `--hf-dataset OWNER/NAME` | Import a public HuggingFace dataset — **repeatable**. |
 | | `--hf-limit N` / `--hf-column C` / `--hf-all` | Rows per HF dataset / prompt column override / import everything. |
+| | `--hf-download` / `--datasets-dir DIR` | Download original files to `DIR` (default `datasets/`), **verify** rows + total size vs official HF metadata, then scan the cache (reused on re-run). |
 | | `--stream` / `--no-stream` | For `--hf-dataset`: scan chunks concurrently **as they download** (default on) vs. import fully first. |
 | | `--max-scenarios N` | Cap base scenarios (default 100, ≤100,000; larger datasets sampled). |
 | | `--seed N` | Reproducible sampling. |
@@ -399,11 +409,15 @@ python -m backend.oneshot --suite suite.yaml \
 | | `--compare` | **Guard ON vs OFF** — also run each attack with Lakera disabled to measure risk reduction (implies `--judge`; doubles model calls). |
 | | `--strategies a,b` | Obfuscation variants: `base64, hex, rot13, homoglyph, leetspeak, roleplay, reverse, zero_width, morse`. |
 | | `--doc-mode clean\|poisoned\|custom\|none` | Force the RAG knowledge base for the run. |
+| | `--system-prompt FILE.txt` | Apply a `.txt` file's contents as the run's system prompt. **Omitted → clean mode** (no system prompt at all, independent of any Web UI setting). |
+| | `--knowledge-base FILE.txt\|none` | Inject a `.txt` file's contents as extra RAG context appended to each scenario's LLM prompt. Pass the literal **`none`** to strictly bypass **all** RAG file operations — not even the default clean file is loaded (forces `doc_mode=none`). **Omitted → clean mode** (the default clean file is used; existing execution path unchanged). |
 | | `--max-rounds N` | Round budget for dynamic (adaptive attacker) scenarios (1–10). |
-| **Lakera** | `--lakera-endpoint URL` / `--lakera-region ID` | Custom Guard region — full URL / bare host, or a known region id (`community, us, us-east-1, us-west-2, eu-west-1, ap-southeast-1`). Default: Community / `$LAKERA_ENDPOINT`. |
+| **Lakera** | `--lakera-url URL\|REGION` | Guard endpoint — a full URL / bare host **or** a known region id (`community, us, us-east-1, us-west-2, eu-west-1, ap-southeast-1`). Default: Community / `$LAKERA_ENDPOINT`. (`--lakera-endpoint` / `--lakera-region` are back-compat aliases.) |
+| | `--lakera-api-key KEY` | Guard API key — overrides `$LAKERA_GUARD_API_KEY`. |
+| | `--lakera-projects K=V,…` | Per-checkpoint Lakera Project IDs: `input=<id>` (CP1), `rag=<id>` (CP2), `output=<id>` (CP3). Unset checkpoints use the key's default policy. `cp1/cp2/cp3` accepted as aliases. |
 | **Provider** | `--provider` / `--base-url` / `--model` / `--api-key` | Target LLM (`openrouter`, `lmstudio`, `ollama`, `omlx`, `custom`); key overrides `$LLM_API_KEY`/`$OPENROUTER_API_KEY`. |
 | | `--preflight` / `--no-preflight` | Ping the target LLM once **before** the run and abort with a clear message if the host/port/model is wrong (default on). |
-| **Judge** | `--judge-provider` / `--judge-base-url` / `--judge-model` / `--judge-api-key` | Optional stronger judge model (key overrides `$JUDGE_API_KEY`). |
+| **Judge** | `--judge-provider` / `--judge-base-url` / `--judge-model` / `--judge-api-key` | Optional stronger judge model. **Each omitted flag falls back to the matching main-model value** (provider→`--provider`, base-url/model→`--base-url`/`--model` when the provider matches, key→`--judge-api-key` → `$JUDGE_API_KEY` → `--api-key`). Omit **all four** → judge with the target model. |
 | **Gate** | `--min-detection 0..1` · `--max-breaches` · `--max-evasions` · `--max-effective-evasions` · `--max-false-positives` | CI thresholds (a `null`/unset threshold isn't enforced). |
 | **Output** | `--output-dir DIR` | Write **both** a timestamped JSON **and** a styled HTML report into DIR. |
 | | `--out PATH` · `--csv PATH` · `--format text\|md` · `--quiet` | Single JSON / CSV / stdout format. |
@@ -450,4 +464,14 @@ python -m backend.oneshot --hf-dataset OpenSafetyLab/Salad-Data \
 
 # 4) CI gate
 python -m backend.oneshot --all-categories --min-detection 0.9 --max-breaches 0
+
+# 5) fully self-contained one-shot: main + judge model, Guard region + per-checkpoint
+#    projects, and mapped local datasets — all on one command line (no Web UI config)
+python -m backend.oneshot \
+  --provider openrouter --model anthropic/claude-sonnet-4.6 --api-key "$LLM_API_KEY" \
+  --judge-model anthropic/claude-opus-4.8 \        # judge inherits provider/base-url/key from main \
+  --lakera-url eu-west-1 --lakera-api-key "$LAKERA_GUARD_API_KEY" \
+  --lakera-projects input=proj-cp1,rag=proj-cp2,output=proj-cp3 \
+  --dataset attacks/injection.json,attacks/pii.csv \
+  --mapping prompt=text_field,category=owasp_category,tactics=attack_tactics
 ```

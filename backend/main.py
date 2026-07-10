@@ -62,6 +62,10 @@ HARD_MAX_ROWS = 100_000            # ceiling on base × (1 + strategies) actuall
 # Global state
 _doc_mode: str = "clean"
 _custom_system_prompt: str | None = None  # None = use built-in default
+# Optional CLI-supplied RAG context (from `--knowledge-base <file>.txt`), injected
+# into each one-shot LLM call as extra context. None = clean mode (no injection),
+# preserving the exact current execution path when the flag is absent.
+_cli_knowledge_base: list[str] | None = None
 
 
 def _init_llm_config() -> dict:
@@ -1018,12 +1022,15 @@ def dataset_row(slug: str, index: int, item: dict, dataset_name: str) -> dict:
     """Build one one-shot attack-scenario row from an imported dataset prompt.
     Shared by the batch path (_dataset_rows) and the CLI streaming pipeline."""
     prompt = item["prompt"]
+    # An explicit `tactics` field (via the CLI --mapping) labels the attack
+    # technique straight from the dataset; else fall back to its category / name.
+    tactics = (item.get("tactics") or "").strip() if item.get("tactics") else ""
     return {
         "id": f"{slug}-{index}",
         "label": (prompt[:60] + ("…" if len(prompt) > 60 else "")),
         "category_id": "external",
         "owasp_id": None,
-        "owasp_name": item.get("category") or dataset_name,
+        "owasp_name": tactics or item.get("category") or dataset_name,
         # Classify each imported prompt by OWASP LLM Top 10 / Agentic tactic so the
         # report can break an otherwise-opaque dataset down by attack technique.
         "owasp_class": classify.classify(prompt),
@@ -1347,6 +1354,8 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                     lakera_project_id=lakera_project_id,
                     checkpoints=checkpoints,
                     checkpoint_projects=checkpoint_projects,
+                    # Optional CLI knowledge base (None = clean mode, unchanged path).
+                    extra_context=_cli_knowledge_base,
                 )
             trace = result.get("trace", {})
             # Checkpoint (Lakera guard) latency = CP1 + CP2 + CP3 only. The LLM

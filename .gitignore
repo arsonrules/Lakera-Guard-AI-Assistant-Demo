@@ -29,3 +29,6 @@ runs/
 
 # Generated one-shot reports (CLI --output-dir artifacts)
 reports/
+
+# Downloaded HuggingFace dataset cache (CLI --hf-download)
+datasets/

@@ -71,5 +71,27 @@ async def test_cp3_disabled_delivers_unscanned_output(monkeypatch):
     assert out["message"] == "ATTACK payload leaks"       # delivered despite the marker
 
 
+async def test_extra_context_appended_to_llm_docs(monkeypatch):
+    # --knowledge-base injection: extra_context is appended AFTER the retrieved
+    # docs, and its absence (None) leaves the doc list exactly as before (clean path).
+    monkeypatch.setattr(chat.lakera, "check", _lakera("NOPE"))
+    monkeypatch.setattr(chat.rag, "retrieve", lambda *a, **k: [_doc("kb.txt", "retrieved doc")])
+    captured = {}
+
+    async def fake_llm(message, context_docs, *a, **k):
+        captured["docs"] = context_docs
+        return "reply"
+    monkeypatch.setattr(chat, "_call_llm", fake_llm)
+
+    # No extra_context → unchanged (only the retrieved doc).
+    await chat.process("q", "clean", lakera_key="k")
+    assert captured["docs"] == ["retrieved doc"]
+
+    # With extra_context → appended after the retrieved doc.
+    await chat.process("q", "clean", lakera_key="k",
+                       extra_context=["KNOWLEDGE BASE CONTENT"])
+    assert captured["docs"] == ["retrieved doc", "KNOWLEDGE BASE CONTENT"]
+
+
 async def _coro(value):
     return value
