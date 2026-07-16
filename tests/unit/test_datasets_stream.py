@@ -60,3 +60,43 @@ async def test_stream_hf_respects_limit_across_a_single_page(monkeypatch):
 
 async def _noop():
     return None
+
+
+class _Resp:
+    def __init__(self, status): self.status_code = status; self.headers = {}
+
+
+class _Client:
+    """Counts .get calls and always returns the given status (mock the outage)."""
+    def __init__(self, status): self.status = status; self.calls = 0
+    async def get(self, url, params=None, timeout=None):
+        self.calls += 1
+        return _Resp(self.status)
+
+
+async def test_get_json_503_fails_fast_as_service_unavailable(monkeypatch):
+    # 5xx = datasets-server outage → ServiceUnavailable after a few quick tries,
+    # NOT the 8-retry patient RateLimited path (which is for 429).
+    monkeypatch.setattr(datasets.asyncio, "sleep", lambda *_a, **_k: _noop())
+    c = _Client(503)
+    try:
+        await datasets._get_json(c, "u", {})
+        assert False, "expected ServiceUnavailable"
+    except datasets.ServiceUnavailable as e:
+        assert "outage on HuggingFace" in str(e) and "--hf-download" in str(e)
+    assert c.calls == datasets.HF_SERVER_ERROR_RETRIES  # fast fail, not HF_MAX_RETRIES
+
+
+async def test_get_json_429_stays_ratelimited_and_patient(monkeypatch):
+    monkeypatch.setattr(datasets.asyncio, "sleep", lambda *_a, **_k: _noop())
+    c = _Client(429)
+    try:
+        await datasets._get_json(c, "u", {})
+        assert False, "expected RateLimited"
+    except datasets.RateLimited:
+        pass
+    assert c.calls == datasets.HF_MAX_RETRIES  # rate limit rides the full patient budget
+
+
+async def _noop():
+    return None

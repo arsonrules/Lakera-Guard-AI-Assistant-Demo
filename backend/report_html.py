@@ -510,9 +510,22 @@ def _os_detail(T, r) -> str:
     return "".join(h)
 
 
+def _filter_bar(T, judged) -> str:
+    """Two client-side dropdown filters shown directly above the results table:
+    Guard verdict + Model (judge). Options are populated by inline JS from the
+    rendered rows (see _document); the Model filter is present only when judged."""
+    guard = (f'<label class="os-tf-item">{_e(T("os.colGuard"))} '
+             f'<select id="os-f-guard"><option value="">{_e(T("os.filterAll"))}</option></select></label>')
+    model = (f'<label class="os-tf-item">{_e(T("os.colModel"))} '
+             f'<select id="os-f-model"><option value="">{_e(T("os.filterAll"))}</option></select></label>'
+             if judged else "")
+    return f'<div class="os-tfilter">{guard}{model}</div>'
+
+
 def _results_table(T, s, results, judged, strat, i18n, fam_class, sev_label) -> str:
     cols = 6 + (1 if judged else 0) + (1 if strat else 0)
-    head = ('<table class="os-table"><thead><tr>'
+    head = (_filter_bar(T, judged)
+            + '<table class="os-table"><thead><tr>'
             f'<th>{_e(T("os.colScenario"))}</th><th>{_e(T("os.colOwasp"))}</th>'
             + (f'<th>{_e(T("os.colVariant"))}</th>' if strat else "")
             + f'<th>{_e(T("os.colExpected"))}</th><th>{_e(T("os.colCheckpoints"))}</th>'
@@ -595,12 +608,29 @@ def _document(styles: str, sprite: str, head: str, inner: str) -> str:
         "document.addEventListener('click',function(e){var p=document.getElementById('os-popover');"
         "if(p&&p.classList.contains('show')&&!p.contains(e.target)&&!(e.target.closest&&e.target.closest('[data-info]')))"
         "p.classList.remove('show');});"
+        # Client-side results filtering: populate the Guard-verdict / Model-(judge)
+        # dropdowns from the values actually rendered, then hide non-matching rows.
+        "(function(){var tb=document.querySelector('.os-table');if(!tb)return;"
+        "var g=document.getElementById('os-f-guard'),m=document.getElementById('os-f-model');"
+        "var rows=[].slice.call(tb.querySelectorAll('tbody tr.os-row'));"
+        "function txt(r,s){var e=r.querySelector(s);return e?e.textContent.trim():'';}"
+        "function opts(sel,vals){if(!sel)return;vals.forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);});}"
+        "var gv={},mv={};rows.forEach(function(r){var a=txt(r,'.os-outcome');if(a)gv[a]=1;var b=txt(r,'.os-model');if(b)mv[b]=1;});"
+        "opts(g,Object.keys(gv).sort());opts(m,Object.keys(mv).sort());"
+        "function apply(){var gs=g?g.value:'',ms=m?m.value:'';rows.forEach(function(r){"
+        "var ok=(!gs||txt(r,'.os-outcome')===gs)&&(!ms||txt(r,'.os-model')===ms);"
+        "r.style.display=ok?'':'none';var d=document.getElementById(r.id.replace('osr-','osd-'));if(d)d.style.display='none';});}"
+        "if(g)g.addEventListener('change',apply);if(m)m.addEventListener('change',apply);})();"
         "<" "/script>")
     extra_css = ("\nbody{display:block;height:auto;min-height:100dvh;overflow-x:hidden;overflow-y:auto;"
                  "padding:20px 22px;max-width:1080px;margin:0 auto;background:var(--bg);color:var(--text);}"
                  ".os-report-head{margin-bottom:16px;}.os-report-head h1{font-family:'Lexend',sans-serif;"
                  "font-size:1.3rem;font-weight:700;color:var(--heading);}"
-                 ".os-report-meta{color:var(--muted);font-size:0.8rem;margin-top:3px;font-family:'JetBrains Mono',monospace;}")
+                 ".os-report-meta{color:var(--muted);font-size:0.8rem;margin-top:3px;font-family:'JetBrains Mono',monospace;}"
+                 ".os-tfilter{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:0 0 10px;font-size:0.82rem;color:var(--muted);}"
+                 ".os-tfilter .os-tf-item{display:inline-flex;align-items:center;gap:6px;}"
+                 ".os-tfilter select{background:var(--panel);color:var(--text);border:1px solid var(--border);"
+                 "border-radius:6px;padding:4px 8px;font-size:0.82rem;font-family:inherit;cursor:pointer;}")
     return ('<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             '<title>Lakera Guard — One-Shot Report</title>'

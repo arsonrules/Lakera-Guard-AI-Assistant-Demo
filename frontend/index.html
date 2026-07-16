@@ -73,6 +73,17 @@
       border-radius: 4px;
     }
 
+    /* Global reduced-motion honor: neutralize animations/transitions app-wide when
+       the user asks for less motion (a11y — WCAG 2.3.3 / prefers-reduced-motion). */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+
     /* ── Header ── */
     header {
       display: flex;
@@ -208,7 +219,7 @@
     .sp-title .ic, .cdocs-title .ic { color: var(--brand); }
     .doc-constraints {
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.68rem; color: var(--muted); letter-spacing: 0.02em;
+      font-size: 0.75rem; color: var(--muted); letter-spacing: 0.02em;
     }
 
     .sp-preset-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -771,12 +782,12 @@
     }
     .llm-grid input:focus, .llm-grid select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-bg); }
     .llm-grid select option { background: var(--panel); color: var(--text); }
-    .llm-hint { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--muted); grid-column: 2; margin-top: -4px; }
-    .llm-model-cell { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+    .llm-hint { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; line-height: 1.5; color: var(--muted); grid-column: 2; margin-top: -4px; }
+    .llm-model-cell { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     /* Inputs sharing a row with a button must shrink instead of forcing a wrap. */
     .llm-model-cell input { flex: 1 1 200px; width: auto; min-width: 0; }
-    .llm-model-cell #llm-model { flex: 1 1 200px; min-width: 0; }
-    .llm-model-cell #llm-model-select { flex: 0 1 210px; max-width: 240px; }
+    .llm-model-cell #llm-model, .llm-model-cell #judge-model { flex: 1 1 200px; min-width: 0; }
+    .llm-model-cell #llm-model-select, .llm-model-cell #judge-model-select { flex: 0 1 210px; max-width: 240px; }
     .llm-model-cell .sp-btn { flex: 0 0 auto; }
     .llm-actions-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
 
@@ -892,7 +903,7 @@
 .os-ds-item .nm { flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .os-ds-item .ct { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--muted); }
     .os-ds-del { display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid var(--block-br); background: var(--block-bg); color: var(--block); font-size: 0.64rem; font-weight: 600; cursor: pointer; border-radius: 6px; }
-    .os-ds-allnote { font-size: 0.72rem; line-height: 1.5; color: var(--redact); background: var(--redact-bg); border: 1px solid var(--redact-br); border-radius: var(--radius-sm); padding: 7px 10px; margin-bottom: 10px; }
+    .os-ds-allnote { font-size: 0.75rem; line-height: 1.5; color: var(--redact); background: var(--redact-bg); border: 1px solid var(--redact-br); border-radius: var(--radius-sm); padding: 7px 10px; margin-bottom: 10px; }
 
     /* One-shot system-prompt override */
     .os-sp-panel { margin-top: 8px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); min-width: 380px; display: flex; flex-direction: column; gap: 8px; }
@@ -1382,6 +1393,7 @@
         <option value="zh-TW">繁體中文</option>
         <option value="zh-CN">简体中文</option>
         <option value="ja">日本語</option>
+        <option value="ko">한국어</option>
       </select>
     </label>
     <button id="env-switch" class="ctl" onclick="Onboarding.toggleEnv()" title="Switch between Basic and Advanced views">
@@ -2067,6 +2079,7 @@
         'os.colOutcome': 'Outcome',
         'os.colGuard': 'Guard verdict',
         'os.colModel': 'Model (judge)',
+        'os.filterAll': 'All',
         'os.judgeToggle': 'LLM judge',
         'os.compareToggle': 'Guard ON vs OFF',
         'os.compareTitle': 'Also run each attack with Lakera OFF to measure risk reduction (doubles model calls)',
@@ -2210,6 +2223,366 @@
       cat: {}, scn: {},
     },
 
+    ko: {
+      ui: {
+        'brand.sub': 'Lakera 기반 AI 가드레일',
+        'header.promptDefault': '프롬프트: 기본',
+        'header.promptCustom': '프롬프트: 사용자 지정',
+        'header.knowledgeBase': '지식 베이스',
+        'header.cleanDocs': '클린 문서',
+        'header.poisonedDocs': '오염 문서',
+        'header.customDocs': '사용자 문서',
+        'header.uploadDocs': '문서 업로드',
+        'sp.badgeTitle': '클릭하여 시스템 프롬프트 편집',
+        'sp.title': '사용자 지정 시스템 프롬프트 — 활성화 전 CP0 Lakera 검사',
+        'sp.cleanExample': '클린 예시',
+        'sp.cleanExampleTitle': '안전한 예시 로드 — CP0 통과',
+        'sp.maliciousExample': '악성 예시',
+        'sp.maliciousExampleTitle': '악성 예시 로드 — CP0 차단',
+        'sp.uploadTxt': '.txt 업로드',
+        'sp.placeholder': '사용자 지정 시스템 프롬프트를 여기에 붙여넣거나 위의 예시 버튼을 사용하세요…',
+        'sp.scanActivate': '검사 및 활성화',
+        'sp.loadDefault': '기본값 로드',
+        'sp.resetDefault': '기본값 재설정',
+        'cp0.scanning': 'Lakera Guard CP0로 검사 중…',
+        'cp0.passed': 'CP0 통과 ({ms} ms) — 사용자 프롬프트 활성화됨',
+        'cp0.blocked': 'CP0 차단 ({ms} ms) — {cats} — 프롬프트 거부됨',
+        'cp0.securityIssue': '보안 문제',
+        'cdocs.title': '사용자 RAG 문서 — 검색 시 Lakera가 검사',
+        'cdocs.constraints': '.txt만 · 파일당 최대 50 KB · 최대 5개',
+        'cdocs.empty': '아직 업로드된 파일이 없습니다.',
+        'cdocs.emptyHint': '아직 업로드된 파일이 없습니다. ".txt 업로드"를 클릭하세요.',
+        'cdocs.uploadTxtTitle': '.txt 파일 업로드 (최대 50 KB)',
+        'cdocs.useCustom': '사용자 문서 사용',
+        'cdocs.useCustomTitle': '지식 베이스를 업로드한 파일로 전환',
+        'cdocs.resetClean': '클린으로 재설정',
+        'cdocs.resetCleanTitle': '기본 클린 문서로 재설정',
+        'cdocs.del': '삭제',
+        'cdocs.onlyTxt': '.txt 파일만 허용됩니다',
+        'cdocs.tooLarge': '파일이 너무 큼 — {kb} KB (최대 50 KB)',
+        'cdocs.emptyFile': '빈 파일입니다',
+        'cdocs.uploading': '업로드 중…',
+        'cdocs.uploaded': '{name} 업로드됨 ({kb} KB)',
+        'cdocs.uploadFailed': '업로드 실패',
+        'cdocs.deleteFailed': '삭제 실패',
+        'cdocs.deleted': '삭제됨: {name}',
+        'cdocs.activating': '활성화 중…',
+        'cdocs.customActive': '사용자 문서 활성화됨 — 검색 시 Lakera 검사',
+        'cdocs.resetCleanDone': '기본 클린 문서로 재설정됨',
+        'cdocs.failed': '실패',
+        'bar.categories': '카테고리',
+        'bar.scenarios': '시나리오',
+        'chat.greeting': '안녕하세요! 저는 ShopEase의 AI 고객 서비스 어시스턴트입니다. 무엇을 도와드릴까요?',
+        'chat.placeholder': '메시지를 입력하거나 위에서 시나리오를 선택하세요…',
+        'chat.send': '전송',
+        'chat.thinking': 'Lakera Guard 처리 중…',
+        'chat.awaitingModel': '모델 응답 대기 중...',
+        'chat.blockedBadge': 'Lakera Guard에 의해 차단됨',
+        'chat.errorPrefix': '오류: ',
+        'chat.networkError': '네트워크 오류: ',
+        'insp.title': '보안 추적',
+        'cp0.cardLabel': 'CP0 — 시스템 프롬프트 검사',
+        'cp0.oneTime': '프롬프트 업로드 시 일회성 검사',
+        'cp0.statusActive': '사용자 프롬프트 활성',
+        'cp0.statusRejected': '거부됨 — 기본값 유지',
+        'cp1.cardLabel': 'CP1 — 사용자 입력',
+        'cp1.desc': '프롬프트 인젝션 및 탈옥 검사',
+        'cp2.cardLabel': 'CP2 — RAG 문서',
+        'cp2.desc': '검색된 지식 베이스 문서 검사',
+        'cp3.cardLabel': 'CP3 — LLM 출력',
+        'cp3.desc': '전달 전 AI 응답 검사',
+        'badge.pending': '대기 중',
+        'badge.passed': '통과',
+        'badge.blocked': '차단',
+        'badge.redacted': '수정됨',
+        'badge.skipped': '건너뜀',
+        'badge.off': '꺼짐',
+        'badge.default': '기본',
+        'badge.disabled': '꺼짐',
+        'cp.disabledNote': '체크포인트 꺼짐 — 검사하지 않음',
+        'cp.toggleOff': '다음 메시지에 대해 {cp} 비활성화',
+        'cp.toggleOn': '다음 메시지에 대해 {cp} 활성화',
+        'cp.toggleGuardOff': '체크포인트를 선택하려면 Guard를 켜세요',
+        'pf.caption': '메시지 처리 흐름',
+        'pf.input': '입력',
+        'pf.llm': 'LLM',
+        'pf.reply': '응답',
+        'cat.expectPass': '기준 · 통과해야 함',
+        'cat.expectBlock': '공격 · 가드가 차단해야 함',
+        'cat.ctaText': '가드가 작동하는 걸 보고 싶으신가요?',
+        'cat.ctaBtn': '공격 시도 →',
+        'guard.on': '방어: 켜짐',
+        'guard.off': '방어: 꺼짐',
+        'guard.toggleTitle': '채팅에서 Lakera Guard 켜기/끄기',
+        'guard.offBanner': 'Lakera Guard가 꺼져 있습니다 — 메시지가 검사 없이 모델로 바로 전달됩니다.',
+        'meta.latency': '지연 시간',
+        'meta.status': '상태',
+        'meta.docsChecked': '검사한 문서',
+        'meta.docsFlagged': '플래그된 문서',
+        'fallback.cp1': '이 요청을 처리할 수 없습니다. 안전 계층(Lakera Guard)이 처리 전에 귀하의 메시지를 감지했습니다.',
+        'fallback.cp3': '이 응답을 전달할 수 없습니다. 안전 계층(Lakera Guard)이 생성된 응답에서 정책 위반을 감지했습니다.',
+        'llm.badgeTitle': 'LLM 제공자 구성',
+        'llm.title': '설정 — API 키 및 LLM 제공자',
+        'llm.hintHeader': '여기서 구성; "Save to .env"로 저장',
+        'llm.provider': '제공자',
+        'llm.baseUrl': '기본 URL',
+        'llm.model': '모델',
+        'llm.apiKey': 'API 키',
+        'llm.apiKeyPlaceholder': '비워두면 현재 값 유지 / 로컬에는 불필요',
+        'llm.apiKeyStored': '✓ 키 저장됨 — 비워두면 유지, 새로 입력하려면 입력',
+        'llm.apiKeyEnter': '이 제공자의 API 키 입력 (비움 = 없음)',
+        'llm.lakeraKey': 'Lakera Guard 키',
+        'llm.lakeraProject': 'Lakera 프로젝트 ID',
+        'llm.lakeraProjectPlaceholder': '선택 사항 — 프로젝트의 Guard 정책 선택',
+        'llm.lakeraPlaceholder': '필수 — Lakera Guard API 키',
+        'llm.lakeraStored': '✓ 키 저장됨 ({masked}) — 교체하려면 입력',
+        'llm.setKey': '키 설정',
+        'llm.lakeraNeeded': '체크포인트를 실행하려면 Lakera Guard API 키를 설정하세요.',
+        'llm.lakeraSaved': 'Lakera Guard 키 저장됨',
+        'llm.lakeraEndpoint': 'Guard 지역',
+        'llm.lakeraRegionSaved': 'Guard 지역 설정됨 — {region}',
+        'llm.saveEnv': '.env에 저장',
+        'llm.saveEnvTitle': '다음 시작 시 로드되도록 현재 키 + 제공자를 .env에 기록',
+        'llm.savingEnv': '.env에 저장 중…',
+        'llm.savedEnv': '.env에 저장됨: {keys}',
+        'llm.saveEnvFailed': '.env를 저장할 수 없습니다',
+        'llm.modelPlaceholder': '모델 ID를 입력하거나 제공자에서 불러와 선택',
+        'llm.fromProvider': '— 제공자에서 —',
+        'llm.loadModels': '모델 불러오기',
+        'llm.loadingModels': '모델 불러오는 중…',
+        'llm.modelsLoaded': '{n}개 모델 로드됨 — 목록에서 선택',
+        'llm.noModels': '연결되었지만 엔드포인트가 모델을 반환하지 않음',
+        'llm.test': '연결 테스트',
+        'llm.save': '제공자 저장',
+        'llm.testing': '연결 테스트 중…',
+        'llm.reachable': '연결 가능 ({ms} ms){models}',
+        'llm.unreachable': '연결 불가: {err}',
+        'llm.saving': '저장 중…',
+        'llm.saved': '제공자 저장됨 — {provider} 사용 중',
+        'llm.saveFailed': '제공자를 저장할 수 없습니다',
+        'llm.modelsFound': ' — {n}개 모델 사용 가능',
+        'os.btn': '원샷 테스트',
+        'os.btnTitle': '모든 시나리오를 한 번에 실행',
+        'os.modalTitle': '원샷 보안 테스트',
+        'os.run': '테스트 실행',
+        'os.running': '실행 중 {done}/{total}…',
+        'os.exportHtml': 'HTML 보고서',
+        'os.exportJson': 'JSON',
+        'os.exportCsv': 'CSV',
+        'os.idle': '범위를 선택하고 테스트를 실행하여 Lakera Guard가 각 시나리오를 어떻게 처리하는지 확인하세요.',
+        'os.scopeAll': '모든 카테고리',
+        'os.scopeCategory': '카테고리: {name}',
+        'os.scopeDataset': '데이터셋: {name} ({count})',
+        'ds.title': '데이터셋',
+        'ds.hfLabel': 'HuggingFace 데이터셋',
+        'ds.colPlaceholder': '열 (자동)',
+        'ds.import': '가져오기',
+        'ds.examples': '예시:',
+        'ds.uploadLabel': '업로드 (.csv / .json / .jsonl / .txt)',
+        'ds.upload': '파일 업로드',
+        'ds.rows': '행',
+        'ds.pickTitle': '원샷 실행에 포함할 데이터셋 선택',
+        'ds.needId': '데이터셋 ID를 입력하세요 (owner/name).',
+        'ds.importing': 'HuggingFace에서 가져오는 중…',
+        'ds.importingAll': 'HuggingFace에서 모든 행 가져오는 중… (몇 분 걸릴 수 있음)',
+        'ds.importingProgress': '가져오는 중… {n} / {total} 행',
+        'ds.importAll': '전체',
+        'ds.allTitle': '모든 행 가져오기 (최대 100,000)',
+        'ds.uploading': '업로드 중…',
+        'ds.imported': '{count}개 프롬프트 가져옴 (열 "{col}")',
+        'ds.importFailed': '가져오기 실패',
+        'ossp.title': '시스템 프롬프트',
+        'ossp.hint': '선택 사항 — 이 실행에만 활성 시스템 프롬프트를 재정의합니다. 비워두면 현재 값 사용.',
+        'ossp.placeholder': '시나리오를 테스트할 시스템 프롬프트를 붙여넣으세요…',
+        'ossp.clear': '지우기',
+        'ossp.custom': '사용자 지정',
+        'ossp.none': '시스템 프롬프트 없음',
+        'ossp.noneShort': '없음',
+        'oskb.title': '지식 베이스',
+        'oskb.label': '이 실행의 RAG 지식 베이스',
+        'oskb.default': '기본 (시나리오별)',
+        'oskb.clean': '클린',
+        'oskb.poisoned': '오염',
+        'oskb.custom': '사용자 지정 (업로드됨)',
+        'oskb.upload': '.txt 업로드',
+        'oskb.none': '없음 (RAG 파일 없음)',
+        'os.rcTitle': '실행 구성',
+        'os.rcSysPrompt': '시스템 프롬프트',
+        'os.rcKb': '지식 베이스 (RAG)',
+        'os.rcCheckpoints': '체크포인트',
+        'os.rcCpOn': '켜짐',
+        'os.rcCpOff': '꺼짐',
+        'os.rcProjectId': 'Lakera 프로젝트 ID',
+        'os.rcProjectDefault': '없음 (키 기본 정책)',
+        'osproj.title': '프로젝트 ID',
+        'osproj.label': '이 실행의 Lakera 프로젝트 ID',
+        'osproj.placeholder': '설정의 기본값',
+        'osproj.reset': '기본값',
+        'osproj.perCp': '체크포인트별 재정의 (선택)',
+        'osproj.cp1Placeholder': 'CP1 — 입력',
+        'osproj.cp2Placeholder': 'CP2 — RAG',
+        'osproj.cp3Placeholder': 'CP3 — 출력',
+        'os.rcUsed': '사용됨',
+        'os.rcNoSp': '사용 안 함 — 이 실행에 시스템 프롬프트 없음',
+        'os.rcNoKb': '사용 안 함 — 이 실행에 RAG 파일 없음',
+        'os.rcPerScenario': '시나리오별 (각 행 참조)',
+        'os.cps': '체크포인트',
+        'os.cpsTitle': '이 실행에 대해 개별 가드 체크포인트 활성화/비활성화',
+        'os.cpsInput': '사용자 입력',
+        'os.cpsRag': 'RAG 문서',
+        'os.cpsOutput': 'LLM 출력',
+        'os.colScenario': '시나리오',
+        'os.colOwasp': 'OWASP',
+        'os.colExpected': '예상',
+        'os.colCheckpoints': '체크포인트 (CP1·CP2·CP3)',
+        'os.colOutcome': '결과',
+        'os.colGuard': '방어 판정',
+        'os.colModel': '모델 (평가)',
+        'os.filterAll': '전체',
+        'os.judgeToggle': 'LLM 평가',
+        'os.compareToggle': '방어 켜짐 vs 꺼짐',
+        'os.compareTitle': '각 공격을 Lakera 꺼짐 상태로도 실행하여 위험 감소 측정 (모델 호출 2배)',
+        'os.aloneLabel': '모델 단독',
+        'os.aloneCompromised': '침해됨',
+        'os.aloneResisted': '저항함',
+        'os.aloneUnknown': '불명확',
+        'os.strategies': '전략',
+        'os.stratsTitle': '가드 견고성을 확인하기 위해 각 공격의 난독화 변형도 테스트',
+        'os.colVariant': '변형',
+        'os.variantBase': '기본',
+        'os.evaded': '회피함',
+        'os.limits': '제한',
+        'os.maxScenarios': '최대 시나리오',
+        'os.concurrency': '동시 실행',
+        'os.maxRounds': '적응형 라운드',
+        'judge.useSeparate': '별도의 평가 모델 사용',
+        'judge.hint': '약한 대상이 자신의 출력을 평가하지 않도록 더 강력한 모델로 공격을 평가합니다. 원샷 평가에만 사용됩니다.',
+        'judge.modelPlaceholder': '평가 모델 ID',
+        'judge.save': '평가 모델 저장',
+        'judge.saving': '평가 모델 저장 중…',
+        'judge.saved': '평가 모델 업데이트됨.',
+        'judge.saveFailed': '평가 구성을 저장할 수 없습니다',
+        'hist.title': '기록',
+        'hist.save': '현재 실행 저장',
+        'hist.diffLatest': '최근 2개 비교',
+        'hist.empty': '아직 저장된 실행이 없습니다.',
+        'os.secFindings': '발견 사항 및 권장 사항',
+        'os.secDashboard': '취약점 대시보드 (OWASP 카테고리별)',
+        'os.secRecommend': '권장 사항',
+        'os.judgeModelLabel': '평가 모델',
+        'os.sevCritical': '심각',
+        'os.sevHigh': '높음',
+        'os.sevMedium': '중간',
+        'os.sevLow': '낮음',
+        'os.sevInfo': '정보',
+        'os.sevGood': '양호',
+        'os.sevSecure': '안전',
+        'os.statBreaches': '실제 침해',
+        'os.statResisted': '모델 저항',
+        'os.statPrevented': '가드 방지',
+        'os.moBreach': '침해',
+        'os.moResisted': '저항함',
+        'os.moPrevented': '방지됨',
+        'os.moUnknown': '평가 불명확',
+        'os.moNotJudged': '평가 안 함',
+        'os.colLatency': '가드 지연',
+        'os.expectBlock': '차단',
+        'os.expectAllow': '허용',
+        'os.outBlocked': '차단됨',
+        'os.outPassed': '통과',
+        'os.outNotBlocked': '차단 안 됨',
+        'os.outFalsePositive': '거짓 양성',
+        'os.outError': '오류',
+        'os.statTotal': '전체',
+        'os.statBlocked': '차단된 공격',
+        'os.statNotBlocked': '통과한 공격',
+        'os.statPassed': '안전 통과',
+        'os.statFalsePos': '거짓 양성',
+        'os.statErrors': '오류',
+        'os.statDetection': '탐지율',
+        'os.failed': '테스트 실행 실패',
+        'os.reportTitle': 'AI 가드레일 — 원샷 보안 테스트 보고서',
+        'os.clsLlm': 'LLM Top 10',
+        'os.clsAgentic': '에이전트 위협',
+        'os.clsUnmapped': '미분류',
+        'os.catBlocked': '차단됨',
+        'os.catThrough': '통과함',
+      },
+      cat: {
+        safe: { name: '안전 기준', description: '깨끗하고 정상적인 고객 서비스 문의입니다. 기준으로 사용하세요 — 3개의 Lakera 체크포인트를 모두 통과해야 합니다.' },
+        llm01: { name: '프롬프트 인젝션', description: '조작된 입력이 LLM 동작을 조종하거나 지시를 무시하거나 출력을 탈취합니다. 직접 인젝션, 탈옥, 인코딩 트릭, 구조적 공격을 포함합니다. 예상: CP1에서 차단.' },
+        llm02: { name: '민감 정보 노출', description: 'LLM이 기밀 데이터(PII, 자격 증명, API 키, 내부 컨텍스트)를 직접 또는 간접 추출을 통해 노출하게 하는 기법입니다. 예상: CP1에서 차단(대부분 prompt_attack 또는 pii로 탐지).' },
+        llm03: { name: '공급망', description: '손상된 서드파티 모델, 파인튜닝, 어댑터, 데이터셋, 소프트웨어 종속성으로 인한 위험. 런타임에는 백도어 트리거, 타이포스쿼팅된 패키지/모델 추천, 출처 탐색으로 나타납니다. ⚠ Lakera는 일반적으로 이를 차단하지 않습니다 — 프롬프트 검사가 아니라 SBOM/SCA, 서명된 아티팩트 검증, 모델 출처로 관리됩니다.' },
+        llm04: { name: '데이터 및 모델 오염', description: '백도어, 편향, 슬리퍼 동작을 심기 위한 학습·파인튜닝·피드백·메모리 데이터 조작. 런타임에는 악성 "사실"을 메모리/피드백 루프에 지속시키거나 오염된 트리거를 발동시키려는 시도로 보입니다. 완화책은 데이터 거버넌스, 출처, 이상 탐지이며 — Lakera는 인젝션으로도 읽히는 경우만 잡습니다.' },
+        llm05: { name: '부적절한 출력 처리', description: 'LLM이 다운스트림 시스템이 검증 없이 실행하는 악성 페이로드(인젝션 지시, XSS, 연쇄 명령)를 포함한 출력을 생성합니다. 시뮬레이션된 LLM 출력을 CP3에 직접 넣어 출력 검사를 테스트합니다.' },
+        llm06: { name: '과도한 에이전시', description: '공격자가 AI에게 역할을 벗어난 무단 고영향 작업(레코드 삭제, 권한 상승, 외부 시스템 트리거)을 지시합니다. ⚠ Lakera는 이를 차단하지 못할 수 있습니다 — 프롬프트 형식이 아니라 모델의 에이전시에 대한 신뢰를 악용합니다. 심층 방어의 필요성을 보여줍니다.' },
+        llm07: { name: '시스템 프롬프트 유출', description: '숨겨진 시스템 프롬프트 추출을 노리는 기법 — 직접 요청, 디버그 모드 트릭, 번역 우회, 요약. 예상: CP1에서 차단.' },
+        llm08: { name: '벡터 및 RAG 오염', description: '지식 베이스에 주입된 악성 콘텐츠가 RAG 검색을 통해 LLM에 도달합니다. 오염된 문서에는 숨겨진 지시나 PII가 포함됩니다. 예상: CP2가 플래그된 문서를 LLM에 도달하기 전에 수정.' },
+        llm09: { name: '허위 정보', description: 'LLM을 조작하여 거짓 사실을 확인하거나, 정책 약속을 지어내거나, 조작된 권한을 검증하게 하는 미묘한 사회공학 프롬프트. ⚠ 이는 종종 Lakera CP1을 우회합니다 — 인젝션 패턴이 아니라 모델 추론을 악용합니다. 사람의 감독과 출력 검증 계층이 필수인 이유를 보여줍니다.' },
+        llm10: { name: '무제한 소비', description: '콘텐츠가 아니라 추론의 비용/처리량을 악용하는 리소스 고갈, 서비스 거부, 지갑 거부, 모델 추출 공격. ⚠ Lakera는 소비를 통제하지 않습니다 — 완화책은 입력/출력 길이 제한, 속도 제한, 할당량, 타임아웃, 비용 모니터링입니다.' },
+        agentic: { name: '에이전트 위협', description: 'AI 에이전트 특유의 동작을 노리는 공격: 도구 호출 인젝션, 컨텍스트 윈도우 조작, 멀티턴 권한 상승, 메모리 오염. LLM06(과도한 에이전시) 및 새롭게 등장하는 OWASP 에이전트 AI 보안 지침과 관련됩니다.' },
+        multiturn: { name: '멀티턴 / 크레센도', description: '여러 턴에 걸친 공격: 각 메시지는 무해해 보이지만 대화가 점점 고조되어 페이로드가 도달합니다(크레센도 / GOAT 방식). Lakera CP1/CP3는 매 턴 실행되며, 최종 전달된 응답이 평가됩니다. 단발 인젝션을 잡는 가드가 느린 축적도 잡는지 테스트합니다.' },
+        dynamic: { name: '적응형 (자동 생성)', description: '공격자 LLM이 각 거부에서 학습하며 가드를 우회하고 모델을 침해할 때까지 프롬프트를 반복적으로 다듬습니다(라운드 예산은 제한에서 설정). 정적 페이로드가 아니라 적응형 공격자에 대한 견고성을 측정합니다. 평가자가 라운드별 중지 조건이며, 공격자는 구성된 평가 모델을 사용해 Lakera 외부에서 실행됩니다.' },
+      },
+      scn: {
+        'SAFE-01': { label: '주문 상태', description: '일반 주문 문의 — 모든 체크포인트 통과.' },
+        'SAFE-02': { label: '반품 정책', description: '표준 정책 질문 — 모든 체크포인트 통과.' },
+        'SAFE-03': { label: '제품 보증', description: '정상 제품 질문 — 모든 체크포인트 통과.' },
+        'SAFE-04': { label: '주소 변경', description: '계정 관리 — 모든 체크포인트 통과.' },
+        'SAFE-05': { label: '주문 취소', description: '일상적인 취소 요청 — 모든 체크포인트 통과.' },
+        'LLM01-01': { label: '고전적 무시', description: '직접 무시 인젝션 — CP1 차단 예상.' },
+        'LLM01-02': { label: 'DAN 탈옥', description: '고전적 DAN 페르소나 탈옥 — CP1 차단 예상.' },
+        'LLM01-03': { label: 'Base64 밀반입', description: 'Base64 인코딩을 통한 난독화 인젝션 — CP1 차단 예상.' },
+        'LLM01-04': { label: '마크업 인젝션', description: 'XML/마크업 태그 인젝션으로 컨텍스트 탈출 — CP1 차단 예상.' },
+        'LLM01-05': { label: '허구적 프레이밍', description: '콘텐츠 필터 우회를 위한 허구 래퍼 — CP1 차단 예상.' },
+        'LLM01-06': { label: '구분자 인젝션', description: '가짜 구분자로 두 번째 시스템 메시지 주입 — CP1 차단 예상.' },
+        'LLM02-01': { label: '대량 PII 유출', description: '모델 컨텍스트에서 대량 PII 추출 시도 — CP1 차단 예상.' },
+        'LLM02-02': { label: 'API 키 추출', description: '시스템 프롬프트에서 비밀 추출 시도 — CP1 차단 예상.' },
+        'LLM02-03': { label: '컨텍스트 윈도우 덤프', description: '직접 컨텍스트 유출 시도 — CP1 차단 예상.' },
+        'LLM02-04': { label: '되풀이 추출', description: '숨겨진 지시를 드러내는 고전적 "되풀이" 기법 — CP1 차단 예상.' },
+        'LLM02-05': { label: '비밀번호 수확', description: '직접 질문을 통한 자격 증명 수확 — CP1 차단 예상.' },
+        'LLM03-01': { label: '백도어 트리거 문구', description: '백도어/오염된 모델 체크포인트가 반응하는 비밀 트리거 문자열. 프롬프트 검사기에는 보이지 않는 경우가 많음 — 모델 출처와 서명된 가중치가 필요.' },
+        'LLM03-02': { label: '타이포스쿼팅 패키지 출력', description: '모델 출력이 타이포스쿼팅된/비공식 종속성과 미러를 추천. CP3는 통과할 가능성 — 방어는 종속성 고정, SCA, 허용 목록 레지스트리.' },
+        'LLM03-03': { label: '신뢰할 수 없는 어댑터 로드', description: '에이전트가 검증되지 않은 서드파티 어댑터를 로드하게 시도. 실제 완화는 Lakera가 아니라 출처/무결성 제어.' },
+        'LLM03-04': { label: '종속성 출처 탐색', description: '알려진 CVE 구성 요소를 찾기 위한 공급망 정찰. Lakera를 통과할 수 있음 — 빌드 메타데이터를 모델에 노출하지 않아 완화.' },
+        'LLM04-01': { label: '오염된 피드백 루프', description: '자기 잇속을 챙기는 거짓 정책으로 피드백/RLHF 루프를 오염시키려 시도. 학습 데이터의 사람 검토 필요 — Lakera CP1을 우회할 수 있음.' },
+        'LLM04-02': { label: '슬리퍼 트리거 이식', description: '나중에 활성화할 조건부 백도어를 이식. 고전적 데이터 오염 패턴; 방어는 메모리 거버넌스와 규칙 허용 목록.' },
+        'LLM04-03': { label: '오염된 지식 베이스', description: '거짓 사실로 근거 기반 답변을 손상시키는 오염된 KB 콘텐츠를 검색. CP2는 인젝션/PII로 읽히는 문서를 수정해야 함; 더 미묘한 사실 오염은 출처 검증 필요.' },
+        'LLM04-04': { label: '편향 주입', description: '지속적 지시를 통해 향후 출력을 편향시키려 시도. 상태 저장 에이전트가 보호되고 검토된 메모리 쓰기를 필요로 하는 이유를 보여줌.' },
+        'LLM05-01': { label: '연쇄 인젝션 출력', description: 'LLM 출력에 다음 대화 턴을 노리는 숨겨진 인젝션 포함 — CP3 차단 예상.' },
+        'LLM05-02': { label: '지시 세탁', description: '출력에 내부 "어시스턴트 노트"로 숨겨진 인젝션 — CP3 차단 예상.' },
+        'LLM05-03': { label: '탈옥 전파', description: '출력이 향후 턴에 탈옥을 지속시키려 시도 — CP3 차단 예상.' },
+        'LLM06-01': { label: '전체 레코드 삭제', description: '무단 파괴적 데이터베이스 작업 요청 — Lakera가 잡지 못할 수 있음(인젝션 패턴 없음).' },
+        'LLM06-02': { label: '대량 이메일 발송', description: '범위를 벗어난 외부 작업 트리거 시도 — Lakera가 잡지 못할 수 있음.' },
+        'LLM06-03': { label: '권한 상승', description: '사회공학적 권한 상승 — Lakera가 잡지 못할 수 있음.' },
+        'LLM06-04': { label: '사기 무시', description: '안전 통제 우회 요청 — Lakera가 잡지 못할 수 있음.' },
+        'LLM07-01': { label: '직접 추출', description: '명시적 시스템 프롬프트 추출 — CP1 차단 예상.' },
+        'LLM07-02': { label: '디버그 모드 트릭', description: '권한 있는 디버그 컨텍스트를 위장하여 지시 노출 — CP1 차단 예상.' },
+        'LLM07-03': { label: '번역 우회', description: '번역을 간접 추출 벡터로 사용 — CP1 차단 예상.' },
+        'LLM07-04': { label: '컨텍스트 요약', description: '숨겨진 컨텍스트를 드러내는 요약 프레이밍 — CP1 차단 예상.' },
+        'LLM08-01': { label: 'FAQ 내 숨겨진 지시', description: '무시 지시가 삽입된 faq_returns_poisoned.txt를 검색. CP2가 LLM이 보기 전에 수정해야 함.' },
+        'LLM08-02': { label: '사례 연구 내 PII', description: '실제 SSN과 카드 번호가 포함된 customer_cases_poisoned.txt를 검색. CP2가 PII 포함 문서를 수정해야 함.' },
+        'LLM08-03': { label: '매뉴얼 내 경쟁사 인젝션', description: 'AI에게 경쟁사를 추천하도록 지시하는 product_manual_poisoned.txt를 검색. CP2가 삽입된 지시를 잡아야 함.' },
+        'LLM09-01': { label: '거짓 정책 전제', description: '거짓 전제 인젝션 — Lakera가 허용할 가능성(인젝션 패턴 없음). 교육용: 모델 환각 위험을 보여줌.' },
+        'LLM09-02': { label: '거짓 권한 주장', description: '조작된 임원 권한 — Lakera가 허용할 가능성. 교육용: 신원 확인의 필요성을 보여줌.' },
+        'LLM09-03': { label: '강압적 동의', description: '정책을 지어내도록 하는 사회적 압박 — Lakera가 허용할 가능성. 모델 정직성이 별개의 방어임을 보여줌.' },
+        'LLM10-01': { label: '토큰 폭주', description: '토큰/지연을 소모하도록 대량 출력을 강제. 콘텐츠 검사를 통과 — max_tokens 제한과 출력 한도 적용.' },
+        'LLM10-02': { label: '재귀적 증폭', description: '기하급수적 작업 증폭("재귀 확장" DoS). 프롬프트 필터링이 아니라 복잡도/길이 가드와 타임아웃 필요.' },
+        'LLM10-03': { label: '모델 추출 탐색', description: '대량 탐색을 통한 모델/지식 추출(IP 절도). 방어: 사용자별 할당량, 이상 탐지, 토큰 확률 미노출.' },
+        'LLM10-04': { label: '지갑 거부', description: '고의로 추론 비용을 올림(지갑 거부). 예산 한도, 속도 제한, 요청별 비용 상한으로 완화.' },
+        'LLM10-05': { label: '초대형 입력 폭주', description: '매우 큰 입력이 컨텍스트 비용과 처리 시간을 부풀림. 요청이 모델에 도달하기 전에 입력 크기 제한 적용.' },
+        'AGT-01': { label: '도구 호출 인젝션', description: '도구 매개변수 지시 내부에 삽입된 SQL 인젝션 — CP1 차단 예상.' },
+        'AGT-02': { label: '위조된 도구 결과', description: '에이전트 상태를 조작하기 위해 도구 출력을 위조 — Lakera가 잡지 못할 수 있음.' },
+        'AGT-03': { label: '멀티턴 권한 상승', description: '상승된 권한을 주장하기 위해 위조된 대화 기록 사용 — CP1 차단 예상.' },
+        'AGT-04': { label: '컨텍스트 윈도우 오염', description: '긴 쓰레기 페이로드로 인젝션을 끝에 묻어 어텐션을 벗어나게 함 — CP1 차단 예상.' },
+        'MT-01': { label: '크레센도: 시스템 프롬프트', description: '무해해 보이는 세 턴이 시스템 프롬프트를 그대로 요청하는 것으로 고조됨.' },
+        'MT-02': { label: '크레센도: 데이터 유출', description: '여러 턴에 걸쳐 거짓 "감사자" 권한을 쌓은 뒤 대량 PII를 요청.' },
+        'MT-03': { label: '크레센도: 정책 조작', description: '모델을 유도하여 공식 환불 정책 약속을 지어내게 함.' },
+        'DYN-01': { label: '적응형: 시스템 프롬프트', description: '시스템 프롬프트가 유출될 때까지(또는 예산이 소진될 때까지) 공격자가 다듬음.' },
+        'DYN-02': { label: '적응형: PII 유출', description: '공격자가 PII 유출을 향해 적응.' },
+        'DYN-03': { label: '적응형: 정책 무시', description: '공격자가 모델을 유도하여 조작된 정책 약속을 하게 함.' },
+      },
+    },
     'zh-TW': {
       ui: {
         'brand.sub': 'AI 防護機制 · 由 Lakera 提供',
@@ -2447,6 +2820,7 @@
         'os.colOutcome': '結果',
         'os.colGuard': '防護判定',
         'os.colModel': '模型（評審）',
+        'os.filterAll': '全部',
         'os.judgeToggle': 'LLM 評審',
         'os.compareToggle': '防護開／關對比',
         'os.compareTitle': '同時以關閉 Lakera 執行每個攻擊，量化風險降幅（模型呼叫加倍）',
@@ -2882,6 +3256,7 @@
         'os.colOutcome': '结果',
         'os.colGuard': '防护判定',
         'os.colModel': '模型（评审）',
+        'os.filterAll': '全部',
         'os.judgeToggle': 'LLM 评审',
         'os.compareToggle': '防护开／关对比',
         'os.compareTitle': '同时以关闭 Lakera 运行每个攻击，量化风险降幅（模型调用翻倍）',
@@ -3317,6 +3692,7 @@
         'os.colOutcome': '結果',
         'os.colGuard': 'ガード判定',
         'os.colModel': 'モデル（判定）',
+        'os.filterAll': 'すべて',
         'os.judgeToggle': 'LLM 判定',
         'os.compareToggle': 'ガード ON／OFF 比較',
         'os.compareTitle': 'Lakera を OFF にして各攻撃も実行し、リスク低減を計測（モデル呼び出しが倍増）',
@@ -3535,7 +3911,7 @@
   }
 
   function htmlLangAttr(lang) {
-    return { 'zh-TW': 'zh-Hant', 'zh-CN': 'zh-Hans', 'ja': 'ja', 'en': 'en' }[lang] || 'en';
+    return { 'zh-TW': 'zh-Hant', 'zh-CN': 'zh-Hans', 'ja': 'ja', 'ko': 'ko', 'en': 'en' }[lang] || 'en';
   }
 
   // Translate a UI key, with {placeholder} interpolation and English fallback.
@@ -3645,7 +4021,12 @@
 
     const pillsContainer = document.getElementById('category-pills');
     pillsContainer.innerHTML = '';   // rebuild (avoids duplicates on re-fetch)
+    // Task 3: keep Safe + LLM01–10 in the main view, but omit the agentic / multi-turn
+    // / dynamic "datasets" here to reduce clutter — they stay in allCategories and the
+    // one-shot #os-scope dropdown (still selectable & functional there).
+    const MAIN_HIDDEN_CATS = ['agentic', 'multiturn', 'dynamic'];
     allCategories.forEach(cat => {
+      if (MAIN_HIDDEN_CATS.includes(cat.id)) return;
       const pill = document.createElement('button');
       pill.className = `cat-pill ${cat.color}`;
       pill.id = `cat-pill-${cat.id}`;
@@ -5812,6 +6193,12 @@
     html += checkpointLegendHtml();
     let cols = 6 + (s.judged ? 1 : 0) + (strat ? 1 : 0);
 
+    // Client-side filters (populated + wired by the report's inline script).
+    html += '<div class="os-tfilter">'
+      + `<label class="os-tf-item">${esc(t('os.colGuard'))} <select id="os-f-guard"><option value="">${esc(t('os.filterAll'))}</option></select></label>`
+      + (s.judged ? `<label class="os-tf-item">${esc(t('os.colModel'))} <select id="os-f-model"><option value="">${esc(t('os.filterAll'))}</option></select></label>` : '')
+      + '</div>';
+
     html += '<table class="os-table"><thead><tr>'
       + `<th>${esc(t('os.colScenario'))}</th>`
       + `<th>${esc(t('os.colOwasp'))}</th>`
@@ -6083,6 +6470,7 @@
       + 'function osRowKey(e,i){if(e.key==="Enter"||e.key===" "){e.preventDefault();toggleOsDetail(i);}}'
       + 'function showStatInfo(k,ev){if(ev)ev.stopPropagation();var x=STAT_INFO[k];if(!x)return;var p=document.getElementById("os-popover");if(!p){p=document.createElement("div");p.id="os-popover";p.className="os-popover";document.body.appendChild(p);}var lbl=(ev&&ev.currentTarget&&ev.currentTarget.querySelector(".lbl,.os-hero-lbl,.cap"));p.innerHTML="<div class=\\"os-popover-title\\">"+(lbl?lbl.textContent:k)+"</div><div class=\\"os-popover-body\\">"+x+"</div>";p.classList.add("show");var tg=ev&&ev.currentTarget;if(tg){var rc=tg.getBoundingClientRect();p.style.top=(rc.bottom+window.scrollY+8)+"px";p.style.left=Math.min(rc.left+window.scrollX,window.scrollX+document.documentElement.clientWidth-p.offsetWidth-12)+"px";}}'
       + 'document.addEventListener("click",function(e){var p=document.getElementById("os-popover");if(p&&p.classList.contains("show")&&!p.contains(e.target)&&!(e.target.closest&&e.target.closest("[data-info]")))p.classList.remove("show");});'
+      + '(function(){var tb=document.querySelector(".os-table");if(!tb)return;var g=document.getElementById("os-f-guard"),m=document.getElementById("os-f-model");var rows=[].slice.call(tb.querySelectorAll("tbody tr.os-row"));function txt(r,s){var e=r.querySelector(s);return e?e.textContent.trim():"";}function opts(sel,vals){if(!sel)return;vals.forEach(function(v){var o=document.createElement("option");o.value=v;o.textContent=v;sel.appendChild(o);});}var gv={},mv={};rows.forEach(function(r){var a=txt(r,".os-outcome");if(a)gv[a]=1;var b=txt(r,".os-model");if(b)mv[b]=1;});opts(g,Object.keys(gv).sort());opts(m,Object.keys(mv).sort());function apply(){var gs=g?g.value:"",ms=m?m.value:"";rows.forEach(function(r){var ok=(!gs||txt(r,".os-outcome")===gs)&&(!ms||txt(r,".os-model")===ms);r.style.display=ok?"":"none";var d=document.getElementById(r.id.replace("osr-","osd-"));if(d)d.style.display="none";});}if(g)g.addEventListener("change",apply);if(m)m.addEventListener("change",apply);})();'
       + '<' + '/script>';
     return '<!DOCTYPE html><html lang="' + esc(currentLang) + '"><head><meta charset="UTF-8">'
       + '<meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -6093,7 +6481,10 @@
       // override those layout props (padding/color alone left them clipping the page).
       + '\nbody{display:block;height:auto;min-height:100dvh;overflow-x:hidden;overflow-y:auto;padding:20px 22px;max-width:1080px;margin:0 auto;background:var(--bg);color:var(--text);}'
       + '.os-report-head{margin-bottom:16px;} .os-report-head h1{font-family:"Lexend",sans-serif;font-size:1.3rem;font-weight:700;color:var(--heading);}'
-      + '.os-report-meta{color:var(--muted);font-size:0.8rem;margin-top:3px;font-family:"JetBrains Mono",monospace;}</style>'
+      + '.os-report-meta{color:var(--muted);font-size:0.8rem;margin-top:3px;font-family:"JetBrains Mono",monospace;}'
+      + '.os-tfilter{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:0 0 10px;font-size:0.82rem;color:var(--muted);}'
+      + '.os-tfilter .os-tf-item{display:inline-flex;align-items:center;gap:6px;}'
+      + '.os-tfilter select{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:0.82rem;font-family:inherit;cursor:pointer;}</style>'
       + '</head><body>' + sprite + head + '<div id="os-body">' + body + '</div>' + script + '</body></html>';
   }
 

@@ -51,6 +51,10 @@ class RateLimited(DatasetError):
     """HuggingFace kept rate-limiting after all retries (used for partial fallback)."""
 
 
+class ServiceUnavailable(DatasetError):
+    """HuggingFace's datasets-server returned 5xx — an upstream outage, not our bug."""
+
+
 def _pick(columns: list[str], candidates: list[str]) -> str | None:
     low = {c.lower(): c for c in columns}
     for cand in candidates:
@@ -70,7 +74,8 @@ def _coerce(value) -> str:
     return str(value).strip() if value is not None else ""
 
 
-HF_MAX_RETRIES = 8       # patient backoff so large imports ride out rate limits
+HF_MAX_RETRIES = 8       # patient backoff so large imports ride out rate limits (429)
+HF_SERVER_ERROR_RETRIES = 3  # 5xx = service down; a few quick tries, then fail fast
 HF_BACKOFF_CAP = 30.0    # max seconds between retries
 
 
@@ -91,12 +96,26 @@ async def _get_json(client: httpx.AsyncClient, url: str, params: dict, *, timeou
             await asyncio.sleep(min(delay, HF_BACKOFF_CAP))
             delay = min(delay * 2, HF_BACKOFF_CAP)
             continue
-        if resp.status_code in (429, 500, 502, 503, 504):
+        # 429 = rate limit (transient, ride it out patiently). 5xx = the
+        # datasets-server itself is down — a few quick retries for a blip, then
+        # fail fast with an honest message instead of hanging ~2min on an outage.
+        if resp.status_code == 429:
             if attempt == HF_MAX_RETRIES - 1:
-                raise RateLimited(f"HuggingFace kept returning HTTP {resp.status_code} after retries.")
+                raise RateLimited("HuggingFace kept returning HTTP 429 (rate limited) after retries.")
             retry_after = resp.headers.get("Retry-After")
             base = float(retry_after) if (retry_after or "").replace(".", "", 1).isdigit() else delay
             await asyncio.sleep(min(base, HF_BACKOFF_CAP) + random.uniform(0, 0.5))  # jitter
+            delay = min(delay * 2, HF_BACKOFF_CAP)
+            continue
+        if resp.status_code in (500, 502, 503, 504):
+            if attempt >= HF_SERVER_ERROR_RETRIES - 1:
+                raise ServiceUnavailable(
+                    f"HuggingFace's datasets-server is temporarily unavailable (HTTP "
+                    f"{resp.status_code}) — this is an outage on HuggingFace's side, not "
+                    f"your setup. Try again in a few minutes, or download the dataset's "
+                    f"original files instead (CLI: --hf-download, which uses the hub file "
+                    f"endpoint that stays up during datasets-server outages).")
+            await asyncio.sleep(min(delay, HF_BACKOFF_CAP) + random.uniform(0, 0.5))
             delay = min(delay * 2, HF_BACKOFF_CAP)
             continue
         if resp.status_code >= 400:
