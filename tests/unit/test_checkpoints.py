@@ -95,3 +95,66 @@ async def test_extra_context_appended_to_llm_docs(monkeypatch):
 
 async def _coro(value):
     return value
+
+
+# ── CP2 scans documents concurrently ─────────────────────────────────────────
+
+async def test_cp2_scans_documents_in_parallel(monkeypatch):
+    """Documents are independent; scanning them serially put one Guard round
+    trip per document on the critical path."""
+    import asyncio
+    state = {"inflight": 0, "peak": 0}
+
+    async def slow_check(text, key, project_id="", endpoint=""):
+        state["inflight"] += 1
+        state["peak"] = max(state["peak"], state["inflight"])
+        await asyncio.sleep(0.02)
+        state["inflight"] -= 1
+        return {"flagged": False, "latency_ms": 20, "breakdown": []}
+
+    monkeypatch.setattr(chat.lakera, "check", slow_check)
+    monkeypatch.setattr(chat.rag, "retrieve",
+                        lambda *a, **k: [_doc(f"d{i}.txt", f"doc {i}") for i in range(4)])
+    monkeypatch.setattr(chat, "_call_llm", lambda *a, **k: _coro("reply"))
+
+    out = await chat.process("q", "clean", lakera_key="k")
+    assert state["peak"] == 4, f"CP2 ran serially (peak={state['peak']})"
+    assert out["trace"]["cp2"]["docs_checked"] == 4
+
+
+async def test_cp2_preserves_document_order_and_redaction(monkeypatch):
+    """gather returns in input order — flagged/passed lists must still line up
+    with the retrieved documents."""
+    monkeypatch.setattr(chat.lakera, "check", _lakera("POISON"))
+    monkeypatch.setattr(chat.rag, "retrieve", lambda *a, **k: [
+        _doc("a.txt", "clean one"), _doc("b.txt", "POISON here"),
+        _doc("c.txt", "clean two"), _doc("d.txt", "POISON again"),
+    ])
+    captured = {}
+
+    async def fake_llm(message, context_docs, *a, **k):
+        captured["docs"] = context_docs
+        return "reply"
+    monkeypatch.setattr(chat, "_call_llm", fake_llm)
+
+    out = await chat.process("q", "poisoned", lakera_key="k")
+    cp2 = out["trace"]["cp2"]
+    assert cp2["docs_flagged"] == ["b.txt", "d.txt"]
+    assert cp2["docs_passed"] == ["a.txt", "c.txt"]
+    assert captured["docs"] == ["clean one", "clean two"]     # only clean docs reach the LLM
+    assert cp2["status"] == "redacted"
+
+
+async def test_cp2_latency_is_wall_clock_not_sum(monkeypatch):
+    """Parallel scans must not report summed latency — that would over-state the
+    time CP2 actually added to the request."""
+    async def check(text, key, project_id="", endpoint=""):
+        return {"flagged": False, "latency_ms": 30, "breakdown": []}
+
+    monkeypatch.setattr(chat.lakera, "check", check)
+    monkeypatch.setattr(chat.rag, "retrieve",
+                        lambda *a, **k: [_doc(f"d{i}.txt", "x") for i in range(5)])
+    monkeypatch.setattr(chat, "_call_llm", lambda *a, **k: _coro("reply"))
+
+    out = await chat.process("q", "clean", lakera_key="k")
+    assert out["trace"]["cp2"]["latency_ms"] == 30           # not 150

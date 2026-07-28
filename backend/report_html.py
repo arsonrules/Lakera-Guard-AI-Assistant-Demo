@@ -519,13 +519,18 @@ def _filter_bar(T, judged) -> str:
     model = (f'<label class="os-tf-item">{_e(T("os.colModel"))} '
              f'<select id="os-f-model"><option value="">{_e(T("os.filterAll"))}</option></select></label>'
              if judged else "")
-    return f'<div class="os-tfilter">{guard}{model}</div>'
+    # Filled in by the report's inline script — without it an empty filtered
+    # table looks like a broken report rather than a filter with no matches.
+    count = '<span class="os-tfilter-count" id="os-f-count"></span>'
+    return f'<div class="os-tfilter">{guard}{model}{count}</div>'
 
 
 def _results_table(T, s, results, judged, strat, i18n, fam_class, sev_label) -> str:
     cols = 6 + (1 if judged else 0) + (1 if strat else 0)
     head = (_filter_bar(T, judged)
-            + '<table class="os-table"><thead><tr>'
+            # Contained horizontal scroll so a narrow viewport doesn't push the
+            # whole page sideways (see .os-table-wrap in the app stylesheet).
+            + '<div class="os-table-wrap"><table class="os-table"><thead><tr>'
             f'<th>{_e(T("os.colScenario"))}</th><th>{_e(T("os.colOwasp"))}</th>'
             + (f'<th>{_e(T("os.colVariant"))}</th>' if strat else "")
             + f'<th>{_e(T("os.colExpected"))}</th><th>{_e(T("os.colCheckpoints"))}</th>'
@@ -561,7 +566,7 @@ def _results_table(T, s, results, judged, strat, i18n, fam_class, sev_label) -> 
             + (f'<td>{model_cell}</td>' if judged else "")
             + f'<td class="mono">{_e(lat)}</td></tr>'
             + f'<tr class="os-detail-row" id="osd-{i}" style="display:none"><td colspan="{cols}">{_os_detail(T, r)}</td></tr>')
-    return head + "".join(rows) + '</tbody></table>'
+    return head + "".join(rows) + '</tbody></table></div>'
 
 
 _MODEL_META = {
@@ -617,10 +622,15 @@ def _document(styles: str, sprite: str, head: str, inner: str) -> str:
         "function opts(sel,vals){if(!sel)return;vals.forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);});}"
         "var gv={},mv={};rows.forEach(function(r){var a=txt(r,'.os-outcome');if(a)gv[a]=1;var b=txt(r,'.os-model');if(b)mv[b]=1;});"
         "opts(g,Object.keys(gv).sort());opts(m,Object.keys(mv).sort());"
-        "function apply(){var gs=g?g.value:'',ms=m?m.value:'';rows.forEach(function(r){"
+        "var cnt=document.getElementById('os-f-count');"
+        "function apply(){var gs=g?g.value:'',ms=m?m.value:'',shown=0;rows.forEach(function(r){"
         "var ok=(!gs||txt(r,'.os-outcome')===gs)&&(!ms||txt(r,'.os-model')===ms);"
-        "r.style.display=ok?'':'none';var d=document.getElementById(r.id.replace('osr-','osd-'));if(d)d.style.display='none';});}"
-        "if(g)g.addEventListener('change',apply);if(m)m.addEventListener('change',apply);})();"
+        "if(ok)shown++;"
+        "r.style.display=ok?'':'none';var d=document.getElementById(r.id.replace('osr-','osd-'));if(d)d.style.display='none';});"
+        "if(cnt){var filtered=!!(gs||ms);"
+        "cnt.textContent=filtered?('showing '+shown+' of '+rows.length):(rows.length+' scenarios');"
+        "cnt.className='os-tfilter-count'+(filtered?' filtered':'');}}"
+        "if(g)g.addEventListener('change',apply);if(m)m.addEventListener('change',apply);apply();})();"
         "<" "/script>")
     extra_css = ("\nbody{display:block;height:auto;min-height:100dvh;overflow-x:hidden;overflow-y:auto;"
                  "padding:20px 22px;max-width:1080px;margin:0 auto;background:var(--bg);color:var(--text);}"

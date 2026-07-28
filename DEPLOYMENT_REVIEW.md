@@ -465,11 +465,43 @@ Unit suite after Sprint 1: **286 passing** (was 271).
 
 Unit suite after Sprint 2: **314 passing** (271 → 286 → 314).
 
-**Sprint 3 — "efficient & polished" (≈2 days).**
-11. `rag.retrieve()` caching (§2.3) · CP2 `gather` (§2.4)
-12. Dataset row budget (§1.3)
-13. Responsive results table + filter counts (§6.1, §6.2)
-14. Self-hosted fonts (§3.6)
+**Sprint 3 — "efficient & polished" — ✅ DONE (except 14, deferred).**
+11. ✅ `rag.retrieve()` caching (§2.3) — documents are read and lower-cased **once**, keyed
+    on a per-file `(name, mtime_ns, size)` fingerprint so the cache invalidates itself; no
+    mutation site has to remember to clear it. Verified identical results to the old
+    implementation, **2.6× faster** (55 µs → 21 µs/call), and — the real win — 60k blocking
+    file reads and full-document string allocations removed from the event loop on a 30k-row
+    run. Covers add / in-place overwrite / delete (the upload endpoint can replace a file by
+    name, which leaves the *directory* mtime untouched). **+9 tests.**
+    ✅ CP2 `gather` (§2.4) — the per-document Guard scans now run concurrently instead of one
+    round trip each on the critical path. `gather` preserves order, so flagged/passed lists
+    still line up with the retrieved documents. `cp2.latency_ms` changed from **sum → max**:
+    summing parallel scans would over-report the time CP2 actually added. **+3 tests**
+    (proves peak concurrency, ordering/redaction, and wall-clock latency).
+12. ✅ Dataset row budget (§1.3) — `MAX_TOTAL_DATASET_ROWS = 250_000` across all slots; the
+    slot cap alone allowed 12 × 100k = 1.2M rows resident. Rejects with a clear message
+    before mutating the store. `/api/datasets` **keeps its bare-array body** (the frontend
+    iterates it directly) and reports usage via `X-Dataset-Slots` / `X-Dataset-Rows`
+    headers, so nothing downstream breaks. **+7 tests.**
+13. ✅ Responsive results table + filter counts (§6.1, §6.2) — the 8-column table now lives
+    in an `overflow-x: auto` region with a `min-width`, so on a 375px viewport **the table
+    scrolls, not the page** (verified in-browser: `bodyHorizontalOverflow: false` while
+    `wrapper.scrollWidth > clientWidth`). The report filter bar gained a live count —
+    `4 scenarios` → `showing 2 of 4`, highlighted while filtered — so an empty filtered
+    table no longer reads as a broken report. Applied in **both** renderers.
+14. ⏸️ **Self-hosted fonts (§3.6) — deferred, deliberately.** It means committing ~300 KB of
+    binary font files for three families across several weights, and the payoff (air-gapped
+    support, two fewer third-party requests) doesn't apply to the loopback demo this is
+    today. Do it if the demo ever ships into an air-gapped or privacy-reviewed environment;
+    the CSP already scopes the Google hosts explicitly, so the change is a drop-in.
+
+> **Column-hiding under 640px was also deliberately skipped.** The table's columns are
+> conditional (Variant appears only with strategies, Model only when judged), so `nth-child`
+> rules would hide the *wrong* column depending on run configuration. The contained scroll
+> region solves the actual problem (page-level horizontal overflow) without that fragility.
+> If it's ever wanted, tag the low-value cells with a class in both renderers instead.
+
+Unit suite after Sprint 3: **333 passing** (271 → 286 → 314 → 333).
 
 **Backlog — architectural, only if the requirement is real.**
 15. Per-session config (§1.1 Tier B)

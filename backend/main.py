@@ -128,6 +128,11 @@ lakera.set_endpoint(settings.lakera_endpoint)
 # Each value: {slug, name, source, count, column, rows:[{prompt, category}]}.
 _datasets: dict[str, dict] = {}
 MAX_DATASETS = 12
+# Ceiling on rows held across ALL dataset slots. The slot cap alone doesn't bound
+# memory (12 x MAX_ROWS would be 1.2M rows resident); this keeps the in-memory
+# store to roughly a few hundred MB and fails an oversized import with a clear
+# message instead of an OOM kill.
+MAX_TOTAL_DATASET_ROWS = 250_000
 
 
 def _slugify(name: str) -> str:
@@ -889,9 +894,25 @@ def _public_dataset(d: dict) -> dict:
             "count": d["count"], "column": d.get("column")}
 
 
+def _total_dataset_rows() -> int:
+    return sum(d["count"] for d in _datasets.values())
+
+
 def _store_dataset(name: str, source: str, column: str | None, rows: list[dict]) -> dict:
     if len(_datasets) >= MAX_DATASETS:
         raise HTTPException(400, f"Dataset slot limit reached ({MAX_DATASETS}). Delete one first.")
+    # The slot cap alone doesn't bound memory: 12 slots x 100k rows would be 1.2M
+    # rows resident. Cap the total as well so one big import can't exhaust the
+    # process (the container also has a mem_limit — this gives a clear error first).
+    # `_slugify` de-duplicates, so every import takes a fresh slot; nothing is
+    # replaced in place and the projected total is simply current + incoming.
+    projected = _total_dataset_rows() + len(rows)
+    if projected > MAX_TOTAL_DATASET_ROWS:
+        raise HTTPException(
+            400,
+            f"Row budget exceeded: this import would hold {projected:,} rows across all "
+            f"datasets (limit {MAX_TOTAL_DATASET_ROWS:,}). Delete a dataset or import fewer rows.",
+        )
     slug = _slugify(name)
     _datasets[slug] = {
         "slug": slug, "name": name, "source": source,
@@ -902,7 +923,15 @@ def _store_dataset(name: str, source: str, column: str | None, rows: list[dict])
 
 @app.get("/api/datasets")
 async def api_list_datasets():
-    return [_public_dataset(d) for d in _datasets.values()]
+    # Kept as a bare list — the frontend iterates the response directly. Budget
+    # usage is reported via headers so adding it breaks no existing consumer.
+    return JSONResponse(
+        content=[_public_dataset(d) for d in _datasets.values()],
+        headers={
+            "X-Dataset-Slots": f"{len(_datasets)}/{MAX_DATASETS}",
+            "X-Dataset-Rows": f"{_total_dataset_rows()}/{MAX_TOTAL_DATASET_ROWS}",
+        },
+    )
 
 
 @app.post("/api/datasets/import-hf")

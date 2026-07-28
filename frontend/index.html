@@ -1132,7 +1132,18 @@
     }
 
     /* Results table */
+    /* The results table carries up to 8 columns. On narrow viewports let IT
+       scroll horizontally inside its own region rather than pushing the whole
+       page sideways (a contained scroll area is fine; a horizontally scrolling
+       body is not). min-width keeps columns legible instead of crushing them. */
+    .os-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .os-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    @media (max-width: 720px) {
+      .os-table { min-width: 640px; }
+    }
+    /* Filter summary above the exported report's table. */
+    .os-tfilter-count { margin-left: auto; font-size: 0.78rem; color: var(--muted); }
+    .os-tfilter-count.filtered { color: var(--brand); }
     .os-table th, .os-table td {
       text-align: left; padding: 8px 10px;
       border-bottom: 1px solid var(--border-soft);
@@ -6197,9 +6208,10 @@
     html += '<div class="os-tfilter">'
       + `<label class="os-tf-item">${esc(t('os.colGuard'))} <select id="os-f-guard"><option value="">${esc(t('os.filterAll'))}</option></select></label>`
       + (s.judged ? `<label class="os-tf-item">${esc(t('os.colModel'))} <select id="os-f-model"><option value="">${esc(t('os.filterAll'))}</option></select></label>` : '')
+      + '<span class="os-tfilter-count" id="os-f-count"></span>'
       + '</div>';
 
-    html += '<table class="os-table"><thead><tr>'
+    html += '<div class="os-table-wrap"><table class="os-table"><thead><tr>'
       + `<th>${esc(t('os.colScenario'))}</th>`
       + `<th>${esc(t('os.colOwasp'))}</th>`
       + (strat ? `<th>${esc(t('os.colVariant'))}</th>` : '')
@@ -6237,7 +6249,7 @@
         + '</tr>'
         + `<tr class="os-detail-row" id="osd-${i}" style="display:none"><td colspan="${cols}">${osDetailHtml(r)}</td></tr>`;
     });
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     return html;
   }
 
@@ -6470,7 +6482,7 @@
       + 'function osRowKey(e,i){if(e.key==="Enter"||e.key===" "){e.preventDefault();toggleOsDetail(i);}}'
       + 'function showStatInfo(k,ev){if(ev)ev.stopPropagation();var x=STAT_INFO[k];if(!x)return;var p=document.getElementById("os-popover");if(!p){p=document.createElement("div");p.id="os-popover";p.className="os-popover";document.body.appendChild(p);}var lbl=(ev&&ev.currentTarget&&ev.currentTarget.querySelector(".lbl,.os-hero-lbl,.cap"));p.innerHTML="<div class=\\"os-popover-title\\">"+(lbl?lbl.textContent:k)+"</div><div class=\\"os-popover-body\\">"+x+"</div>";p.classList.add("show");var tg=ev&&ev.currentTarget;if(tg){var rc=tg.getBoundingClientRect();p.style.top=(rc.bottom+window.scrollY+8)+"px";p.style.left=Math.min(rc.left+window.scrollX,window.scrollX+document.documentElement.clientWidth-p.offsetWidth-12)+"px";}}'
       + 'document.addEventListener("click",function(e){var p=document.getElementById("os-popover");if(p&&p.classList.contains("show")&&!p.contains(e.target)&&!(e.target.closest&&e.target.closest("[data-info]")))p.classList.remove("show");});'
-      + '(function(){var tb=document.querySelector(".os-table");if(!tb)return;var g=document.getElementById("os-f-guard"),m=document.getElementById("os-f-model");var rows=[].slice.call(tb.querySelectorAll("tbody tr.os-row"));function txt(r,s){var e=r.querySelector(s);return e?e.textContent.trim():"";}function opts(sel,vals){if(!sel)return;vals.forEach(function(v){var o=document.createElement("option");o.value=v;o.textContent=v;sel.appendChild(o);});}var gv={},mv={};rows.forEach(function(r){var a=txt(r,".os-outcome");if(a)gv[a]=1;var b=txt(r,".os-model");if(b)mv[b]=1;});opts(g,Object.keys(gv).sort());opts(m,Object.keys(mv).sort());function apply(){var gs=g?g.value:"",ms=m?m.value:"";rows.forEach(function(r){var ok=(!gs||txt(r,".os-outcome")===gs)&&(!ms||txt(r,".os-model")===ms);r.style.display=ok?"":"none";var d=document.getElementById(r.id.replace("osr-","osd-"));if(d)d.style.display="none";});}if(g)g.addEventListener("change",apply);if(m)m.addEventListener("change",apply);})();'
+      + '(function(){var tb=document.querySelector(".os-table");if(!tb)return;var g=document.getElementById("os-f-guard"),m=document.getElementById("os-f-model");var rows=[].slice.call(tb.querySelectorAll("tbody tr.os-row"));function txt(r,s){var e=r.querySelector(s);return e?e.textContent.trim():"";}function opts(sel,vals){if(!sel)return;vals.forEach(function(v){var o=document.createElement("option");o.value=v;o.textContent=v;sel.appendChild(o);});}var gv={},mv={};rows.forEach(function(r){var a=txt(r,".os-outcome");if(a)gv[a]=1;var b=txt(r,".os-model");if(b)mv[b]=1;});opts(g,Object.keys(gv).sort());opts(m,Object.keys(mv).sort());var cnt=document.getElementById("os-f-count");function apply(){var gs=g?g.value:"",ms=m?m.value:"",shown=0;rows.forEach(function(r){var ok=(!gs||txt(r,".os-outcome")===gs)&&(!ms||txt(r,".os-model")===ms);if(ok)shown++;r.style.display=ok?"":"none";var d=document.getElementById(r.id.replace("osr-","osd-"));if(d)d.style.display="none";});if(cnt){var filtered=!!(gs||ms);cnt.textContent=filtered?("showing "+shown+" of "+rows.length):(rows.length+" scenarios");cnt.className="os-tfilter-count"+(filtered?" filtered":"");}}if(g)g.addEventListener("change",apply);if(m)m.addEventListener("change",apply);apply();})();'
       + '<' + '/script>';
     return '<!DOCTYPE html><html lang="' + esc(currentLang) + '"><head><meta charset="UTF-8">'
       + '<meta name="viewport" content="width=device-width,initial-scale=1">'

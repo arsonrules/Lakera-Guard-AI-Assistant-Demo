@@ -7,6 +7,8 @@ Orchestrates the full Lakera Guard flow:
   CP3 → LLM output          → BLOCK if flagged, else deliver to user
 """
 
+import asyncio
+
 from backend import lakera, llm, rag
 from backend.config import settings
 
@@ -188,9 +190,17 @@ async def process(
         all_cp2_categories: list[str] = []
         all_cp2_detectors: list[dict] = []
 
-        for doc in docs:
-            cp2 = await lakera.check(doc["content"], lakera_key, proj["cp2"])
-            cp2_latency += cp2["latency_ms"]
+        # Scan the retrieved documents concurrently — they're independent, and
+        # doing them serially put one Guard round trip per document on the
+        # critical path. gather preserves input order, so results still line up
+        # with `docs` and the trace stays deterministic.
+        results = await asyncio.gather(
+            *(lakera.check(doc["content"], lakera_key, proj["cp2"]) for doc in docs)
+        )
+        for doc, cp2 in zip(docs, results):
+            # Wall-clock, not the sum: these ran in parallel, so summing would
+            # over-report the time CP2 actually added to the request.
+            cp2_latency = max(cp2_latency, cp2["latency_ms"])
             all_cp2_detectors.extend(lakera.detector_results(cp2))   # L1–L5 across docs
             if lakera.is_flagged(cp2):
                 flagged_names.append(doc["filename"])
