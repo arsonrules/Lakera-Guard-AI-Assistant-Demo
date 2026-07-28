@@ -435,12 +435,35 @@ Being explicit about what to skip is as useful as the list above:
 
 Unit suite after Sprint 1: **286 passing** (was 271).
 
-**Sprint 2 — "operable" (≈2 days).**
-6. Logging config + request IDs (§3.3)
-7. HTTP-layer tests incl. security middleware (§4.1)
-8. README Deployment & Security Boundary section (§5.2)
-9. Optional `DEMO_ACCESS_TOKEN` gate + refuse-to-start-exposed (§3.4)
-10. Compose resource limits + `.env` directory mount (§3.5)
+**Sprint 2 — "operable" — ✅ DONE.**
+6. ✅ Logging + request IDs (§3.3) — new `backend/logging_setup.py`: configured handler
+   honouring `LOG_LEVEL`, optional `LOG_JSON` for collectors, and a `contextvar` request id
+   stamped on every log line. The id is echoed as `X-Request-ID` and an **inbound** id is
+   preserved so traces join across proxies. Startup/shutdown now log the effective config.
+   `LOG_PROMPTS` defaults **off** — this app handles adversarial content and PII fixtures.
+7. ✅ HTTP-layer tests (§4.1) — **+28 tests** over the real ASGI app, with the `client`
+   fixture promoted to `tests/unit/conftest.py`. Covers the CSRF origin guard (reject
+   cross-origin POST/DELETE, allow same-origin, allow no-Origin clients, don't touch GET),
+   all five security headers + CSP, request-id behaviour, the token gate, and the
+   upload/delete guards that had **no** coverage. Mutation-checked: disabling the CSRF
+   check or dropping a header makes exactly the right tests fail.
+8. ✅ README **Deployment & Security Boundary** (§5.2) — the three constraints
+   (single-worker/single-tenant, no-auth default, secrets handling), an explicit
+   *"what this does not defend against"* table (DNS rebinding, hostile operator, denial of
+   wallet, no multi-user isolation), the ops/env-var reference, health-probe semantics, and
+   a production-hardening checklist.
+9. ✅ `DEMO_ACCESS_TOKEN` gate + refuse-to-start-exposed (§3.4) — opt-in shared secret on
+   `/api/*` accepting `Authorization: Bearer` or `X-Demo-Token`, compared with
+   `secrets.compare_digest` (no timing leak). Health probes stay open so orchestrators keep
+   working. The app **refuses to boot** on a non-loopback bind with no token — detecting the
+   host from `UVICORN_HOST`/`HOST` *and* the `--host` CLI flag, while exempting containers
+   (binding `0.0.0.0` there is required; the published port is the real boundary).
+10. ✅ Compose hardening (§3.5) — `mem_limit: 2g` (Sprint 1) plus the `.env` **file** mount
+    replaced by a `./config` **directory** mount, removing the "you must `touch .env` first
+    or Docker creates a directory" footgun. `ENV_FILE` makes the write target configurable;
+    the default path is unchanged for non-Docker users.
+
+Unit suite after Sprint 2: **314 passing** (271 → 286 → 314).
 
 **Sprint 3 — "efficient & polished" (≈2 days).**
 11. `rag.retrieve()` caching (§2.3) · CP2 `gather` (§2.4)

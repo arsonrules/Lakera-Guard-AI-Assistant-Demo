@@ -12,25 +12,26 @@ An interactive single-page application that demonstrates how [Lakera Guard](http
 2. [Security Architecture](#security-architecture)
    - [The Four Checkpoints](#the-four-checkpoints)
    - [OWASP LLM Top 10 Coverage](#owasp-llm-top-10-coverage)
-3. [Prerequisites](#prerequisites)
-4. [Installation](#installation)
+3. [Deployment & Security Boundary](#deployment--security-boundary)
+4. [Prerequisites](#prerequisites)
+5. [Installation](#installation)
    - [Option A — Python virtual environment](#option-a--python-virtual-environment)
    - [Option B — Docker Compose](#option-b--docker-compose)
-5. [Configuration](#configuration)
-6. [Running the Application](#running-the-application)
-7. [Using the UI](#using-the-ui)
+6. [Configuration](#configuration)
+7. [Running the Application](#running-the-application)
+8. [Using the UI](#using-the-ui)
    - [Chat panel](#chat-panel)
    - [Security Trace inspector](#security-trace-inspector)
    - [Scenario categories](#scenario-categories)
    - [Knowledge Base mode](#knowledge-base-mode)
    - [Custom RAG documents](#custom-rag-documents)
    - [Custom system prompt](#custom-system-prompt)
-8. [LLM Provider Configuration](#llm-provider-configuration)
-9. [One-Shot Testing](#one-shot-testing)
-10. [Report Generation](#report-generation)
-11. [Running Integration Tests](#running-integration-tests)
-12. [Project Structure](#project-structure)
-13. [Notes on Intentional Demo Data](#notes-on-intentional-demo-data)
+9. [LLM Provider Configuration](#llm-provider-configuration)
+10. [One-Shot Testing](#one-shot-testing)
+11. [Report Generation](#report-generation)
+12. [Running Integration Tests](#running-integration-tests)
+13. [Project Structure](#project-structure)
+14. [Notes on Intentional Demo Data](#notes-on-intentional-demo-data)
 
 ---
 
@@ -115,6 +116,113 @@ The built-in library now spans **all ten** OWASP LLM Top 10 (2025) entries plus 
 
 ---
 
+## Deployment & Security Boundary
+
+This is a **demonstration tool**, not a multi-tenant service. It is safe and pleasant to
+run as designed; the rules below are what "as designed" means. Read this before putting it
+anywhere other than your own machine.
+
+### The three constraints that matter
+
+**1. Single worker, single tenant.**
+Runtime configuration — the LLM/judge provider, the Guard key and project, knowledge-base
+mode, the active system prompt, and imported datasets — lives in **module-level state in
+the server process**. Consequences:
+
+- Do **not** add `--workers 2` (or run replicas behind a load balancer). Each worker gets
+  its own copy, so a config write lands in one worker and a later read hits another. The
+  shipped `Dockerfile` pins `--workers 1` deliberately.
+- Configuration is **global, not per-session**. If two people use the same instance, one
+  changing the model or Guard key changes it for the other — mid-run. Give each user their
+  own instance rather than sharing one.
+- Imported datasets and the custom system prompt are **in memory** and are lost on restart.
+
+**2. No per-user authentication (by default).**
+Every `/api/*` route is unauthenticated, including powerful ones — `POST /api/config/save-env`
+writes the host's `.env`, and the docs endpoints upload and delete files. That is fine on
+loopback and is why `docker-compose.yml` publishes to `127.0.0.1` only.
+
+To expose it anywhere else, set a shared secret:
+
+```bash
+DEMO_ACCESS_TOKEN=$(openssl rand -hex 24)
+```
+
+Every `/api/*` request must then present it (health probes stay open so orchestrators still
+work):
+
+```bash
+curl -H "Authorization: Bearer $DEMO_ACCESS_TOKEN" http://host:8000/api/scenarios
+# or:  -H "X-Demo-Token: $DEMO_ACCESS_TOKEN"
+```
+
+As a backstop, the app **refuses to start** when bound to a non-loopback address with no
+token, rather than exposing itself silently. Override with `ALLOW_INSECURE_BIND=true` if
+that is genuinely what you want. (Containers are exempt: binding `0.0.0.0` inside a
+container is required, and the published port is the real boundary.)
+
+**3. Secrets handling.**
+- Keys live in `.env` on the server and in memory; the API returns them **masked** and never
+  echoes key material (`/readyz` reports `lakera_key_set: true`, never the key).
+- The browser never writes raw API keys to `localStorage`.
+- Prompts and model responses are **never logged** unless you set `LOG_PROMPTS=true` — this
+  app deliberately handles adversarial content and PII fixtures.
+
+### What this demo intentionally does not defend against
+
+Being explicit is more useful than implying total coverage:
+
+| Not defended | Why / what would be needed |
+|---|---|
+| **DNS rebinding** on the operator-supplied LLM base URL | The SSRF guard blocks link-local and cloud-metadata addresses *as written*, but does not re-resolve DNS at call time. Local/private LLM servers are a first-class feature, so private ranges stay allowed. Run in a trusted network. |
+| **A hostile operator** | Whoever can reach the UI can point the app at any endpoint and write `.env`. That is the intended demo power; gate access rather than restricting the operator. |
+| **Denial of wallet / unbounded spend** | A large one-shot run costs real tokens. Bound it with `--max-scenarios`, `--rate-limit`, and provider-side budget caps. |
+| **Multi-user isolation** | See constraint 1 — there are no sessions. |
+
+### Operations
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
+| `LOG_JSON` | `false` | One JSON object per line, for container log collectors |
+| `LOG_PROMPTS` | `false` | Opt in to logging prompt/response bodies |
+| `DEMO_ACCESS_TOKEN` | *(blank)* | Shared secret for `/api/*` |
+| `ALLOW_INSECURE_BIND` | `false` | Permit a non-loopback bind with no token |
+
+**Health probes** (both unauthenticated and secret-free):
+
+| Endpoint | Meaning |
+|---|---|
+| `GET /healthz` | Liveness — always `200` while the process is up |
+| `GET /readyz` | Readiness — `200` when a Guard key is configured, `503` otherwise |
+
+Every response carries an `X-Request-ID` (an inbound one is preserved, so traces join across
+proxies); it appears on every log line emitted while handling that request, so a user can
+quote the id from a failure.
+
+**Reproducible builds.** The image installs from the hash-pinned `requirements.lock`
+(resolved for Python 3.12, matching the base image). Regenerate after changing
+`requirements.txt`:
+
+```bash
+uv pip compile requirements.txt --python-version 3.12 --generate-hashes -o requirements.lock
+```
+
+### Production-hardening checklist
+
+If you adapt this beyond a demo:
+
+- [ ] Put it behind a reverse proxy with **TLS** and real authentication (SSO/OIDC).
+- [ ] Replace the global config with **per-session state** (see `DEPLOYMENT_REVIEW.md` §1.1).
+- [ ] Set `DEMO_ACCESS_TOKEN`, or remove `POST /api/config/save-env` entirely.
+- [ ] Move imported datasets and run history out of process memory / local disk.
+- [ ] Add request rate limiting at the proxy (the app only throttles *outbound* calls).
+- [ ] Set `LOG_JSON=true` and ship logs somewhere durable; keep `LOG_PROMPTS=false`.
+- [ ] Constrain container resources (`mem_limit` is set in compose) and add a restart policy.
+- [ ] Pin the base image by digest and enable automated dependency updates.
+
+---
+
 ## Prerequisites
 
 | Requirement | Minimum version | Purpose |
@@ -161,12 +269,15 @@ pip install -r requirements.txt
 ```bash
 # No Python installation needed — Docker handles everything
 cd "AI assistant demo"
-# .env is optional — configure keys in the UI after start. For "Save to .env" to
-# persist back to the host, make sure a .env file exists first (a bind mount of a
-# missing file would create a directory):
-touch .env
 docker compose up --build
 ```
+
+No `.env` is needed — configure keys in the UI after start. **Save to .env** persists them
+to `./config/.env` on the host (a mounted directory, so nothing has to pre-exist) and they
+load automatically on the next start. An existing root `.env` is still read if present.
+
+The container publishes to `127.0.0.1` only and pins a single worker — see
+[Deployment & Security Boundary](#deployment--security-boundary) before changing either.
 
 ---
 

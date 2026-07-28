@@ -1,10 +1,17 @@
+import os
 import pathlib
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # .env lives at the project root. Used both to seed startup config and as the
 # target for the UI's "Save to .env" so settings persist across restarts.
-ENV_PATH = pathlib.Path(__file__).resolve().parent.parent / ".env"
+#
+# ENV_FILE overrides the location. Docker Compose sets it to a path inside a
+# mounted *directory* — bind-mounting a single file requires that file to already
+# exist on the host, or Docker silently creates a directory in its place.
+ENV_PATH = pathlib.Path(
+    os.environ.get("ENV_FILE") or pathlib.Path(__file__).resolve().parent.parent / ".env"
+)
 
 
 class Settings(BaseSettings):
@@ -36,6 +43,25 @@ class Settings(BaseSettings):
     # Back-compat with the original OpenRouter-only configuration.
     openrouter_api_key: str = ""
     openrouter_model: str = "anthropic/claude-3-opus"
+
+    # ── Operations ────────────────────────────────────────────────────────────
+    # Root log level (DEBUG | INFO | WARNING | ERROR).
+    log_level: str = "INFO"
+    # Emit one JSON object per log line — set this in containers so logs are
+    # machine-parseable. Blank/false keeps the human-readable console format.
+    log_json: bool = False
+    # This app deliberately handles adversarial prompts and PII fixtures, so
+    # prompt/response bodies are NEVER logged unless this is explicitly enabled.
+    log_prompts: bool = False
+
+    # ── Access control (optional) ─────────────────────────────────────────────
+    # When set, every /api/* request must present this token (Authorization:
+    # Bearer <token>, or the X-Demo-Token header). Blank = open, which is safe
+    # only on loopback. See README "Deployment & Security Boundary".
+    demo_access_token: str = ""
+    # Set to true ONLY if you intentionally expose the demo beyond loopback
+    # without a token. Without it, binding to a public interface refuses to boot.
+    allow_insecure_bind: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

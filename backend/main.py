@@ -2,9 +2,12 @@ import asyncio
 import ipaddress
 import json
 import logging
+import os
 import pathlib
 import random
 import re
+import secrets
+import sys
 import urllib.parse
 from contextlib import asynccontextmanager
 
@@ -16,8 +19,11 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lakera_demo")
 
-from backend import assertions, attacker, chat, classify, datasets, history, judge, lakera, llm, rag, report, scenarios, strategies, tools
+from backend import assertions, attacker, chat, classify, datasets, history, judge, lakera, llm, logging_setup, rag, report, scenarios, strategies, tools
 from backend.config import ENV_PATH, settings
+
+# Configure logging before anything else emits a record.
+logging_setup.configure(settings.log_level, json_output=settings.log_json)
 from backend.llm import SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT
 from backend.scenarios import CATEGORIES
 
@@ -334,9 +340,56 @@ DEMO_SCENARIOS = [
 ]
 
 
+def _check_exposure() -> None:
+    """
+    Refuse to boot if the demo is bound to a non-loopback interface with no
+    access token — the app has no per-user auth, and `POST /api/config/save-env`
+    writes the host's .env. Silent exposure becomes a loud, fixable startup
+    error. Override deliberately with ALLOW_INSECURE_BIND=true.
+    """
+    if settings.demo_access_token or settings.allow_insecure_bind:
+        return
+    # Inside a container, binding 0.0.0.0 is REQUIRED and harmless — the real
+    # boundary is the published port (compose maps 127.0.0.1:8000). Only a
+    # host-level bind is a genuine exposure.
+    if llm._in_container():
+        return
+    # uvicorn's bind host isn't importable here; read the same env var it uses,
+    # and the --host CLI flag, which is how it's usually passed.
+    host = (os.environ.get("UVICORN_HOST") or os.environ.get("HOST") or "").strip()
+    if not host:
+        argv = sys.argv
+        for i, a in enumerate(argv):
+            if a == "--host" and i + 1 < len(argv):
+                host = argv[i + 1].strip()
+            elif a.startswith("--host="):
+                host = a.split("=", 1)[1].strip()
+    if not host:
+        return                                   # unknown → assume the safe default
+    try:
+        exposed = not ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        exposed = host not in ("localhost", "")  # a hostname we can't classify
+    if exposed:
+        raise RuntimeError(
+            f"Refusing to start: bound to {host} (non-loopback) with no DEMO_ACCESS_TOKEN. "
+            "This demo has no per-user authentication. Either set DEMO_ACCESS_TOKEN, bind to "
+            "127.0.0.1, or set ALLOW_INSECURE_BIND=true if the exposure is intentional."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _check_exposure()
+    logger.info(
+        "starting: provider=%s model=%s guard_key=%s access_token=%s log_level=%s",
+        _llm_config.get("provider"), _llm_config.get("model"),
+        "set" if _lakera_key else "MISSING",
+        "enabled" if settings.demo_access_token else "disabled (loopback-only)",
+        settings.log_level,
+    )
     yield
+    logger.info("shutting down: releasing Guard + LLM connection pools")
     # Release the shared Guard + LLM connection pools on shutdown.
     await lakera.aclose()
     await llm.aclose()
@@ -345,15 +398,51 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Lakera Guard Demo", lifespan=lifespan)
 
 
+def _access_token_ok(request: Request) -> bool:
+    """Constant-time check of the optional shared-secret gate. Accepts either
+    `Authorization: Bearer <token>` or `X-Demo-Token: <token>`."""
+    expected = settings.demo_access_token
+    presented = (request.headers.get("x-demo-token") or "").strip()
+    if not presented:
+        auth = (request.headers.get("authorization") or "").strip()
+        if auth.lower().startswith("bearer "):
+            presented = auth[7:].strip()
+    # compare_digest avoids leaking the token length/prefix via timing.
+    return bool(presented) and secrets.compare_digest(presented, expected)
+
+
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
+    # Correlate every log line emitted while handling this request. An inbound
+    # X-Request-ID (from a proxy) wins so traces join up across hops.
+    rid = (request.headers.get("x-request-id") or "").strip()[:64] or logging_setup.new_request_id()
+    token = logging_setup.request_id_var.set(rid)
+    try:
+        response = await _handle_request(request, call_next)
+    finally:
+        logging_setup.request_id_var.reset(token)
+    # Echo it back so a user can quote the id from a failed request.
+    response.headers["X-Request-ID"] = rid
+    return response
+
+
+async def _handle_request(request: Request, call_next):
     # CSRF guard: browsers attach Origin to cross-site POST/DELETE; reject mismatches.
     # Non-browser clients (curl, tests) send no Origin and are unaffected.
     if request.method in ("POST", "DELETE"):
         origin = request.headers.get("origin")
         host = request.headers.get("host")
         if origin and host and urllib.parse.urlsplit(origin).netloc != host:
+            logger.warning("cross-origin %s %s rejected (origin=%s)",
+                           request.method, request.url.path, origin)
             return JSONResponse(status_code=403, content={"detail": "Cross-origin request rejected."})
+
+    # Optional shared-secret gate. Blank token = open (loopback-only default).
+    # Health probes stay open so orchestrators can reach them without a secret.
+    if settings.demo_access_token and request.url.path.startswith("/api/"):
+        if not _access_token_ok(request):
+            logger.warning("unauthorized %s %s", request.method, request.url.path)
+            return JSONResponse(status_code=401, content={"detail": "Missing or invalid access token."})
 
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")

@@ -32,3 +32,4 @@ reports/
 
 # Downloaded HuggingFace dataset cache (CLI --hf-download)
 datasets/
+config/

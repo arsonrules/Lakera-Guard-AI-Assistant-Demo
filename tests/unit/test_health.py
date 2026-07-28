@@ -1,20 +1,9 @@
 """HTTP-layer tests for the health probes, driven through the ASGI app itself
 (httpx ASGITransport — no server, no network).
 
-These are also the reference pattern for further endpoint tests: build a client
-over `main.app` and assert on real status codes / payloads.
+The shared `client` fixture lives in conftest.py.
 """
-import httpx
-import pytest
-
 from backend import main
-
-
-@pytest.fixture
-async def client():
-    transport = httpx.ASGITransport(app=main.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
 
 
 async def test_healthz_is_always_ok(client, monkeypatch):
