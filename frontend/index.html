@@ -371,6 +371,9 @@
     #scenario-buttons { display: flex; flex-wrap: wrap; gap: 6px 8px; }
     /* While a message is in flight, scenario triggers are inert — show it. */
     body.busy .scenario-btn { opacity: 0.55; pointer-events: none; }
+    /* Clearing mid-request would leave the in-flight reply landing in a fresh
+       transcript, so the control is disabled while a message is being scanned. */
+    body.busy #clear-chat-btn { opacity: 0.55; pointer-events: none; }
     .scenario-btn {
       padding: 5px 12px;
       border: 1px solid var(--border);
@@ -1422,6 +1425,9 @@
     <button id="guard-toggle" class="ctl guard-on" onclick="toggleGuard()" data-i18n-title="guard.toggleTitle" title="Turn Lakera Guard on/off for the chat">
       <svg class="ic"><use href="#i-shield-check"></use></svg><span id="guard-toggle-label">Guard: ON</span>
     </button>
+    <button id="clear-chat-btn" class="ctl" onclick="clearChat()" data-i18n-title="chat.clearTitle" title="Clear the conversation and reset the security trace">
+      <svg class="ic"><use href="#i-x"></use></svg><span data-i18n="chat.clear">Clear Chat</span>
+    </button>
     <button id="oneshot-btn" class="ctl" data-adv onclick="openOneShot()" data-i18n-title="os.btnTitle" title="Run every scenario at once">
       <svg class="ic"><use href="#i-play"></use></svg><span data-i18n="os.btn">One-Shot Test</span>
     </button>
@@ -1905,6 +1911,9 @@
         'chat.greeting': "Hi! I'm ShopEase's AI customer service assistant. How can I help you today?",
         'chat.placeholder': 'Type a message or pick a scenario above…',
         'chat.send': 'Send',
+        'chat.clear': 'Clear Chat',
+        'chat.clearTitle': 'Clear the conversation and reset the security trace',
+        'chat.clearConfirm': 'Clear this conversation? The security trace will reset too.',
         'chat.thinking': 'Lakera Guard processing…',
         'chat.awaitingModel': 'Awaiting Model Response...',
         'chat.blockedBadge': 'Blocked by Lakera Guard',
@@ -2286,6 +2295,9 @@
         'chat.greeting': '안녕하세요! 저는 ShopEase의 AI 고객 서비스 어시스턴트입니다. 무엇을 도와드릴까요?',
         'chat.placeholder': '메시지를 입력하거나 위에서 시나리오를 선택하세요…',
         'chat.send': '전송',
+        'chat.clear': '대화 지우기',
+        'chat.clearTitle': '대화를 지우고 보안 추적을 초기화합니다',
+        'chat.clearConfirm': '이 대화를 지울까요? 보안 추적도 함께 초기화됩니다.',
         'chat.thinking': 'Lakera Guard 처리 중…',
         'chat.awaitingModel': '모델 응답 대기 중...',
         'chat.blockedBadge': 'Lakera Guard에 의해 차단됨',
@@ -2646,6 +2658,9 @@
         'chat.greeting': '您好！我是 ShopEase 的 AI 客服助理。今天能為您做些什麼？',
         'chat.placeholder': '輸入訊息，或從上方挑選一個情境…',
         'chat.send': '送出',
+        'chat.clear': '清除對話',
+        'chat.clearTitle': '清除對話並重設安全追蹤',
+        'chat.clearConfirm': '要清除這段對話嗎？安全追蹤也會一併重設。',
         'chat.thinking': 'Lakera Guard 處理中…',
         'chat.awaitingModel': '等待模型回應…',
         'chat.blockedBadge': '已被 Lakera Guard 封鎖',
@@ -3082,6 +3097,9 @@
         'chat.greeting': '您好！我是 ShopEase 的 AI 客服助手。今天能为您做些什么？',
         'chat.placeholder': '输入消息，或从上方选择一个场景…',
         'chat.send': '发送',
+        'chat.clear': '清除对话',
+        'chat.clearTitle': '清除对话并重置安全追踪',
+        'chat.clearConfirm': '要清除这段对话吗？安全追踪也会一并重置。',
         'chat.thinking': 'Lakera Guard 处理中…',
         'chat.awaitingModel': '等待模型响应…',
         'chat.blockedBadge': '已被 Lakera Guard 拦截',
@@ -3518,6 +3536,9 @@
         'chat.greeting': 'こんにちは！ShopEase の AI カスタマーサービス アシスタントです。本日はどのようなご用件でしょうか？',
         'chat.placeholder': 'メッセージを入力するか、上のシナリオを選択してください…',
         'chat.send': '送信',
+        'chat.clear': 'チャットを消去',
+        'chat.clearTitle': '会話を消去し、セキュリティトレースをリセットします',
+        'chat.clearConfirm': 'この会話を消去しますか？セキュリティトレースもリセットされます。',
         'chat.thinking': 'Lakera Guard が処理中…',
         'chat.awaitingModel': 'モデルの応答を待機中…',
         'chat.blockedBadge': 'Lakera Guard によりブロック',
@@ -4544,6 +4565,36 @@
   }
 
   // ── Chat helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Reset the conversation to a fresh session.
+   *
+   * The chat is stateless on the server — every /api/chat call carries just the
+   * one message — so there is no transcript to delete remotely and nothing to
+   * await. This clears the rendered transcript, drops the last per-message
+   * trace, and puts CP1–CP3 back to "pending".
+   *
+   * Deliberately left alone: the CP0 card and `lastCp0` (they reflect the
+   * SYSTEM PROMPT scan, which outlives any conversation), the selected
+   * scenario, and whatever the user has typed but not yet sent.
+   */
+  function clearChat() {
+    if (isBusy) return;                 // a reply is in flight — see body.busy styling
+    const box = document.getElementById('messages');
+    // Only interrupt when there is actually something to lose (the greeting
+    // alone doesn't count), so the common "already empty" case stays friction-free.
+    if (box.querySelectorAll('.message').length > 1 && !confirm(t('chat.clearConfirm'))) return;
+
+    // Rebuild the greeting with its data-i18n hook so a later language switch
+    // still re-translates it, exactly like the server-rendered markup.
+    box.innerHTML = '<div class="message assistant"><span data-i18n="chat.greeting">'
+      + esc(t('chat.greeting')) + '</span></div>';
+
+    lastTrace = null;                   // no message to re-render on a language switch
+    resetInspector();                   // CP1–CP3 back to pending
+    document.getElementById('chat-input').focus();
+  }
+
   function appendMessage(role, text, blocked) {
     const div = document.createElement('div');
     div.className = `message ${role}${blocked ? ' blocked' : ''}`;
