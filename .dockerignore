@@ -14,3 +14,11 @@ __pycache__
 .vscode
 .DS_Store
 tests/fixtures/docs_custom/*.txt
+
+# Generated / downloaded data — never belongs in an image. `reports/` in
+# particular holds run outputs (prompts, model responses) and can be hundreds of
+# MB. The Dockerfile copies an explicit allow-list, but keep these excluded too
+# so a future `COPY . .` can't silently ship them.
+datasets/
+reports/
+runs/

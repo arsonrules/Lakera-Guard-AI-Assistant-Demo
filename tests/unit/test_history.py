@@ -66,3 +66,55 @@ def test_render_diff_smoke():
     d = history.diff_summaries(_summary(breaches=0), _summary(breaches=3))
     out = render_diff(d)
     assert "REGRESSION" in out and "breaches" in out
+
+
+# ── Sidecar metadata (listing must not parse the heavy results payload) ───────
+
+def test_save_writes_meta_sidecar(tmp_path):
+    rec = history.save({"summary": _summary(), "results": [{"id": "r1"}]}, tmp_path)
+    assert (tmp_path / f"{rec['id']}.meta.json").exists()
+
+
+def test_list_runs_ignores_sidecars_as_runs(tmp_path):
+    history.save({"summary": _summary()}, tmp_path)
+    runs = history.list_runs(tmp_path)
+    assert len(runs) == 1                       # the .meta.json is not its own row
+    assert not runs[0]["id"].endswith(".meta")
+
+
+def test_list_runs_backfills_legacy_records(tmp_path):
+    """Runs saved before sidecars existed are parsed once, then back-filled."""
+    import json
+    rid = "20200101-000000"
+    (tmp_path / f"{rid}.json").write_text(json.dumps(
+        {"id": rid, "saved_at": "2020-01-01T00:00:00+00:00",
+         "label": "legacy", "summary": _summary()}))
+    runs = history.list_runs(tmp_path)
+    assert [r["label"] for r in runs] == ["legacy"]
+    assert (tmp_path / f"{rid}.meta.json").exists()          # migrated
+
+
+def test_list_runs_does_not_read_the_payload(tmp_path, monkeypatch):
+    """Regression: the whole point of the sidecar. Listing must never open the
+    (potentially 100 MB) run file once its sidecar exists."""
+    rec = history.save({"summary": _summary(), "results": [{"i": i} for i in range(500)]}, tmp_path)
+    run_file = tmp_path / f"{rec['id']}.json"
+
+    real_read = type(run_file).read_text
+    opened: list[str] = []
+
+    def spy(self, *a, **k):
+        opened.append(self.name)
+        return real_read(self, *a, **k)
+
+    monkeypatch.setattr(type(run_file), "read_text", spy)
+    history.list_runs(tmp_path)
+    assert run_file.name not in opened                        # only the sidecar was read
+
+
+def test_delete_removes_sidecar(tmp_path):
+    rec = history.save({"summary": _summary()}, tmp_path)
+    assert history.delete(tmp_path, rec["id"]) is True
+    assert not (tmp_path / f"{rec['id']}.json").exists()
+    assert not (tmp_path / f"{rec['id']}.meta.json").exists()
+    assert history.list_runs(tmp_path) == []

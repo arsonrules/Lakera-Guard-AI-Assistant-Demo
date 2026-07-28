@@ -23,7 +23,13 @@ SAFE_FILE = FIXTURES_DIR / "prompts_safe.json"
 DOCS_CLEAN = FIXTURES_DIR / "docs_clean"
 DOCS_POISONED = FIXTURES_DIR / "docs_poisoned"
 
-LAKERA_ENDPOINT = "https://api.lakera.ai/v2/guard"
+# Honour the configured region — a region-scoped key rejects the Community
+# endpoint with HTTP 400. Falls back to Community when nothing is configured.
+LAKERA_ENDPOINT = (
+    os.environ.get("LAKERA_ENDPOINT", "").strip() or "https://api.lakera.ai/v2/guard"
+)
+if not LAKERA_ENDPOINT.rstrip("/").endswith("/v2/guard"):   # bare region host
+    LAKERA_ENDPOINT = LAKERA_ENDPOINT.rstrip("/") + "/v2/guard"
 
 
 def load_attack_fixtures(checkpoint_key: str, category_key: str) -> list[dict]:
@@ -43,10 +49,16 @@ def load_safe_fixtures() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def _lakera_api_key() -> str:
-    key = os.environ.get("LAKERA_GUARD_API_KEY", "")
-    if not key:
-        pytest.skip("LAKERA_GUARD_API_KEY not set — skipping live API tests")
-    return key
+    return os.environ.get("LAKERA_GUARD_API_KEY", "")
+
+
+# These tests call the LIVE Lakera API. Without a key there is nothing to test,
+# so SKIP the module rather than failing it — a missing optional secret is not a
+# broken build (the offline suite in tests/unit is the default gate).
+pytestmark = pytest.mark.skipif(
+    not _lakera_api_key(),
+    reason="LAKERA_GUARD_API_KEY not set — skipping live Lakera API tests",
+)
 
 
 def _call_lakera(text: str) -> dict:
@@ -60,7 +72,9 @@ def _call_lakera(text: str) -> dict:
             )
             resp.raise_for_status()
             return resp.json()
-    return asyncio.get_event_loop().run_until_complete(_req())
+    # asyncio.run(), not get_event_loop().run_until_complete(): the latter raises
+    # "no current event loop" on Python 3.12+ and broke this suite outright.
+    return asyncio.run(_req())
 
 
 def call_lakera_on_input(prompt: str) -> dict:

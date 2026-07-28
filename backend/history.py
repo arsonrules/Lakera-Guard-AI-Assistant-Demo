@@ -42,25 +42,56 @@ def save(payload: dict, directory: str | pathlib.Path, *, label: str | None = No
         path = d / f"{rid}.json"
         n += 1
     record = {"id": rid, "saved_at": _now_iso(), "label": label, **payload}
-    path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    # No indent: a 30k-scenario run is ~100 MB and pretty-printing roughly
+    # doubles that for a file only ever read back by the app.
+    path.write_text(json.dumps(record), encoding="utf-8")
+    _write_meta(d, rid, record)
     return {"id": rid, "saved_at": record["saved_at"], "label": label, "path": str(path)}
 
 
+def _meta_of(record: dict, fallback_id: str) -> dict:
+    """The listing view of a run — everything `list_runs` needs, nothing heavy."""
+    s = record.get("summary", {}) or {}
+    return {"id": record.get("id", fallback_id), "saved_at": record.get("saved_at"),
+            "label": record.get("label"), "metrics": metrics(s),
+            "posture": (s.get("security") or {}).get("posture", {}).get("level")}
+
+
+def _write_meta(d: pathlib.Path, rid: str, record: dict) -> dict:
+    meta = _meta_of(record, rid)
+    try:
+        (d / f"{rid}.meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    except OSError:
+        pass          # listing still works via the legacy full-parse fallback
+    return meta
+
+
 def list_runs(directory: str | pathlib.Path) -> list[dict]:
-    """Metadata for saved runs, newest first (no heavy results payload)."""
+    """
+    Metadata for saved runs, newest first (no heavy results payload).
+
+    Reads the small `<id>.meta.json` sidecar written by `save()`. Runs saved
+    before sidecars existed are parsed once and back-filled, so a directory of
+    100 MB reports is only ever fully read on the first listing after upgrade.
+    """
     d = pathlib.Path(directory)
     if not d.exists():
         return []
     out: list[dict] = []
-    for p in d.glob("*.json"):
+    for p in sorted(d.glob("*.json")):
+        if p.name.endswith(".meta.json"):
+            continue                                   # handled via its run file
+        rid = p.stem
+        meta_path = d / f"{rid}.meta.json"
         try:
-            rec = json.loads(p.read_text(encoding="utf-8"))
+            if meta_path.exists():
+                out.append(json.loads(meta_path.read_text(encoding="utf-8")))
+                continue
+            # Legacy record: parse in full once, then back-fill the sidecar.
+            record = json.loads(p.read_text(encoding="utf-8"))
+            out.append(_write_meta(d, rid, record))
         except (ValueError, OSError):
             continue
-        s = rec.get("summary", {})
-        out.append({"id": rec.get("id", p.stem), "saved_at": rec.get("saved_at"),
-                    "label": rec.get("label"), "metrics": metrics(s),
-                    "posture": (s.get("security") or {}).get("posture", {}).get("level")})
     out.sort(key=lambda r: r["id"], reverse=True)
     return out
 
@@ -80,9 +111,11 @@ def load(directory: str | pathlib.Path, run_id: str) -> dict | None:
 def delete(directory: str | pathlib.Path, run_id: str) -> bool:
     if not _ID_RE.match(run_id):
         return False
-    p = pathlib.Path(directory) / f"{run_id}.json"
+    d = pathlib.Path(directory)
+    p = d / f"{run_id}.json"
     if p.exists():
         p.unlink()
+        (d / f"{run_id}.meta.json").unlink(missing_ok=True)   # drop the sidecar too
         return True
     return False
 

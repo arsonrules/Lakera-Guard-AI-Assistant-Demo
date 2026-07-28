@@ -337,8 +337,9 @@ DEMO_SCENARIOS = [
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
-    # Release the shared Guard connection pool on shutdown.
+    # Release the shared Guard + LLM connection pools on shutdown.
     await lakera.aclose()
+    await llm.aclose()
 
 
 app = FastAPI(title="Lakera Guard Demo", lifespan=lifespan)
@@ -1990,6 +1991,33 @@ async def api_delete_custom_doc(filename: str):
 
 
 # ── Frontend ─────────────────────────────────────────────────────────────────
+
+# ── Health probes ────────────────────────────────────────────────────────────
+# Unauthenticated and secret-free by design: container/orchestrator probes must
+# work before any key is configured. `/healthz` answers "is the process alive"
+# (liveness); `/readyz` answers "can it actually serve a guarded request"
+# (readiness) — which needs a Lakera key, since every checkpoint requires one.
+
+@app.get("/healthz")
+async def healthz():
+    return {"ok": True}
+
+
+@app.get("/readyz")
+async def readyz():
+    ready = bool(_lakera_key)
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={
+            "ok": ready,
+            # Booleans/labels only — never the key material itself.
+            "lakera_key_set": bool(_lakera_key),
+            "provider": _llm_config.get("provider"),
+            "model": _llm_config.get("model"),
+            "detail": None if ready else "Lakera Guard API key is not configured.",
+        },
+    )
+
 
 @app.get("/")
 async def serve_index():

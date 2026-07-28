@@ -1240,6 +1240,7 @@ def main(argv: list[str] | None = None) -> int:
                                               judge_config=judge_config)
             finally:
                 await lakera.aclose()   # release the shared Guard connection pool
+                await llm.aclose()      # …and the shared LLM/judge pool
                 ratelimit.reset()       # clear the process-wide throttle for later in-process runs
                 core._cli_knowledge_base = None   # clear the run-wide knowledge base
 

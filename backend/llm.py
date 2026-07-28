@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 import urllib.parse
@@ -5,6 +6,35 @@ import urllib.parse
 import httpx
 
 from backend import ratelimit
+
+
+# Shared, connection-pooled HTTP client — same rationale (and shape) as the one
+# in `lakera.py`. A judged one-shot run makes 2+ model calls per scenario, so a
+# fresh `httpx.AsyncClient()` per call would mean a TLS handshake per call and
+# dominate the run time. The client is NOT bound to a host — every call passes
+# the full URL — so switching providers just pools connections for the new host.
+_LIMITS = httpx.Limits(max_connections=128, max_keepalive_connections=64)
+_client: httpx.AsyncClient | None = None
+_client_lock = asyncio.Lock()
+
+
+async def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        async with _client_lock:            # guard against a concurrent first-use race
+            if _client is None or _client.is_closed:
+                # No default timeout: each call passes its own (60s completions,
+                # 10s probes), which overrides whatever is set here anyway.
+                _client = httpx.AsyncClient(limits=_LIMITS)
+    return _client
+
+
+async def aclose() -> None:
+    """Close the shared client (call on app shutdown / after a CLI run)."""
+    global _client
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+    _client = None
 
 
 def _in_container() -> bool:
@@ -198,14 +228,14 @@ async def complete_chat(
     """Post a fully-assembled message list and return the assistant's text."""
     endpoint = f"{_normalize_base_url(base_url)}/chat/completions"
     await ratelimit.acquire()          # share the global outbound-request rate cap
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            endpoint,
-            headers=_auth_headers(provider, api_key),
-            json={"model": model, "messages": messages},
-            timeout=60.0,
-        )
-        resp.raise_for_status()
+    client = await _get_client()
+    resp = await client.post(
+        endpoint,
+        headers=_auth_headers(provider, api_key),
+        json={"model": model, "messages": messages},
+        timeout=60.0,
+    )
+    resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"]
 
 
@@ -225,14 +255,14 @@ async def complete_with_tools(
     """
     endpoint = f"{_normalize_base_url(base_url)}/chat/completions"
     await ratelimit.acquire()          # share the global outbound-request rate cap
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            endpoint,
-            headers=_auth_headers(provider, api_key),
-            json={"model": model, "messages": messages, "tools": tools, "tool_choice": "auto"},
-            timeout=60.0,
-        )
-        resp.raise_for_status()
+    client = await _get_client()
+    resp = await client.post(
+        endpoint,
+        headers=_auth_headers(provider, api_key),
+        json={"model": model, "messages": messages, "tools": tools, "tool_choice": "auto"},
+        timeout=60.0,
+    )
+    resp.raise_for_status()
     msg = resp.json()["choices"][0]["message"]
     return {"content": msg.get("content") or "", "tool_calls": msg.get("tool_calls") or []}
 
@@ -268,12 +298,12 @@ async def test_connection(
     await ratelimit.acquire()          # share the global outbound-request rate cap
     start = time.monotonic()
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                endpoint,
-                headers=_auth_headers(provider, api_key),
-                timeout=10.0,
-            )
+        client = await _get_client()
+        resp = await client.get(
+            endpoint,
+            headers=_auth_headers(provider, api_key),
+            timeout=10.0,
+        )
         latency_ms = int((time.monotonic() - start) * 1000)
         if resp.status_code >= 400:
             return {

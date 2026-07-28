@@ -23,3 +23,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).status == 200 else sys.exit(1)"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    # A 100k-row one-shot run holds its dataset in memory; cap it so a large run
+    # can't take the host down. Raise if you routinely scan very large datasets.
+    mem_limit: 2g
