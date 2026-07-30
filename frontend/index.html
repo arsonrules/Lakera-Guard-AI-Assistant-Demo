@@ -1846,6 +1846,30 @@
   // document's base URL (some embeds/proxies break relative URL resolution,
   // causing "Failed to parse URL from /api/…").
   const API = window.location.origin;
+
+  /**
+   * Read a JSON API response, or explain WHY it wasn't JSON.
+   *
+   * `API` is window.location.origin, so every /api/* call goes to whatever
+   * server delivered this page. If that server isn't the backend (opened via a
+   * static file server / Live Server / the wrong port / file://), those calls
+   * come back as an HTML error page and a bare res.json() fails with the
+   * baffling: Unexpected token '<', "<!DOCTYPE "... is not valid JSON.
+   * Turn that into something the user can act on.
+   */
+  async function apiJson(res) {
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      const looksLikeHtml = text.trim().startsWith('<');
+      if (looksLikeHtml) {
+        throw new Error(t('api.notBackend', { origin: API }));
+      }
+      throw new Error(t('api.badResponse', { status: res.status }));
+    }
+  }
+
   let currentDocMode = 'clean';
   let isBusy = false;
   let guardEnabled = true;   // live Lakera master on/off for the chat
@@ -1930,6 +1954,8 @@
         'chat.blockedBadge': 'Blocked by Lakera Guard',
         'chat.errorPrefix': 'Error: ',
         'chat.networkError': 'Network error: ',
+        'api.notBackend': 'Cannot reach the API at {origin} — that address returned a web page, not the API. The page is not being served by the backend. Start it with: uvicorn backend.main:app  and open the URL it prints (e.g. http://localhost:8000).',
+        'api.badResponse': 'The server returned an unreadable response (HTTP {status}).',
         'insp.title': 'Security Trace',
         'cp0.cardLabel': 'CP0 — System Prompt Scan',
         'cp0.oneTime': 'One-time scan on prompt upload',
@@ -2314,6 +2340,8 @@
         'chat.blockedBadge': 'Lakera Guard에 의해 차단됨',
         'chat.errorPrefix': '오류: ',
         'chat.networkError': '네트워크 오류: ',
+        'api.notBackend': '{origin} 에서 API에 연결할 수 없습니다 — 해당 주소가 API가 아닌 웹 페이지를 반환했습니다. 이 페이지가 백엔드에서 제공되고 있지 않습니다. uvicorn backend.main:app 으로 실행한 뒤 출력된 URL(예: http://localhost:8000)을 여세요.',
+        'api.badResponse': '서버가 읽을 수 없는 응답을 반환했습니다 (HTTP {status}).',
         'insp.title': '보안 추적',
         'cp0.cardLabel': 'CP0 — 시스템 프롬프트 검사',
         'cp0.oneTime': '프롬프트 업로드 시 일회성 검사',
@@ -2677,6 +2705,8 @@
         'chat.blockedBadge': '已被 Lakera Guard 封鎖',
         'chat.errorPrefix': '錯誤：',
         'chat.networkError': '網路錯誤：',
+        'api.notBackend': '無法連線到 {origin} 的 API — 該位址回傳的是網頁而非 API。此頁面並非由後端提供。請執行 uvicorn backend.main:app，並開啟它顯示的網址（例如 http://localhost:8000）。',
+        'api.badResponse': '伺服器回傳了無法解析的內容（HTTP {status}）。',
         'insp.title': '安全追蹤',
         'cp0.cardLabel': 'CP0 — 系統提示詞掃描',
         'cp0.oneTime': '上傳提示詞時的一次性掃描',
@@ -3116,6 +3146,8 @@
         'chat.blockedBadge': '已被 Lakera Guard 拦截',
         'chat.errorPrefix': '错误：',
         'chat.networkError': '网络错误：',
+        'api.notBackend': '无法连接到 {origin} 的 API — 该地址返回的是网页而非 API。此页面并非由后端提供。请运行 uvicorn backend.main:app，并打开它显示的网址（例如 http://localhost:8000）。',
+        'api.badResponse': '服务器返回了无法解析的内容（HTTP {status}）。',
         'insp.title': '安全追踪',
         'cp0.cardLabel': 'CP0 — 系统提示词扫描',
         'cp0.oneTime': '上传提示词时的一次性扫描',
@@ -3555,6 +3587,8 @@
         'chat.blockedBadge': 'Lakera Guard によりブロック',
         'chat.errorPrefix': 'エラー：',
         'chat.networkError': 'ネットワークエラー：',
+        'api.notBackend': '{origin} の API に接続できません — そのアドレスは API ではなく Web ページを返しました。このページはバックエンドから配信されていません。uvicorn backend.main:app を実行し、表示された URL（例: http://localhost:8000）を開いてください。',
+        'api.badResponse': 'サーバーが解析できない応答を返しました（HTTP {status}）。',
         'insp.title': 'セキュリティ トレース',
         'cp0.cardLabel': 'CP0 — システムプロンプト スキャン',
         'cp0.oneTime': 'プロンプト アップロード時の一度きりのスキャン',
@@ -4554,12 +4588,12 @@
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await apiJson(res);
         thinking.remove();
         appendMessage('assistant', t('chat.errorPrefix') + err.detail, false);
         return;
       }
-      const data = await res.json();
+      const data = await apiJson(res);
       thinking.remove();
       let outMsg = data.message;
       if (data.blocked) outMsg = data.blocked_at === 1 ? t('fallback.cp1') : t('fallback.cp3');
@@ -5014,7 +5048,7 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(readLlmForm()),
       });
-      const d = await res.json();
+      const d = await apiJson(res);
       if (!res.ok) { showLlmStatus('error', d.detail || t('llm.unreachable', { err: '' })); return; }
       const at = d.base_url ? ' @ ' + d.base_url : '';
       if (d.ok) {
@@ -5067,7 +5101,7 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(readLlmForm()),
       });
-      const d = await res.json();
+      const d = await apiJson(res);
       if (!res.ok) { showLlmStatus('error', d.detail || t('llm.unreachable', { err: '' })); return; }
       const at = d.base_url ? ' @ ' + d.base_url : '';
       if (d.ok) {
