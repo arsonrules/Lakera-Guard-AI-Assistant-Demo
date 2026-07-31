@@ -4842,7 +4842,11 @@
   function toggleLlmPanel() {
     llmPanelOpen = !llmPanelOpen;
     document.getElementById('llm-panel').classList.toggle('open', llmPanelOpen);
-    if (llmPanelOpen && !currentLlmCfg) loadLlmConfig();
+    // Always re-fetch on open (like loadLakeraConfig below). The config is
+    // server-side state that the Guardrails Setup wizard, another tab, or the
+    // CLI can change after this page loaded — a `!currentLlmCfg` guard here
+    // meant the panel fetched once ever and then showed stale startup values.
+    if (llmPanelOpen) loadLlmConfig();
     if (llmPanelOpen) loadLakeraConfig();
   }
 
