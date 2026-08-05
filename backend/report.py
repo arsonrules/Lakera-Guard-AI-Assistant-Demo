@@ -6,7 +6,7 @@ Pure functions over the already-computed result rows + summary — no I/O — so
 output rides along in the same payload the UI, HTML report, and JSON export use.
 """
 
-from backend import classify
+from backend import classify, frameworks
 
 # Concise remediation per OWASP category, shown against findings and dashboard rows.
 CATEGORY_REMEDIATION: dict[str, str] = {
@@ -193,4 +193,7 @@ def build(results: list[dict], summary: dict, req) -> dict:
     out = {"posture": posture, "categories": cat_list, "findings": findings}
     if classification:
         out["classification"] = classification
+    # Which regulatory/standard controls this run evidences (and where the gaps
+    # are). Derived from cat_list, so it costs nothing extra to compute.
+    out["compliance"] = frameworks.coverage(out)
     return out

@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lakera_demo")
 
-from backend import assertions, attacker, chat, classify, datasets, history, judge, lakera, llm, logging_setup, rag, report, scenarios, strategies, tools
+from backend import assertions, attacker, chat, classify, datasets, frameworks, history, judge, lakera, llm, logging_setup, rag, report, scenarios, strategies, tools
 from backend.config import ENV_PATH, settings
 
 # Configure logging before anything else emits a record.
@@ -1128,6 +1128,17 @@ async def api_scenario_categories(lang: str | None = None):
     # `lang` localizes the scenario prompt text so a fired scenario reads in the
     # selected UI language; labels/descriptions are localized client-side.
     return scenarios.localized_categories(lang)
+
+
+@app.get("/api/frameworks")
+async def api_frameworks():
+    """The compliance mapping table, so the UI and CLI share one source of truth."""
+    return {
+        "frameworks": frameworks.FRAMEWORKS,
+        "mappings": frameworks.MAPPINGS,
+        "verified": frameworks.VERIFIED,
+        "disclaimer": frameworks.DISCLAIMER,
+    }
 
 
 @app.get("/api/strategies")
