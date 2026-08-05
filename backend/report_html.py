@@ -245,6 +245,7 @@ def render(payload: dict) -> str:
         body.append("".join(row) + '</div>')
 
     body.append(_category_dashboard(T, sec, s.get("compared")))
+    body.append(_compliance_section(T, sec.get("compliance")))
     body.append(_classification(T, sec, _fam_class))
     body.append(_run_config(T, s.get("run_config")))
     body.append(_security_section(T, sec, _sev_label, i18n))
@@ -270,6 +271,69 @@ def _cp_mini(T, trace) -> str:
         out.append(f'<i class="s-{_e(status)}" title="{_e(T(labels[i]))} — {_e(status)}">'
                    f'<span class="cn">{i + 1}</span>{_ic(_CP_STATUS_ICON.get(status, "minus"))}</i>')
     return '<span class="os-cp-mini">' + "".join(out) + '</span>'
+
+
+# Verdict → (css class, icon, label). `no_evidence` deliberately uses the neutral
+# "skipped" palette, never a pass colour: a control the run didn't exercise is
+# unknown, and colouring it green would be the most misleading thing here.
+_VERDICT_META = {
+    "evidenced":   ("oc-blocked",        "check",          "Evidenced"),
+    "partial":     ("oc-false_positive", "alert-triangle", "Partial"),
+    "gap":         ("oc-not_blocked",    "alert-triangle", "Gap"),
+    "no_evidence": ("oc-skipped",        "minus",          "No evidence"),
+}
+
+
+def _compliance_section(T, compliance) -> str:
+    """
+    Which regulatory / standards controls this run evidences, and where the gaps
+    are. Collapsed by default — it sits under the vulnerability dashboard it
+    explains, and only an auditor-minded reader opens it.
+    """
+    if not compliance or not compliance.get("frameworks"):
+        return ""
+    totals = compliance.get("totals", {})
+    head_sub = (f'{compliance.get("control_count", 0)} controls · '
+                f'{totals.get("evidenced", 0)} evidenced · {totals.get("gap", 0)} gaps')
+
+    h = ['<details class="os-dash-collapsible"><summary>'
+         f'{_e(T("os.complianceTitle"))} <span class="os-catdash-sub">{_e(head_sub)}</span>'
+         '</summary><div class="os-compliance">']
+
+    if not compliance.get("verified"):
+        h.append(f'<div class="os-clsnote">{_e(compliance.get("disclaimer", ""))}</div>')
+
+    for fw in compliance["frameworks"]:
+        h.append('<div class="os-acc"><div class="os-acc-head">'
+                 f'<span class="os-acc-name">{_e(fw["name"])}</span>'
+                 f'<span class="os-acc-count mono">{fw["evidenced"]}/{fw["total"]} '
+                 f'{_e(T("os.complianceEvidenced"))}</span></div>'
+                 '<div class="os-acc-body">')
+        for c in fw["controls"]:
+            cls, ic, label = _VERDICT_META.get(c["verdict"], _VERDICT_META["no_evidence"])
+            rate = c.get("detection_rate")
+            # Bar only where there IS evidence; an unexercised control gets an
+            # em dash, not an empty bar that could read as 0%.
+            if c["attacks"]:
+                bar = ('<div class="os-catbar">'
+                       f'<span class="seg blk" style="width:{rate or 0:.2f}%"></span></div>')
+                value = f'<span class="bc mono">{_pct(rate)}</span>'
+            else:
+                bar = '<div class="os-catbar"></div>'
+                value = '<span class="bc mono">—</span>'
+            ev = " · ".join(_e(e) for e in c.get("evidence", []))
+            h.append(
+                '<div class="os-ctlrow">'
+                f'<div class="os-ctlref mono">{_e(c["ref"])}</div>'
+                f'<div class="os-ctltitle">{_e(c["title"])}'
+                + (f'<span class="os-ctlvia">via {ev}</span>' if ev else "")
+                + '</div>'
+                f'<div class="os-ctlbar">{bar}</div>{value}'
+                f'<span class="os-outcome {cls}">{_ic(ic)}<span>{_e(label)}</span></span>'
+                '</div>')
+        h.append('</div></div>')
+    h.append('</div></details>')
+    return "".join(h)
 
 
 def _category_dashboard(T, sec, compared) -> str:
@@ -413,7 +477,7 @@ def _security_section(T, sec, sev_label, i18n) -> str:
                     if f.get("recommendation") else "") + '</div></div>')
     if sec.get("categories"):
         h.append(f'<details class="os-dash-collapsible"><summary class="sec-title">{_e(T("os.secDashboard"))}</summary>'
-                 '<table class="sec-dash"><thead><tr>'
+                 '<div class="os-table-wrap"><table class="sec-dash"><thead><tr>'
                  f'<th>{_e(T("os.dashCategory"))}</th><th>{_e(T("os.dashAttacks"))}</th>'
                  f'<th>{_e(T("os.dashDetection"))}</th><th>{_e(T("os.dashSeverity"))}</th>'
                  f'<th>{_e(T("os.secRecommend"))}</th></tr></thead><tbody>')
@@ -427,7 +491,7 @@ def _security_section(T, sec, sev_label, i18n) -> str:
                      f'<td class="mono">{_e(det)}{extra}</td>'
                      f'<td><span class="sev-chip sv-{_e(c.get("severity"))}">{_e(_sevlbl(T, c.get("severity")))}</span></td>'
                      f'<td class="rem">{"—" if c.get("severity") == "secure" else _e(c.get("remediation"))}</td></tr>')
-        h.append('</tbody></table></details>')
+        h.append('</tbody></table></div></details>')
     h.append('</div>')
     return "".join(h)
 

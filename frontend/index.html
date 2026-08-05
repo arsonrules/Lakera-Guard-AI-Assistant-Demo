@@ -1262,6 +1262,12 @@
     .os-catdash { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel); padding: 13px 15px; margin-bottom: 16px; }
     .os-catdash-title { font-family: 'Lexend', sans-serif; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 11px; }
     .os-catrow { display: grid; grid-template-columns: minmax(120px, 1.6fr) minmax(120px, 3fr) auto; gap: 12px; align-items: center; margin-bottom: 7px; }
+    @media (max-width: 640px) {
+      /* 120 + 120 + a nowrap stat cluster doesn't fit a phone — stack instead of
+         pushing the whole page sideways. */
+      .os-catrow { grid-template-columns: 1fr; gap: 4px; }
+      .os-catstat { justify-content: flex-start; }
+    }
     .os-catname { font-size: 0.8rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .os-catbar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--skip-bg); }
     .os-catbar .seg { height: 100%; }
@@ -1274,6 +1280,42 @@
     .os-catbarrow .bl.bad { color: var(--block); }
     .os-catbarrow .bc { font-size: 0.62rem; color: var(--muted); white-space: nowrap; min-width: 56px; text-align: right; }
     .os-catdash-sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); font-size: 0.62rem; }
+
+    /* ── Compliance framework mapping ──
+       Which regulatory / standards controls a run evidences. Composed from the
+       existing dashboard vocabulary; the only new idea is the per-control row. */
+    .os-compliance { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+    .os-acc-head {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+      padding: 8px 11px; border-bottom: 1px solid var(--border-soft);
+    }
+    .os-acc-name {
+      font-family: 'Lexend', sans-serif; font-size: 0.72rem; font-weight: 600;
+      letter-spacing: 0.04em; text-transform: uppercase; color: var(--heading);
+    }
+    .os-acc-count { font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
+    /* [ref | title | bar | value | verdict] — a bullet-chart row: the numeric
+       value is always rendered as text, never hover-only. */
+    .os-ctlrow {
+      display: grid; grid-template-columns: 92px minmax(0, 1fr) 90px 52px auto;
+      gap: 9px; align-items: center; padding: 3px 0;
+    }
+    .os-ctlref { font-size: 0.7rem; color: var(--brand); white-space: nowrap; }
+    .os-ctltitle { font-size: 0.78rem; color: var(--text); min-width: 0; }
+    .os-ctlvia {
+      display: block; font-family: 'JetBrains Mono', monospace;
+      font-size: 0.64rem; color: var(--muted); margin-top: 1px;
+    }
+    .os-ctlbar { min-width: 0; }
+    .os-ctlrow .bc { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--muted); text-align: right; }
+    /* A control the run never exercised: neutral, never a pass colour. */
+    .oc-skipped { color: var(--skip); border-color: var(--skip-br); background: var(--skip-bg); }
+    @media (max-width: 640px) {
+      /* Stack so clause titles never truncate on a phone. */
+      .os-ctlrow { grid-template-columns: 1fr auto; row-gap: 2px; }
+      .os-ctlref { grid-column: 1 / -1; }
+      .os-ctlbar { grid-column: 1; }
+    }
     .os-catstat { display: flex; gap: 8px; align-items: center; justify-content: flex-end; font-size: 0.74rem; color: var(--muted); white-space: nowrap; }
     .os-catstat .sev-chip { font-family: 'Lexend', sans-serif; font-size: 0.58rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border: 1px solid; border-radius: 999px; }
     .os-catlegend { display: flex; gap: 16px; margin-top: 10px; font-size: 0.7rem; color: var(--muted); }
@@ -2203,6 +2245,8 @@
         'hist.regressed': 'regressed',
         'hist.noChange': 'No metric changes.',
         'os.secFindings': 'Findings & recommendations',
+        'os.complianceTitle': 'Compliance mapping',
+        'os.complianceEvidenced': 'evidenced',
         'os.secDashboard': 'Vulnerability dashboard (by OWASP category)',
         'os.secRecommend': 'Recommendation',
         'os.judgeModelLabel': 'Judge model',
@@ -2529,6 +2573,8 @@
         'hist.diffLatest': '최근 2개 비교',
         'hist.empty': '아직 저장된 실행이 없습니다.',
         'os.secFindings': '발견 사항 및 권장 사항',
+        'os.complianceTitle': '규정 준수 매핑',
+        'os.complianceEvidenced': '충족',
         'os.secDashboard': '취약점 대시보드 (OWASP 카테고리별)',
         'os.secRecommend': '권장 사항',
         'os.judgeModelLabel': '평가 모델',
@@ -2954,6 +3000,8 @@
         'hist.regressed': '已回歸',
         'hist.noChange': '無指標變化。',
         'os.secFindings': '發現與建議',
+        'os.complianceTitle': '法規對應',
+        'os.complianceEvidenced': '已佐證',
         'os.secDashboard': '弱點儀表板（依 OWASP 類別）',
         'os.secRecommend': '建議',
         'os.dashCategory': '類別',
@@ -3395,6 +3443,8 @@
         'hist.regressed': '已回归',
         'hist.noChange': '无指标变化。',
         'os.secFindings': '发现与建议',
+        'os.complianceTitle': '法规对应',
+        'os.complianceEvidenced': '已佐证',
         'os.secDashboard': '漏洞仪表板（按 OWASP 类别）',
         'os.secRecommend': '建议',
         'os.dashCategory': '类别',
@@ -3836,6 +3886,8 @@
         'hist.regressed': 'リグレッション',
         'hist.noChange': '指標の変化なし。',
         'os.secFindings': '所見と推奨',
+        'os.complianceTitle': 'コンプライアンス対応',
+        'os.complianceEvidenced': '実証済み',
         'os.secDashboard': '脆弱性ダッシュボード（OWASP カテゴリ別）',
         'os.secRecommend': '推奨',
         'os.dashCategory': 'カテゴリ',
@@ -6096,7 +6148,7 @@
     // Per-OWASP dashboard table — collapsed by default to save space (req 2).
     if (sec.categories && sec.categories.length) {
       h += `<details class="os-dash-collapsible"><summary class="sec-title">${esc(t('os.secDashboard'))}</summary>`;
-      h += '<table class="sec-dash"><thead><tr>'
+      h += '<div class="os-table-wrap"><table class="sec-dash"><thead><tr>'
         + `<th>${esc(t('os.dashCategory'))}</th>`
         + `<th>${esc(t('os.dashAttacks'))}</th>`
         + `<th>${esc(t('os.dashDetection'))}</th>`
@@ -6115,7 +6167,7 @@
           + `<td class="rem">${c.severity === 'secure' ? '—' : esc(c.remediation || '')}</td>`
           + '</tr>';
       });
-      h += '</tbody></table></details>';
+      h += '</tbody></table></div></details>';
     }
     h += '</div>';
     return h;
