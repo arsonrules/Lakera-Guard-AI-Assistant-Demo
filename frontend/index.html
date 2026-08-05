@@ -4553,7 +4553,8 @@
       || scenario.goal
       || '';
     if (!prompt) return;
-    await sendMessage(prompt, scenario.simulateOutput);
+    await sendMessage(prompt, scenario.simulateOutput,
+                      currentCategory ? currentCategory.id : null);
   }
 
   function showScenarioInfo(s) {
@@ -4622,7 +4623,7 @@
   }
 
   // ── Core send ────────────────────────────────────────────────────────────
-  async function sendMessage(message, simulateOutput) {
+  async function sendMessage(message, simulateOutput, categoryId) {
     if (isBusy) return;
     isBusy = true;
     document.getElementById('send-btn').disabled = true;
@@ -4634,6 +4635,11 @@
 
     try {
       const body = { message, guard_enabled: guardEnabled, checkpoints: cpEnabled };
+      // Tell the Risk Map which catalogue category this turn came from. Only set
+      // when a scenario was fired — a free-typed message is left unattributed so
+      // the server classifies it by content rather than mislabelling it with
+      // whatever category happened to be selected in the bar above.
+      if (categoryId) body.category_id = categoryId;
       if (simulateOutput) body.simulate_output = simulateOutput;
       const res = await fetch(API + '/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

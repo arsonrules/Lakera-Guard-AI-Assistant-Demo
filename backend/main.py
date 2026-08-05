@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import ipaddress
 import json
 import logging
@@ -10,6 +11,7 @@ import secrets
 import sys
 import urllib.parse
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -72,6 +74,20 @@ _custom_system_prompt: str | None = None  # None = use built-in default
 # into each one-shot LLM call as extra context. None = clean mode (no injection),
 # preserving the exact current execution path when the flag is absent.
 _cli_knowledge_base: list[str] | None = None
+
+# ── Live session ledger ───────────────────────────────────────────────────────
+# One record per guarded chat turn, so the Risk Map can show what this session
+# actually exercised. Bounded: a long demo must not grow memory without limit.
+#
+# Deliberately stores NO prompt or response text. This app handles adversarial
+# content and PII fixtures, and `LOG_PROMPTS` defaults to false for exactly that
+# reason — the same rule applies here. Only outcomes and metadata are kept.
+#
+# Per-process, like the rest of the runtime config, so it inherits the
+# single-worker constraint (see README "Deployment & Security Boundary"). It is a
+# session view, not an audit log.
+SESSION_EVENT_LIMIT = 500
+_session_events: collections.deque = collections.deque(maxlen=SESSION_EVENT_LIMIT)
 
 
 def _init_llm_config() -> dict:
@@ -496,6 +512,10 @@ class CheckpointProjects(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(max_length=16_000)
     simulate_output: str | None = Field(default=None, max_length=16_000)
+    # Optional: the catalogue category this message came from. Sent by the UI when
+    # a scenario button is fired so the Risk Map attributes the turn exactly;
+    # free-typed messages omit it and fall back to content classification.
+    category_id: str | None = Field(default=None, max_length=40)
     # When False, bypass Lakera entirely (talk straight to the model) — the live
     # "Guard OFF" toggle. No Lakera key required in that mode.
     guard_enabled: bool = True
@@ -638,6 +658,11 @@ async def api_chat(req: ChatRequest):
                 system_prompt=_custom_system_prompt,
                 llm_config=_llm_config,
             )
+        # Feed the Risk Map. Never lets a ledger problem break a chat turn.
+        try:
+            _record_session_event(req, result)
+        except Exception:                       # noqa: BLE001 — telemetry is not the feature
+            logger.exception("failed to record session event")
         return result
     except chat.LakeraNotConfigured:
         raise HTTPException(status_code=400, detail=LAKERA_NOT_SET_MSG)
@@ -1128,6 +1153,99 @@ async def api_scenario_categories(lang: str | None = None):
     # `lang` localizes the scenario prompt text so a fired scenario reads in the
     # selected UI language; labels/descriptions are localized client-side.
     return scenarios.localized_categories(lang)
+
+
+_CATEGORY_BY_ID = {c["id"]: c for c in CATEGORIES}
+# classify.py returns OWASP codes like "LLM01:2025"; map them back to catalogue ids.
+_ID_BY_OWASP = {c["owaspId"]: c["id"] for c in CATEGORIES if c.get("owaspId")}
+
+
+def _attribute_category(req: ChatRequest) -> str | None:
+    """
+    Which OWASP category a chat turn belongs to.
+
+    An explicit `category_id` (the UI fires a catalogue scenario) is authoritative.
+    Otherwise fall back to content classification, which is heuristic — good
+    enough to populate a session view, and the only option for a free-typed message.
+    """
+    if req.category_id and req.category_id in _CATEGORY_BY_ID:
+        return req.category_id
+    code = (classify.classify(req.message) or {}).get("code")
+    return _ID_BY_OWASP.get(code)
+
+
+def _record_session_event(req: ChatRequest, result: dict) -> None:
+    """Append one outcome record for the Risk Map. Never stores message text."""
+    trace = result.get("trace") or {}
+    latency = sum((trace.get(cp) or {}).get("latency_ms") or 0 for cp in ("cp1", "cp2", "cp3"))
+    cats: list[str] = []
+    for cp in ("cp1", "cp2", "cp3"):
+        cats.extend((trace.get(cp) or {}).get("categories") or [])
+    _session_events.append({
+        "id": logging_setup.request_id_var.get() or "",
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "category_id": _attribute_category(req),
+        "guard_enabled": req.guard_enabled,
+        "blocked": bool(result.get("blocked")),
+        "blocked_at": result.get("blocked_at"),
+        "flagged_categories": sorted(set(cats)),
+        "latency_ms": latency or None,
+    })
+
+
+@app.get("/api/session/risks")
+async def api_session_risks():
+    """
+    What this session actually exercised, per OWASP category — the Risk Map.
+
+    Severity is DERIVED from observed outcomes (via the same model the one-shot
+    report uses), not hard-coded per category: a category with no activity is
+    unknown, not critical.
+    """
+    events = list(_session_events)
+    by_cat: dict[str, dict] = {}
+    for e in events:
+        cid = e.get("category_id")
+        if not cid:
+            continue
+        c = by_cat.setdefault(cid, {"attacks": 0, "blocked": 0, "not_blocked": 0,
+                                    "breaches": 0, "evasions": 0, "effective_evasions": 0,
+                                    "resisted": 0, "judged": False})
+        c["attacks"] += 1
+        c["blocked" if e["blocked"] else "not_blocked"] += 1
+
+    total = sum(c["attacks"] for c in by_cat.values()) or 0
+    cards = []
+    for cat in CATEGORIES:
+        if cat["id"] == "safe":
+            continue
+        c = by_cat.get(cat["id"])
+        n = c["attacks"] if c else 0
+        cards.append({
+            "id": cat["id"], "owasp_id": cat.get("owaspId"), "name": cat.get("owaspName"),
+            "events": n,
+            "blocked": c["blocked"] if c else 0,
+            "flagged": c["blocked"] if c else 0,
+            "share": round(n / total * 100, 1) if total else 0.0,
+            "active": bool(n),
+            # No activity => no verdict. Never invent a severity we didn't observe.
+            "severity": report._cat_severity(c) if c else None,
+        })
+    return {
+        "events": len(events),
+        "limit": SESSION_EVENT_LIMIT,
+        "active": sum(1 for c in cards if c["active"]),
+        "blocked": sum(1 for e in events if e["blocked"]),
+        "allowed": sum(1 for e in events if not e["blocked"]),
+        "categories": cards,
+        "activity": list(reversed(events))[:100],   # newest first, no message text
+    }
+
+
+@app.delete("/api/session/risks")
+async def api_clear_session_risks():
+    _session_events.clear()
+    return {"cleared": True, "events": 0}
 
 
 @app.get("/api/frameworks")
