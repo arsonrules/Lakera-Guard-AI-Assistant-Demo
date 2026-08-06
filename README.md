@@ -200,6 +200,15 @@ Every response carries an `X-Request-ID` (an inbound one is preserved, so traces
 proxies); it appears on every log line emitted while handling that request, so a user can
 quote the id from a failure.
 
+**No third-party requests.** The UI makes zero outbound calls to anything but your own
+LLM provider and Lakera Guard — webfonts are vendored into `frontend/fonts/`, so the CSP
+allows no remote origin at all (`default-src 'self'`). The app runs unchanged in an
+air-gapped network. Refresh the fonts only if a family or weight changes:
+
+```bash
+python tools/fetch_fonts.py
+```
+
 **Reproducible builds.** The image installs from the hash-pinned `requirements.lock`
 (resolved for Python 3.12, matching the base image). Regenerate after changing
 `requirements.txt`:

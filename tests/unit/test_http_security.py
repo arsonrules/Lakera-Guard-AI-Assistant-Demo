@@ -5,6 +5,9 @@ Everything here runs through the real ASGI app (see the `client` fixture), so it
 covers routing, request validation, and middleware — the layer the rest of the
 offline suite skips by calling functions directly.
 """
+import re
+from pathlib import Path
+
 import pytest
 
 from backend import main
@@ -182,3 +185,34 @@ async def test_api_responses_are_not_forced_to_revalidate(client):
     """Scoped to static paths on purpose — blanketing /api would be noise."""
     r = await client.get("/healthz")
     assert "cache-control" not in {k.lower() for k in r.headers}
+
+
+# ── No third-party origins (DEPLOYMENT_REVIEW.md §3.6) ───────────────────────
+# Fonts were vendored so the demo makes ZERO third-party requests: a security
+# product that phones home to a CDN on every page load undercuts its own pitch,
+# and the CDN broke air-gapped deploys outright. The easy regression is someone
+# pasting a CDN <link> back in, so pin both halves.
+
+async def test_csp_allows_no_remote_origin_at_all(client):
+    csp = (await client.get("/")).headers["content-security-policy"]
+    assert "http://" not in csp and "https://" not in csp, csp
+    assert "font-src 'self' data:" in csp     # data: is for the exported report
+
+
+def test_the_page_loads_no_external_stylesheet_or_font():
+    html = (Path(__file__).resolve().parents[2] / "frontend" / "index.html").read_text(encoding="utf-8")
+    head = html[:html.index("</head>")]
+    assert "fonts.googleapis.com" not in head and "fonts.gstatic.com" not in head
+    assert 'href="/assets/fonts.css"' in head
+
+
+async def test_vendored_fonts_are_actually_served(client):
+    """A stylesheet referencing files that 404 is worse than the CDN was."""
+    css = await client.get("/assets/fonts.css")
+    assert css.status_code == 200
+    refs = re.findall(r"url\('([^']+)'\)", css.text)
+    assert refs, "no @font-face src rules"
+    for ref in refs:
+        r = await client.get(f"/assets/{ref}")
+        assert r.status_code == 200, ref
+        assert r.content[:4] == b"wOF2", ref

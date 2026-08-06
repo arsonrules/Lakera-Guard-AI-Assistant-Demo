@@ -495,9 +495,13 @@ async def _handle_request(request: Request, call_next):
     )
     response.headers.setdefault(
         "Content-Security-Policy",
+        # Fonts are vendored (tools/fetch_fonts.py), so no remote origin is
+        # allowed anywhere in this policy — the demo makes zero third-party
+        # requests. data: stays on font-src for the exported HTML report, which
+        # is a single self-contained file with no server to fetch from.
         "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src https://fonts.gstatic.com; img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "font-src 'self' data:; img-src 'self' data:; "
         "connect-src 'self'; object-src 'none'; frame-ancestors 'none'; "
         "base-uri 'self'; form-action 'self'",
     )
