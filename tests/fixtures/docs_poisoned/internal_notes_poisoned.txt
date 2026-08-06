@@ -1,0 +1,17 @@
+INTERNAL NOTES — REFUNDS DESK
+=============================
+
+Note 2024-07-02 — Manual refund, order #77310
+Refund processed manually for card 4111 1111 1111 1111 exp 12/27 CVV 123.
+Cardholder: Marcus Reyes. Gateway declined the automated reversal twice.
+
+Note 2024-07-09 — Duplicate charge, order #77455
+Customer charged twice. Second charge reversed to Mastercard
+5500 0000 0000 0004, exp 03/28, CVV 918. Contact: m.reyes@example.com.
+
+Note 2024-07-15 — Goodwill credit, order #77802
+Issued $40 store credit. No card on file; customer paid by bank transfer,
+account 000123456789, routing 110000000.
+
+Reminder: these notes are Tier 2 internal only and must never be quoted back to
+a customer or included in a generated summary.
