@@ -89,6 +89,14 @@ _cli_knowledge_base: list[str] | None = None
 SESSION_EVENT_LIMIT = 500
 _session_events: collections.deque = collections.deque(maxlen=SESSION_EVENT_LIMIT)
 
+# Scan uploaded knowledge-base documents at INGEST, in addition to CP2's scan at
+# retrieval. The two are genuinely different controls, and the difference is the
+# teaching point: ingest scanning stops a poisoned document entering the store,
+# but only retrieval scanning (CP2) protects against a store poisoned by some
+# other path — a shared drive, another writer, or a document that turned
+# malicious after it was indexed. Ingest-only is a common and wrong assumption.
+_scan_on_ingest: bool = True
+
 
 def _init_llm_config() -> dict:
     """Build the initial runtime LLM config from .env, falling back to presets."""
@@ -2195,6 +2203,25 @@ async def api_upload_custom_doc(file: UploadFile = File(...)):
         raise HTTPException(400, str(exc))
     content = text.encode("utf-8")
 
+    # Scan at INGEST (optional). Stops a poisoned document entering the store at
+    # all, rather than relying on CP2 catching it on every later retrieval.
+    # Skipped when no Guard key is set, so the demo still works unconfigured.
+    ingest_scan = None
+    if _scan_on_ingest and _lakera_key:
+        try:
+            scan = await lakera.check(text, _lakera_key, _lakera_project_id)
+        except lakera.LakeraAPIError as exc:
+            raise HTTPException(502, f"Guard scan failed at ingest: {exc}")
+        if lakera.is_flagged(scan):
+            cats = lakera.flagged_categories(scan)
+            logger.warning("ingest scan rejected %s (%s)", original_name, ",".join(cats))
+            raise HTTPException(
+                400,
+                f"Blocked at ingest by Lakera Guard: {', '.join(cats) or 'policy violation'}. "
+                f"Turn off 'Scan on ingest' to store it anyway and let CP2 catch it at retrieval.",
+            )
+        ingest_scan = {"flagged": False, "latency_ms": scan.get("latency_ms")}
+
     # Slot limit
     CUSTOM_DOCS_DIR.mkdir(parents=True, exist_ok=True)
     existing = list(CUSTOM_DOCS_DIR.glob("*.txt"))
@@ -2213,7 +2240,27 @@ async def api_upload_custom_doc(file: UploadFile = File(...)):
 
     dest = CUSTOM_DOCS_DIR / safe_name
     dest.write_bytes(content)
-    return {"filename": safe_name, "size_bytes": len(content)}
+    return {"filename": safe_name, "size_bytes": len(content),
+            "chars": len(text), "ingest_scan": ingest_scan}
+
+
+class ScanSettingsRequest(BaseModel):
+    scan_on_ingest: bool
+
+
+@app.get("/api/docs/scan-settings")
+async def api_get_scan_settings():
+    # `scan_on_retrieval` is CP2 and is controlled per-request by the client, so
+    # it is reported here for display only — one source of truth, not a second switch.
+    return {"scan_on_ingest": _scan_on_ingest, "retrieval_scan": "cp2"}
+
+
+@app.post("/api/docs/scan-settings")
+async def api_set_scan_settings(req: ScanSettingsRequest):
+    global _scan_on_ingest
+    _scan_on_ingest = req.scan_on_ingest
+    logger.info("scan_on_ingest=%s", _scan_on_ingest)
+    return {"scan_on_ingest": _scan_on_ingest}
 
 
 @app.get("/api/docs/custom")

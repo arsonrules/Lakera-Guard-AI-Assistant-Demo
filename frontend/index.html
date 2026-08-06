@@ -1281,6 +1281,21 @@
     .os-catbarrow .bc { font-size: 0.62rem; color: var(--muted); white-space: nowrap; min-width: 56px; text-align: right; }
     .os-catdash-sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); font-size: 0.62rem; }
 
+    /* Custom-docs scan pipeline: the two scan stages shown in sequence. */
+    .cdocs-scanflow {
+      display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+      padding: 8px 0 4px; font-size: 0.72rem;
+    }
+    .cdocs-scanflow .pf-node { padding: 4px 9px; font-size: 0.66rem; }
+    .cdocs-scanflow .os-judge-toggle { font-size: 0.72rem; }
+    .cdocs-scanhint {
+      font-size: 0.75rem; line-height: 1.5; color: var(--redact);
+      background: var(--redact-bg); border: 1px solid var(--redact-br);
+      border-radius: var(--radius-sm); padding: 6px 10px; margin: 4px 0 8px;
+      display: none;
+    }
+    .cdocs-scanhint.show { display: block; }
+
     /* ── Risk Map (live session) ── */
     .rm-session { font-size: 0.72rem; color: var(--muted); margin-right: auto; }
     .rm-cards {
@@ -1646,6 +1661,25 @@
       <span class="cdocs-title"><svg class="ic"><use href="#i-folder"></use></svg><span data-i18n="cdocs.title">Custom RAG Docs — Scanned by Lakera on Retrieval</span></span>
       <span class="doc-constraints" data-i18n="cdocs.constraints">PDF · DOCX · TXT · MD · CSV · JSON · max 2 MB / file · max 10 files</span>
     </div>
+    <!-- The two scan stages as ONE pipeline: seeing them in sequence is the point.
+         Scanning at ingest keeps a poisoned doc out of the store; only the
+         retrieval scan (CP2) still protects you when the store is poisoned some
+         other way. -->
+    <div class="cdocs-scanflow">
+      <span class="pf-node io" data-i18n="cdocs.stageUpload">Upload</span>
+      <span class="pf-arrow">›</span>
+      <label class="os-judge-toggle" data-i18n-title="cdocs.ingestTitle" title="Scan each document with Lakera Guard as it is uploaded">
+        <input type="checkbox" id="cdocs-scan-ingest" checked onchange="setScanOnIngest(this.checked)" />
+        <span data-i18n="cdocs.stageIngest">Scan on ingest</span>
+      </label>
+      <span class="pf-arrow">›</span>
+      <span class="pf-node io" data-i18n="cdocs.stageStore">Store</span>
+      <span class="pf-arrow">›</span>
+      <span class="pf-node cp" id="cdocs-stage-cp2" data-i18n="cdocs.stageRetrieval">CP2 · scan on retrieval</span>
+      <span class="pf-arrow">›</span>
+      <span class="pf-node io" data-i18n="pf.llm">LLM</span>
+    </div>
+    <div class="cdocs-scanhint" id="cdocs-scan-hint"></div>
     <div id="cdocs-file-list" class="cdocs-file-list">
       <span class="cdocs-empty" data-i18n="cdocs.empty">No files uploaded yet.</span>
     </div>
@@ -2024,6 +2058,13 @@
         'cp0.securityIssue': 'security issue',
         'cdocs.title': 'Custom RAG Docs — Scanned by Lakera on Retrieval',
         'cdocs.constraints': 'PDF · DOCX · TXT · MD · CSV · JSON · max 2 MB / file · max 10 files',
+        'cdocs.stageUpload': 'Upload',
+        'cdocs.stageIngest': 'Scan on ingest',
+        'cdocs.stageStore': 'Store',
+        'cdocs.stageRetrieval': 'CP2 · scan on retrieval',
+        'cdocs.ingestTitle': 'Scan each document with Lakera Guard as it is uploaded',
+        'cdocs.hintNoIngest': 'Scan on ingest is off — a poisoned document will be stored. CP2 still scans it on retrieval.',
+        'cdocs.hintNoRetrieval': 'CP2 is off — documents poisoned after upload will reach the model unscanned. Scanning at ingest alone is not enough.',
         'cdocs.empty': 'No files uploaded yet.',
         'cdocs.emptyHint': 'No files uploaded yet. Click "Upload .txt" to add one.',
         'cdocs.uploadTxtTitle': 'Upload a .txt file (max 50 KB)',
@@ -2433,6 +2474,13 @@
         'cp0.securityIssue': '보안 문제',
         'cdocs.title': '사용자 RAG 문서 — 검색 시 Lakera가 검사',
         'cdocs.constraints': 'PDF · DOCX · TXT · MD · CSV · JSON · 파일당 최대 2 MB · 최대 10개',
+        'cdocs.stageUpload': '업로드',
+        'cdocs.stageIngest': '업로드 시 검사',
+        'cdocs.stageStore': '저장',
+        'cdocs.stageRetrieval': 'CP2 · 검색 시 검사',
+        'cdocs.ingestTitle': '문서를 업로드할 때 Lakera Guard로 검사합니다',
+        'cdocs.hintNoIngest': '업로드 시 검사가 꺼져 있습니다 — 오염된 문서가 저장됩니다. CP2가 검색 시 검사합니다.',
+        'cdocs.hintNoRetrieval': 'CP2가 꺼져 있습니다 — 업로드 후 오염된 문서가 검사 없이 모델에 전달됩니다. 업로드 시 검사만으로는 충분하지 않습니다.',
         'cdocs.empty': '아직 업로드된 파일이 없습니다.',
         'cdocs.emptyHint': '아직 업로드된 파일이 없습니다. ".txt 업로드"를 클릭하세요.',
         'cdocs.uploadTxtTitle': '.txt 파일 업로드 (최대 50 KB)',
@@ -2821,6 +2869,13 @@
         'cp0.securityIssue': '安全問題',
         'cdocs.title': '自訂 RAG 文件 — 擷取時由 Lakera 掃描',
         'cdocs.constraints': 'PDF · DOCX · TXT · MD · CSV · JSON · 每檔最大 2 MB · 最多 10 個檔案',
+        'cdocs.stageUpload': '上傳',
+        'cdocs.stageIngest': '上傳時掃描',
+        'cdocs.stageStore': '儲存',
+        'cdocs.stageRetrieval': 'CP2 · 擷取時掃描',
+        'cdocs.ingestTitle': '文件上傳時以 Lakera Guard 掃描',
+        'cdocs.hintNoIngest': '上傳時掃描已關閉 — 被污染的文件會被儲存。CP2 仍會在擷取時掃描。',
+        'cdocs.hintNoRetrieval': 'CP2 已關閉 — 上傳後才被污染的文件將未經掃描送達模型。僅在上傳時掃描並不足夠。',
         'cdocs.empty': '尚未上傳任何檔案。',
         'cdocs.emptyHint': '尚未上傳任何檔案。點擊「上傳 .txt」以新增。',
         'cdocs.uploadTxtTitle': '上傳 .txt 檔案（最大 50 KB）',
@@ -3285,6 +3340,13 @@
         'cp0.securityIssue': '安全问题',
         'cdocs.title': '自定义 RAG 文档 — 检索时由 Lakera 扫描',
         'cdocs.constraints': 'PDF · DOCX · TXT · MD · CSV · JSON · 每个文件最大 2 MB · 最多 10 个文件',
+        'cdocs.stageUpload': '上传',
+        'cdocs.stageIngest': '上传时扫描',
+        'cdocs.stageStore': '存储',
+        'cdocs.stageRetrieval': 'CP2 · 检索时扫描',
+        'cdocs.ingestTitle': '文件上传时使用 Lakera Guard 扫描',
+        'cdocs.hintNoIngest': '上传时扫描已关闭 — 被污染的文件会被存储。CP2 仍会在检索时扫描。',
+        'cdocs.hintNoRetrieval': 'CP2 已关闭 — 上传后才被污染的文件将未经扫描送达模型。仅在上传时扫描并不足够。',
         'cdocs.empty': '尚未上传任何文件。',
         'cdocs.emptyHint': '尚未上传任何文件。点击“上传 .txt”以添加。',
         'cdocs.uploadTxtTitle': '上传 .txt 文件（最大 50 KB）',
@@ -3749,6 +3811,13 @@
         'cp0.securityIssue': 'セキュリティ上の問題',
         'cdocs.title': 'カスタム RAG 文書 — 取得時に Lakera がスキャン',
         'cdocs.constraints': 'PDF · DOCX · TXT · MD · CSV · JSON · 1ファイル最大 2 MB · 最大 10 ファイル',
+        'cdocs.stageUpload': 'アップロード',
+        'cdocs.stageIngest': '取り込み時にスキャン',
+        'cdocs.stageStore': '保存',
+        'cdocs.stageRetrieval': 'CP2 · 取得時にスキャン',
+        'cdocs.ingestTitle': 'アップロード時に Lakera Guard で各文書をスキャンします',
+        'cdocs.hintNoIngest': '取り込み時スキャンがオフです — 汚染された文書が保存されます。CP2 は取得時にスキャンします。',
+        'cdocs.hintNoRetrieval': 'CP2 がオフです — アップロード後に汚染された文書が未スキャンでモデルに届きます。取り込み時のスキャンだけでは不十分です。',
         'cdocs.empty': 'まだファイルがアップロードされていません。',
         'cdocs.emptyHint': 'まだファイルがありません。「.txt をアップロード」をクリックして追加してください。',
         'cdocs.uploadTxtTitle': '.txt ファイルをアップロード（最大 50 KB）',
@@ -4577,7 +4646,7 @@
     cdocsPanelOpen = !cdocsPanelOpen;
     document.getElementById('cdocs-panel').classList.toggle('open', cdocsPanelOpen);
     document.getElementById('custom-docs-btn').classList.toggle('open', cdocsPanelOpen);
-    if (cdocsPanelOpen) loadCustomDocs();
+    if (cdocsPanelOpen) { loadCustomDocs(); loadScanSettings(); }
   }
 
   async function loadCustomDocs() {
@@ -4767,6 +4836,7 @@
     if (!guardEnabled) return;   // master switch is off — nothing to toggle
     cpEnabled[cp] = !cpEnabled[cp];
     updateFlowStrip();
+    updateScanFlow();   // the docs panel shows CP2 as the retrieval-scan stage
   }
   // Paint each CP node in the flow strip: brand = active, dashed grey = off.
   // When the master guard is off the whole pipeline is bypassed, so all show off
@@ -5592,6 +5662,44 @@
 
   // ── One-shot batch testing ──────────────────────────────────────────────
   let _osLastFocus = null;
+
+  // ── Knowledge-base scan stages ────────────────────────────────────────────
+  // Ingest scanning and CP2 are different controls: ingest keeps a poisoned
+  // document out of the store, CP2 still protects you when the store is poisoned
+  // by another path. The hint spells out what each "off" actually costs.
+  async function loadScanSettings() {
+    try {
+      const d = await apiJson(await fetch(API + '/api/docs/scan-settings'));
+      document.getElementById('cdocs-scan-ingest').checked = !!d.scan_on_ingest;
+    } catch { /* leave the default checked state */ }
+    updateScanFlow();
+  }
+
+  async function setScanOnIngest(on) {
+    try {
+      await fetch(API + '/api/docs/scan-settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scan_on_ingest: !!on }),
+      });
+    } catch { /* surfaced by the hint below */ }
+    updateScanFlow();
+  }
+
+  function updateScanFlow() {
+    const ingest = document.getElementById('cdocs-scan-ingest');
+    const cp2El = document.getElementById('cdocs-stage-cp2');
+    const hint = document.getElementById('cdocs-scan-hint');
+    if (!ingest || !hint) return;
+    const cp2On = cpEnabled.cp2;
+    if (cp2El) cp2El.classList.toggle('off', !cp2On);
+    // Retrieval off is the more dangerous of the two, so it wins the hint.
+    let msg = '';
+    if (!cp2On) msg = t('cdocs.hintNoRetrieval');
+    else if (!ingest.checked) msg = t('cdocs.hintNoIngest');
+    hint.textContent = msg;
+    hint.classList.toggle('show', !!msg);
+  }
+
   // ── Risk Map ──────────────────────────────────────────────────────────────
   // What THIS chat session has exercised, per OWASP category. Reads the
   // server-side session ledger; the ledger holds outcomes only — never prompt or
