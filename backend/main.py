@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lakera_demo")
 
-from backend import assertions, attacker, chat, classify, datasets, frameworks, history, judge, lakera, llm, logging_setup, rag, report, scenarios, strategies, tools
+from backend import assertions, attacker, chat, classify, datasets, extract, frameworks, history, judge, lakera, llm, logging_setup, rag, report, scenarios, strategies, tools
 from backend.config import ENV_PATH, settings
 
 # Configure logging before anything else emits a record.
@@ -33,8 +33,8 @@ FRONTEND_DIR = pathlib.Path(__file__).parent.parent / "frontend"
 CUSTOM_DOCS_DIR = pathlib.Path(__file__).parent.parent / "tests" / "fixtures" / "docs_custom"
 RUN_HISTORY_DIR = pathlib.Path(__file__).parent.parent / "runs"
 
-MAX_FILE_SIZE_BYTES = 50 * 1024   # 50 KB
-MAX_CUSTOM_FILES    = 5
+MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024   # 2 MB (PDF/DOCX are far bigger than .txt)
+MAX_CUSTOM_FILES    = 10
 ALLOWED_DOC_EXT     = ".txt"
 
 # Concurrency cap for one-shot batch runs (protects Lakera/LLM rate limits).
@@ -2176,18 +2176,24 @@ async def api_history_diff(req: HistoryDiffRequest):
 async def api_upload_custom_doc(file: UploadFile = File(...)):
     # Extension check
     original_name = file.filename or "upload.txt"
-    if pathlib.Path(original_name).suffix.lower() != ALLOWED_DOC_EXT:
-        raise HTTPException(400, f"Only {ALLOWED_DOC_EXT} files are accepted.")
+    suffix = pathlib.Path(original_name).suffix.lower()
+    if suffix not in extract.SUPPORTED_EXTS:
+        raise HTTPException(
+            400, f"Only {' '.join(sorted(extract.SUPPORTED_EXTS))} files are accepted.")
 
     # Size check — read in bounded chunks so an oversized body can't exhaust memory
     # before it is rejected (multipart gives no reliable Content-Length up front).
     content = await _read_capped(file, MAX_FILE_SIZE_BYTES)
 
-    # UTF-8 validity
+    # Convert to the plain text the knowledge base stores and scans. Done once
+    # here rather than per retrieval, so CP2 / rag.py stay unchanged. Fails
+    # closed: an unreadable or text-free document is rejected, never indexed
+    # empty (a silently-empty KB looks exactly like a working one).
     try:
-        content.decode("utf-8")
-    except UnicodeDecodeError:
-        raise HTTPException(400, "File must be valid UTF-8 text.")
+        text = extract.extract(original_name, content)
+    except extract.ExtractError as exc:
+        raise HTTPException(400, str(exc))
+    content = text.encode("utf-8")
 
     # Slot limit
     CUSTOM_DOCS_DIR.mkdir(parents=True, exist_ok=True)

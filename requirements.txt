@@ -7,3 +7,8 @@ pyyaml>=6.0
 # Modern terminal UX for the headless one-shot CLI (progress bars, styled output).
 # The CLI degrades gracefully to plain text if rich is unavailable.
 rich>=13.0.0
+
+# Text extraction for richer RAG uploads (PDF / DOCX). Both are pure-Python.
+# Parsing happens once at upload; the knowledge base is stored as plain text.
+pypdf>=5.0.0
+python-docx>=1.1.0

@@ -1644,7 +1644,7 @@
   <div class="cdocs-inner">
     <div class="cdocs-title-row">
       <span class="cdocs-title"><svg class="ic"><use href="#i-folder"></use></svg><span data-i18n="cdocs.title">Custom RAG Docs — Scanned by Lakera on Retrieval</span></span>
-      <span class="doc-constraints" data-i18n="cdocs.constraints">.txt only · max 50 KB / file · max 5 files</span>
+      <span class="doc-constraints" data-i18n="cdocs.constraints">PDF · DOCX · TXT · MD · CSV · JSON · max 2 MB / file · max 10 files</span>
     </div>
     <div id="cdocs-file-list" class="cdocs-file-list">
       <span class="cdocs-empty" data-i18n="cdocs.empty">No files uploaded yet.</span>
@@ -1652,7 +1652,7 @@
     <div class="cdocs-actions-row">
       <label class="sp-btn" style="cursor:pointer;" data-i18n-title="cdocs.uploadTxtTitle" title="Upload a .txt file (max 50 KB)">
         <svg class="ic"><use href="#i-upload"></use></svg><span data-i18n="sp.uploadTxt">Upload .txt</span>
-        <input type="file" id="cdocs-file-input" accept=".txt" style="display:none" onchange="uploadCustomDoc(event)" />
+        <input type="file" id="cdocs-file-input" accept=".txt,.md,.csv,.json,.pdf,.docx" style="display:none" onchange="uploadCustomDoc(event)" />
       </label>
       <button class="sp-btn primary" onclick="activateCustomMode()" data-i18n-title="cdocs.useCustomTitle" title="Switch the knowledge base to your uploaded files" data-i18n="cdocs.useCustom">Use Custom Docs</button>
       <button class="sp-btn" onclick="deactivateCustomMode()" data-i18n-title="cdocs.resetCleanTitle" title="Reset to the clean built-in docs" data-i18n="cdocs.resetClean">Reset to Clean</button>
@@ -1919,7 +1919,7 @@
               <option value="custom" data-i18n="oskb.custom">Custom (uploaded)</option>
             </select>
             <label class="sp-btn" style="cursor:pointer;"><svg class="ic"><use href="#i-upload"></use></svg> <span data-i18n="oskb.upload">Upload .txt</span>
-              <input type="file" id="os-kb-file" accept=".txt" style="display:none" onchange="uploadOsKbDoc(event)" />
+              <input type="file" id="os-kb-file" accept=".txt,.md,.csv,.json,.pdf,.docx" style="display:none" onchange="uploadOsKbDoc(event)" />
             </label>
           </div>
           <div class="os-ds-list" id="os-kb-list"></div>
@@ -1946,6 +1946,9 @@
   // document's base URL (some embeds/proxies break relative URL resolution,
   // causing "Failed to parse URL from /api/…").
   const API = window.location.origin;
+  // Kept in step with backend/extract.SUPPORTED_EXTS and MAX_FILE_SIZE_BYTES.
+  const DOC_EXTS = ['.txt', '.md', '.csv', '.json', '.pdf', '.docx'];
+  const DOC_MAX_BYTES = 2 * 1024 * 1024;
 
   /**
    * Read a JSON API response, or explain WHY it wasn't JSON.
@@ -2020,7 +2023,7 @@
         'cp0.blocked': 'CP0 blocked ({ms} ms) — {cats} — prompt rejected',
         'cp0.securityIssue': 'security issue',
         'cdocs.title': 'Custom RAG Docs — Scanned by Lakera on Retrieval',
-        'cdocs.constraints': '.txt only · max 50 KB / file · max 5 files',
+        'cdocs.constraints': 'PDF · DOCX · TXT · MD · CSV · JSON · max 2 MB / file · max 10 files',
         'cdocs.empty': 'No files uploaded yet.',
         'cdocs.emptyHint': 'No files uploaded yet. Click "Upload .txt" to add one.',
         'cdocs.uploadTxtTitle': 'Upload a .txt file (max 50 KB)',
@@ -2029,7 +2032,7 @@
         'cdocs.resetClean': 'Reset to Clean',
         'cdocs.resetCleanTitle': 'Reset to the clean built-in docs',
         'cdocs.del': 'Del',
-        'cdocs.onlyTxt': 'Only .txt files accepted',
+        'cdocs.onlyTxt': 'PDF · DOCX · TXT · MD · CSV · JSON files only',
         'cdocs.tooLarge': 'File too large — {kb} KB (max 50 KB)',
         'cdocs.emptyFile': 'File is empty',
         'cdocs.uploading': 'Uploading…',
@@ -2429,7 +2432,7 @@
         'cp0.blocked': 'CP0 차단 ({ms} ms) — {cats} — 프롬프트 거부됨',
         'cp0.securityIssue': '보안 문제',
         'cdocs.title': '사용자 RAG 문서 — 검색 시 Lakera가 검사',
-        'cdocs.constraints': '.txt만 · 파일당 최대 50 KB · 최대 5개',
+        'cdocs.constraints': 'PDF · DOCX · TXT · MD · CSV · JSON · 파일당 최대 2 MB · 최대 10개',
         'cdocs.empty': '아직 업로드된 파일이 없습니다.',
         'cdocs.emptyHint': '아직 업로드된 파일이 없습니다. ".txt 업로드"를 클릭하세요.',
         'cdocs.uploadTxtTitle': '.txt 파일 업로드 (최대 50 KB)',
@@ -2438,7 +2441,7 @@
         'cdocs.resetClean': '클린으로 재설정',
         'cdocs.resetCleanTitle': '기본 클린 문서로 재설정',
         'cdocs.del': '삭제',
-        'cdocs.onlyTxt': '.txt 파일만 허용됩니다',
+        'cdocs.onlyTxt': 'PDF · DOCX · TXT · MD · CSV · JSON 파일만 허용됩니다',
         'cdocs.tooLarge': '파일이 너무 큼 — {kb} KB (최대 50 KB)',
         'cdocs.emptyFile': '빈 파일입니다',
         'cdocs.uploading': '업로드 중…',
@@ -2817,7 +2820,7 @@
         'cp0.blocked': 'CP0 封鎖（{ms} 毫秒）— {cats} — 提示詞已拒絕',
         'cp0.securityIssue': '安全問題',
         'cdocs.title': '自訂 RAG 文件 — 擷取時由 Lakera 掃描',
-        'cdocs.constraints': '僅限 .txt · 每個檔案最大 50 KB · 最多 5 個檔案',
+        'cdocs.constraints': 'PDF · DOCX · TXT · MD · CSV · JSON · 每檔最大 2 MB · 最多 10 個檔案',
         'cdocs.empty': '尚未上傳任何檔案。',
         'cdocs.emptyHint': '尚未上傳任何檔案。點擊「上傳 .txt」以新增。',
         'cdocs.uploadTxtTitle': '上傳 .txt 檔案（最大 50 KB）',
@@ -2826,7 +2829,7 @@
         'cdocs.resetClean': '重設為乾淨文件',
         'cdocs.resetCleanTitle': '重設為內建的乾淨文件',
         'cdocs.del': '刪除',
-        'cdocs.onlyTxt': '僅接受 .txt 檔案',
+        'cdocs.onlyTxt': '僅接受 PDF · DOCX · TXT · MD · CSV · JSON 檔案',
         'cdocs.tooLarge': '檔案過大 — {kb} KB（最大 50 KB）',
         'cdocs.emptyFile': '檔案是空的',
         'cdocs.uploading': '上傳中…',
@@ -3281,7 +3284,7 @@
         'cp0.blocked': 'CP0 拦截（{ms} 毫秒）— {cats} — 提示词已拒绝',
         'cp0.securityIssue': '安全问题',
         'cdocs.title': '自定义 RAG 文档 — 检索时由 Lakera 扫描',
-        'cdocs.constraints': '仅限 .txt · 每个文件最大 50 KB · 最多 5 个文件',
+        'cdocs.constraints': 'PDF · DOCX · TXT · MD · CSV · JSON · 每个文件最大 2 MB · 最多 10 个文件',
         'cdocs.empty': '尚未上传任何文件。',
         'cdocs.emptyHint': '尚未上传任何文件。点击“上传 .txt”以添加。',
         'cdocs.uploadTxtTitle': '上传 .txt 文件（最大 50 KB）',
@@ -3290,7 +3293,7 @@
         'cdocs.resetClean': '重置为干净文档',
         'cdocs.resetCleanTitle': '重置为内置的干净文档',
         'cdocs.del': '删除',
-        'cdocs.onlyTxt': '仅接受 .txt 文件',
+        'cdocs.onlyTxt': '仅接受 PDF · DOCX · TXT · MD · CSV · JSON 文件',
         'cdocs.tooLarge': '文件过大 — {kb} KB（最大 50 KB）',
         'cdocs.emptyFile': '文件为空',
         'cdocs.uploading': '上传中…',
@@ -3745,7 +3748,7 @@
         'cp0.blocked': 'CP0 ブロック（{ms} ms）— {cats} — プロンプトを拒否',
         'cp0.securityIssue': 'セキュリティ上の問題',
         'cdocs.title': 'カスタム RAG 文書 — 取得時に Lakera がスキャン',
-        'cdocs.constraints': '.txt のみ · 1ファイル最大 50 KB · 最大 5 ファイル',
+        'cdocs.constraints': 'PDF · DOCX · TXT · MD · CSV · JSON · 1ファイル最大 2 MB · 最大 10 ファイル',
         'cdocs.empty': 'まだファイルがアップロードされていません。',
         'cdocs.emptyHint': 'まだファイルがありません。「.txt をアップロード」をクリックして追加してください。',
         'cdocs.uploadTxtTitle': '.txt ファイルをアップロード（最大 50 KB）',
@@ -3754,7 +3757,7 @@
         'cdocs.resetClean': 'クリーンにリセット',
         'cdocs.resetCleanTitle': '組み込みのクリーンな文書にリセット',
         'cdocs.del': '削除',
-        'cdocs.onlyTxt': '.txt ファイルのみ受け付けます',
+        'cdocs.onlyTxt': 'PDF · DOCX · TXT · MD · CSV · JSON ファイルのみ受け付けます',
         'cdocs.tooLarge': 'ファイルが大きすぎます — {kb} KB（最大 50 KB）',
         'cdocs.emptyFile': 'ファイルが空です',
         'cdocs.uploading': 'アップロード中…',
@@ -4626,11 +4629,11 @@
     event.target.value = '';
     if (!file) return;
 
-    if (!file.name.toLowerCase().endsWith('.txt')) {
+    if (!DOC_EXTS.some(x => file.name.toLowerCase().endsWith(x))) {
       showCdocsStatus('error', t('cdocs.onlyTxt'));
       return;
     }
-    if (file.size > 50 * 1024) {
+    if (file.size > DOC_MAX_BYTES) {
       showCdocsStatus('error', t('cdocs.tooLarge', { kb: (file.size / 1024).toFixed(1) }));
       return;
     }
@@ -6004,7 +6007,7 @@
   async function uploadOsKbDoc(event) {
     const file = event.target.files[0]; event.target.value = '';
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.txt')) { osKbStatus('error', t('cdocs.onlyTxt')); return; }
+    if (!DOC_EXTS.some(x => file.name.toLowerCase().endsWith(x))) { osKbStatus('error', t('cdocs.onlyTxt')); return; }
     osKbStatus('loading', t('cdocs.uploading'));
     const fd = new FormData(); fd.append('file', file);
     try {
