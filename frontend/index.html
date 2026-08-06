@@ -1281,6 +1281,40 @@
     .os-catbarrow .bc { font-size: 0.62rem; color: var(--muted); white-space: nowrap; min-width: 56px; text-align: right; }
     .os-catdash-sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); font-size: 0.62rem; }
 
+    /* ── Risk Map (live session) ── */
+    .rm-session { font-size: 0.72rem; color: var(--muted); margin-right: auto; }
+    .rm-cards {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 8px; margin: 8px 0 14px;
+    }
+    .rm-card {
+      display: flex; flex-direction: column; gap: 4px; text-align: left;
+      padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--panel-2); cursor: pointer;
+      transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+    }
+    .rm-card:hover { border-color: var(--brand-br); }
+    .rm-card.selected { border-color: var(--brand); background: var(--brand-bg); }
+    /* A category this session never touched is muted, not alarming — severity is
+       observed, never assumed. */
+    .rm-card.idle { opacity: 0.6; }
+    .rm-card.held    { border-left: 3px solid var(--pass); }
+    .rm-card.through { border-left: 3px solid var(--block); }
+    .rm-card-id { font-size: 0.68rem; }
+    .rm-card-name { font-size: 0.8rem; color: var(--text); }
+    .rm-card-share { font-size: 0.66rem; color: var(--muted); }
+    .rm-status { display: inline-flex; align-items: center; gap: 5px; font-size: 0.7rem; }
+    .rm-status .ic { width: 13px; height: 13px; }
+    .rm-status.held    { color: var(--pass); }
+    .rm-status.through { color: var(--block); }
+    .rm-status.idle    { color: var(--skip); }
+    @media (max-width: 640px) {
+      .rm-cards { grid-template-columns: 1fr; }
+      /* .sp-btn is ~31px tall by default — fine for a mouse, under the 44px
+         minimum for touch. Modal toolbars are thumb targets, so raise them. */
+      .modal-toolbar .sp-btn { min-height: 44px; }
+    }
+
     /* ── Compliance framework mapping ──
        Which regulatory / standards controls a run evidences. Composed from the
        existing dashboard vocabulary; the only new idea is the per-control row. */
@@ -1477,6 +1511,9 @@
     </button>
     <button id="guard-toggle" class="ctl guard-on" onclick="toggleGuard()" data-i18n-title="guard.toggleTitle" title="Turn Lakera Guard on/off for the chat">
       <svg class="ic"><use href="#i-shield-check"></use></svg><span id="guard-toggle-label">Guard: ON</span>
+    </button>
+    <button id="riskmap-btn" class="ctl" onclick="openRiskMap()" data-i18n-title="rm.btnTitle" title="See which OWASP risks this session has exercised">
+      <svg class="ic"><use href="#i-shield"></use></svg><span data-i18n="rm.btn">Risk Map</span>
     </button>
     <button id="oneshot-btn" class="ctl" data-adv onclick="openOneShot()" data-i18n-title="os.btnTitle" title="Run every scenario at once">
       <svg class="ic"><use href="#i-play"></use></svg><span data-i18n="os.btn">One-Shot Test</span>
@@ -1739,6 +1776,27 @@
 </div>
 
 <!-- One-Shot test modal -->
+<!-- Risk Map — what THIS session actually exercised, per OWASP category. -->
+<div class="modal-overlay" id="riskmap-overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rm-title">
+    <div class="modal-header">
+      <span class="modal-title" id="rm-title"><svg class="ic"><use href="#i-shield"></use></svg><span data-i18n="rm.title">Risk Map</span></span>
+      <button class="modal-close" onclick="closeRiskMap()" aria-label="Close"><svg class="ic"><use href="#i-x"></use></svg></button>
+    </div>
+    <div class="modal-toolbar">
+      <span class="rm-session mono" id="rm-session"></span>
+      <button class="sp-btn danger" onclick="clearSessionRisks()" data-i18n="rm.clear">Clear session</button>
+    </div>
+    <div class="modal-body">
+      <!-- Counters announce politely so screen readers hear the change without focus theft. -->
+      <div class="os-summary os-summary-secondary" id="rm-stats" aria-live="polite"></div>
+      <div class="os-catdash-title" data-i18n="rm.cardsTitle">OWASP LLM Top 10 · this session</div>
+      <div class="rm-cards" id="rm-cards"></div>
+      <div id="rm-activity"></div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="oneshot-overlay">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="os-title">
     <div class="modal-header">
@@ -2245,6 +2303,27 @@
         'hist.regressed': 'regressed',
         'hist.noChange': 'No metric changes.',
         'os.secFindings': 'Findings & recommendations',
+        'rm.btn': 'Risk Map',
+        'rm.btnTitle': 'See which OWASP risks this session has exercised',
+        'rm.title': 'Risk Map',
+        'rm.clear': 'Clear session',
+        'rm.clearConfirm': 'Clear the session risk map? Recorded activity will be discarded.',
+        'rm.sessionMeta': 'Session · {n} of {limit} events recorded',
+        'rm.cardsTitle': 'OWASP LLM Top 10 · this session',
+        'rm.statActive': 'Active risks',
+        'rm.statThrough': 'Got through',
+        'rm.statBlocked': 'Blocked',
+        'rm.statTotal': 'Messages',
+        'rm.cardEvents': 'events {n} · blocked {blocked}',
+        'rm.cardIdle': 'No activity',
+        'rm.activityTitle': 'Session activity',
+        'rm.activityCount': 'events: {n}',
+        'rm.showingOf': 'showing {n} of {total}',
+        'rm.emptyTitle': 'No activity yet.',
+        'rm.emptyHint': 'Send a message or fire a scenario to populate the map.',
+        'rm.colTime': 'Time',
+        'rm.colCategory': 'Category',
+        'rm.colCheckpoint': 'Blocked at',
         'os.complianceTitle': 'Compliance mapping',
         'os.complianceEvidenced': 'evidenced',
         'os.secDashboard': 'Vulnerability dashboard (by OWASP category)',
@@ -2573,6 +2652,27 @@
         'hist.diffLatest': '최근 2개 비교',
         'hist.empty': '아직 저장된 실행이 없습니다.',
         'os.secFindings': '발견 사항 및 권장 사항',
+        'rm.btn': '위험 지도',
+        'rm.btnTitle': '이 세션이 유발한 OWASP 위험을 확인합니다',
+        'rm.title': '위험 지도',
+        'rm.clear': '세션 지우기',
+        'rm.clearConfirm': '세션 위험 지도를 지울까요? 기록된 활동이 삭제됩니다.',
+        'rm.sessionMeta': '세션 · {limit}건 중 {n}건 기록됨',
+        'rm.cardsTitle': 'OWASP LLM Top 10 · 이번 세션',
+        'rm.statActive': '활성 위험',
+        'rm.statThrough': '통과함',
+        'rm.statBlocked': '차단됨',
+        'rm.statTotal': '메시지',
+        'rm.cardEvents': '{n}건 · {blocked}건 차단',
+        'rm.cardIdle': '활동 없음',
+        'rm.activityTitle': '세션 활동',
+        'rm.activityCount': '{n}건',
+        'rm.showingOf': '{total}건 중 {n}건 표시',
+        'rm.emptyTitle': '아직 활동이 없습니다.',
+        'rm.emptyHint': '메시지를 보내거나 시나리오를 실행하면 지도가 채워집니다.',
+        'rm.colTime': '시간',
+        'rm.colCategory': '카테고리',
+        'rm.colCheckpoint': '차단 지점',
         'os.complianceTitle': '규정 준수 매핑',
         'os.complianceEvidenced': '충족',
         'os.secDashboard': '취약점 대시보드 (OWASP 카테고리별)',
@@ -3000,6 +3100,27 @@
         'hist.regressed': '已回歸',
         'hist.noChange': '無指標變化。',
         'os.secFindings': '發現與建議',
+        'rm.btn': '風險地圖',
+        'rm.btnTitle': '查看本次工作階段觸發的 OWASP 風險',
+        'rm.title': '風險地圖',
+        'rm.clear': '清除工作階段',
+        'rm.clearConfirm': '要清除工作階段風險地圖嗎？已記錄的活動將被捨棄。',
+        'rm.sessionMeta': '工作階段 · 已記錄 {n} / {limit} 筆',
+        'rm.cardsTitle': 'OWASP LLM Top 10 · 本次工作階段',
+        'rm.statActive': '活躍風險',
+        'rm.statThrough': '通過',
+        'rm.statBlocked': '已攔截',
+        'rm.statTotal': '訊息',
+        'rm.cardEvents': '{n} 筆 · 攔截 {blocked}',
+        'rm.cardIdle': '無活動',
+        'rm.activityTitle': '工作階段活動',
+        'rm.activityCount': '{n} 筆',
+        'rm.showingOf': '顯示 {n} / {total}',
+        'rm.emptyTitle': '尚無活動。',
+        'rm.emptyHint': '傳送訊息或執行情境即可填入地圖。',
+        'rm.colTime': '時間',
+        'rm.colCategory': '類別',
+        'rm.colCheckpoint': '攔截點',
         'os.complianceTitle': '法規對應',
         'os.complianceEvidenced': '已佐證',
         'os.secDashboard': '弱點儀表板（依 OWASP 類別）',
@@ -3443,6 +3564,27 @@
         'hist.regressed': '已回归',
         'hist.noChange': '无指标变化。',
         'os.secFindings': '发现与建议',
+        'rm.btn': '风险地图',
+        'rm.btnTitle': '查看本次会话触发的 OWASP 风险',
+        'rm.title': '风险地图',
+        'rm.clear': '清除会话',
+        'rm.clearConfirm': '要清除会话风险地图吗？已记录的活动将被丢弃。',
+        'rm.sessionMeta': '会话 · 已记录 {n} / {limit} 条',
+        'rm.cardsTitle': 'OWASP LLM Top 10 · 本次会话',
+        'rm.statActive': '活跃风险',
+        'rm.statThrough': '通过',
+        'rm.statBlocked': '已拦截',
+        'rm.statTotal': '消息',
+        'rm.cardEvents': '{n} 条 · 拦截 {blocked}',
+        'rm.cardIdle': '无活动',
+        'rm.activityTitle': '会话活动',
+        'rm.activityCount': '{n} 条',
+        'rm.showingOf': '显示 {n} / {total}',
+        'rm.emptyTitle': '暂无活动。',
+        'rm.emptyHint': '发送消息或运行情景即可填充地图。',
+        'rm.colTime': '时间',
+        'rm.colCategory': '类别',
+        'rm.colCheckpoint': '拦截点',
         'os.complianceTitle': '法规对应',
         'os.complianceEvidenced': '已佐证',
         'os.secDashboard': '漏洞仪表板（按 OWASP 类别）',
@@ -3886,6 +4028,27 @@
         'hist.regressed': 'リグレッション',
         'hist.noChange': '指標の変化なし。',
         'os.secFindings': '所見と推奨',
+        'rm.btn': 'リスクマップ',
+        'rm.btnTitle': 'このセッションで発生した OWASP リスクを確認します',
+        'rm.title': 'リスクマップ',
+        'rm.clear': 'セッションを消去',
+        'rm.clearConfirm': 'セッションのリスクマップを消去しますか？記録された活動は破棄されます。',
+        'rm.sessionMeta': 'セッション · {limit} 件中 {n} 件を記録',
+        'rm.cardsTitle': 'OWASP LLM Top 10 · このセッション',
+        'rm.statActive': 'アクティブなリスク',
+        'rm.statThrough': '通過',
+        'rm.statBlocked': 'ブロック',
+        'rm.statTotal': 'メッセージ',
+        'rm.cardEvents': '{n} 件 · {blocked} 件ブロック',
+        'rm.cardIdle': '活動なし',
+        'rm.activityTitle': 'セッション活動',
+        'rm.activityCount': '{n} 件',
+        'rm.showingOf': '{total} 件中 {n} 件を表示',
+        'rm.emptyTitle': 'まだ活動がありません。',
+        'rm.emptyHint': 'メッセージを送るかシナリオを実行するとマップが埋まります。',
+        'rm.colTime': '時刻',
+        'rm.colCategory': 'カテゴリ',
+        'rm.colCheckpoint': 'ブロック地点',
         'os.complianceTitle': 'コンプライアンス対応',
         'os.complianceEvidenced': '実証済み',
         'os.secDashboard': '脆弱性ダッシュボード（OWASP カテゴリ別）',
@@ -5426,6 +5589,131 @@
 
   // ── One-shot batch testing ──────────────────────────────────────────────
   let _osLastFocus = null;
+  // ── Risk Map ──────────────────────────────────────────────────────────────
+  // What THIS chat session has exercised, per OWASP category. Reads the
+  // server-side session ledger; the ledger holds outcomes only — never prompt or
+  // response text — so nothing sensitive can surface here.
+  let _rmLastFocus = null;
+  let _rmFilter = null;          // category id the user has drilled into
+
+  async function openRiskMap() {
+    _rmLastFocus = document.activeElement;
+    _rmFilter = null;
+    const overlay = document.getElementById('riskmap-overlay');
+    overlay.classList.add('open');
+    const close = overlay.querySelector('.modal-close');
+    if (close) close.focus();
+    await loadSessionRisks();
+  }
+
+  function closeRiskMap() {
+    document.getElementById('riskmap-overlay').classList.remove('open');
+    if (_rmLastFocus && typeof _rmLastFocus.focus === 'function') _rmLastFocus.focus();
+    _rmLastFocus = null;
+  }
+
+  async function loadSessionRisks() {
+    let d;
+    try {
+      d = await apiJson(await fetch(API + '/api/session/risks'));
+    } catch (err) {
+      document.getElementById('rm-cards').innerHTML =
+        `<div class="os-empty">${esc(err.message)}</div>`;
+      return;
+    }
+    renderRiskMap(d);
+  }
+
+  async function clearSessionRisks() {
+    if (!confirm(t('rm.clearConfirm'))) return;
+    try { await fetch(API + '/api/session/risks', { method: 'DELETE' }); } catch {}
+    _rmFilter = null;
+    await loadSessionRisks();
+  }
+
+  function riskCardTone(c) {
+    // Derived from what actually happened — never a fixed per-category severity.
+    if (!c.active) return 'idle';
+    return c.blocked >= c.events ? 'held' : 'through';
+  }
+
+  function renderRiskMap(d) {
+    document.getElementById('rm-session').textContent =
+      t('rm.sessionMeta', { n: d.events, limit: d.limit });
+
+    const stat = (cls, num, key) =>
+      `<div class="os-stat ${cls}"><div class="num">${esc(num)}</div>`
+      + `<div class="lbl">${esc(t(key))}</div></div>`;
+    document.getElementById('rm-stats').innerHTML =
+      stat('', d.active, 'rm.statActive')
+      + stat('bad', d.allowed, 'rm.statThrough')
+      + stat('good', d.blocked, 'rm.statBlocked')
+      + stat('', d.events, 'rm.statTotal');
+
+    const cards = (d.categories || []).map(c => {
+      const tone = riskCardTone(c);
+      const sel = _rmFilter === c.id ? ' selected' : '';
+      // Status carries an icon AND text — never colour alone.
+      const status = c.active
+        ? `<span class="rm-status ${tone}">${icon(tone === 'held' ? 'shield-check' : 'alert-triangle')}`
+          + `<span>${esc(t('rm.cardEvents', { n: c.events, blocked: c.blocked }))}</span></span>`
+        : `<span class="rm-status idle">${icon('minus')}<span>${esc(t('rm.cardIdle'))}</span></span>`;
+      return `<button type="button" class="rm-card ${tone}${sel}" aria-pressed="${_rmFilter === c.id}"`
+        + ` onclick="filterRiskMap('${esc(c.id)}')">`
+        + `<span class="rm-card-id os-owasp">${esc(c.owasp_id || c.id)}</span>`
+        + `<span class="rm-card-name">${esc(c.name || '')}</span>`
+        + status
+        + (c.active ? `<span class="rm-card-share mono">${esc(c.share)}%</span>` : '')
+        + '</button>';
+    }).join('');
+    document.getElementById('rm-cards').innerHTML = cards;
+
+    renderRiskActivity(d.activity || []);
+  }
+
+  function filterRiskMap(id) {
+    _rmFilter = (_rmFilter === id) ? null : id;   // click again to clear
+    loadSessionRisks();
+  }
+
+  function renderRiskActivity(activity) {
+    const rows = _rmFilter ? activity.filter(e => e.category_id === _rmFilter) : activity;
+    const el = document.getElementById('rm-activity');
+    if (!activity.length) {
+      // The default first impression — so it teaches rather than just saying "empty".
+      el.innerHTML = `<div class="os-empty">${esc(t('rm.emptyTitle'))}<br>`
+        + `<span class="os-sp-hint">${esc(t('rm.emptyHint'))}</span></div>`;
+      return;
+    }
+    const head = `<div class="os-tfilter"><span>${esc(t('rm.activityTitle'))}</span>`
+      + `<span class="os-tfilter-count${_rmFilter ? ' filtered' : ''}">`
+      + esc(_rmFilter ? t('rm.showingOf', { n: rows.length, total: activity.length })
+                      : t('rm.activityCount', { n: activity.length }))
+      + '</span></div>';
+    const body = rows.map(e => {
+      const verdict = e.blocked
+        ? `<span class="os-outcome oc-blocked">${icon('check')}<span>${esc(t('os.outBlocked'))}</span></span>`
+        : `<span class="os-outcome oc-not_blocked">${icon('alert-triangle')}<span>${esc(t('os.outNotBlocked'))}</span></span>`;
+      return '<tr>'
+        + `<td class="mono">${esc((e.ts || '').slice(11, 19))}</td>`
+        + `<td class="os-owasp">${esc(riskLabel(e.category_id))}</td>`
+        + `<td>${verdict}</td>`
+        + `<td class="mono">${esc(e.blocked_at ? 'CP' + e.blocked_at : '—')}</td>`
+        + `<td class="mono">${esc(e.latency_ms == null ? '—' : e.latency_ms + ' ms')}</td>`
+        + '</tr>';
+    }).join('');
+    el.innerHTML = head
+      + '<div class="os-table-wrap"><table class="os-table"><thead><tr>'
+      + `<th>${esc(t('rm.colTime'))}</th><th>${esc(t('rm.colCategory'))}</th>`
+      + `<th>${esc(t('os.colGuard'))}</th><th>${esc(t('rm.colCheckpoint'))}</th>`
+      + `<th>${esc(t('os.colLatency'))}</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+
+  function riskLabel(catId) {
+    const c = allCategories.find(x => x.id === catId);
+    return (c && c.owaspId) || catId || '—';
+  }
+
   function openOneShot() {
     _osLastFocus = document.activeElement;   // remember focus to restore on close
     loadDatasets();   // refresh imported datasets → also rebuilds scope options
