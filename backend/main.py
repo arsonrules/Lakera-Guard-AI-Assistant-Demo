@@ -474,6 +474,13 @@ async def _handle_request(request: Request, call_next):
             return JSONResponse(status_code=401, content={"detail": "Missing or invalid access token."})
 
     response = await call_next(request)
+    # Always revalidate the app shell and its assets. StaticFiles/FileResponse
+    # already send ETag + Last-Modified, so this costs a 304 and nothing else —
+    # but without it browsers cache heuristically and a deploy can serve stale
+    # JS against a new backend. Replaces the hand-bumped `?v=` query strings,
+    # which only work when someone remembers to bump them.
+    if request.url.path == "/" or request.url.path.startswith("/assets/"):
+        response.headers.setdefault("Cache-Control", "no-cache")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")

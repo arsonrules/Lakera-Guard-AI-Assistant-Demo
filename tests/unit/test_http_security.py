@@ -163,3 +163,22 @@ async def test_invalid_docs_mode_is_rejected(client):
 async def test_oneshot_rejects_concurrency_over_cap(client):
     resp = await client.post("/api/oneshot", json={"concurrency": main.MAX_CONCURRENCY + 1})
     assert resp.status_code == 422                 # pydantic bound
+
+
+# ── Asset caching (DEPLOYMENT_REVIEW.md §6.2) ────────────────────────────────
+# The hand-bumped `?v=2` query strings were removed; revalidation is now what
+# keeps a deploy from serving stale JS against a new backend.
+
+async def test_app_shell_and_assets_always_revalidate(client):
+    for path in ("/", "/assets/onboarding.css"):
+        r = await client.get(path)
+        assert r.status_code == 200, path
+        assert r.headers.get("cache-control") == "no-cache", path
+        # no-cache is only cheap because a validator makes the 304 possible
+        assert r.headers.get("etag") or r.headers.get("last-modified"), path
+
+
+async def test_api_responses_are_not_forced_to_revalidate(client):
+    """Scoped to static paths on purpose — blanketing /api would be noise."""
+    r = await client.get("/healthz")
+    assert "cache-control" not in {k.lower() for k in r.headers}
