@@ -139,3 +139,65 @@ async def test_a_ledger_failure_never_breaks_the_chat(client, monkeypatch):
     monkeypatch.setattr(main, "_record_session_event", boom)
     resp = await client.post("/api/chat", json={"message": "hi", "category_id": "llm01"})
     assert resp.status_code == 200
+
+
+# ── Failed turns (P2-5) ──────────────────────────────────────────────────────
+# Without these the ledger silently under-counts: a session against a broken
+# provider would show fewer messages than were actually sent and read as though
+# nothing had happened.
+
+@pytest.fixture
+def broken_llm(monkeypatch):
+    import httpx
+
+    async def boom(*a, **k):
+        raise httpx.RequestError("provider down at 10.0.0.5")
+    monkeypatch.setattr(chat, "_call_llm", boom)
+
+
+async def test_a_failed_turn_is_still_recorded(client, broken_llm):
+    resp = await client.post("/api/chat", json={"message": "hello", "category_id": "llm01"})
+    assert resp.status_code == 502
+    d = (await client.get("/api/session/risks")).json()
+    assert d["events"] == 1 and d["errors"] == 1
+
+
+async def test_errors_do_not_count_as_detections(client, broken_llm):
+    """A failed turn proves nothing about the guard — counting it as a miss
+    would drag a category's severity down for an unrelated reason."""
+    await client.post("/api/chat", json={"message": "hello", "category_id": "llm01"})
+    cats = (await client.get("/api/session/risks")).json()["categories"]
+    llm01 = next(c for c in cats if c["id"] == "llm01")
+    assert llm01["events"] == 0 and llm01["severity"] is None
+
+
+async def test_error_rows_carry_a_source_not_a_response_body(client, broken_llm):
+    """The provider's response can echo the prompt (and hosts/IPs) back."""
+    await client.post("/api/chat", json={"message": "hello", "category_id": "llm01"})
+    d = (await client.get("/api/session/risks")).json()
+    err = next(e for e in d["activity"] if e["outcome"] == "error")
+    assert err["error_source"] == "llm"
+    body = (await client.get("/api/session/risks")).text
+    assert "provider down" not in body and "10.0.0.5" not in body
+
+
+async def test_missing_guard_key_is_recorded_as_a_config_error(client, monkeypatch):
+    monkeypatch.setattr(main, "_lakera_key", "")
+    resp = await client.post("/api/chat", json={"message": "hello", "category_id": "llm01"})
+    assert resp.status_code == 400
+    d = (await client.get("/api/session/risks")).json()
+    assert d["errors"] == 1
+    assert next(e for e in d["activity"] if e["outcome"] == "error")["error_source"] == "config"
+
+
+async def test_totals_reconcile(client, broken_llm, monkeypatch):
+    """blocked + allowed + errors must equal events, or the counters lie."""
+    async def ok(*a, **k):
+        return "ok"
+
+    await client.post("/api/chat", json={"message": "hello", "category_id": "llm01"})
+    monkeypatch.setattr(chat, "_call_llm", ok)
+    await client.post("/api/chat", json={"message": "benign", "category_id": "llm01"})
+    await client.post("/api/chat", json={"message": "ATTACK", "category_id": "llm01"})
+    d = (await client.get("/api/session/risks")).json()
+    assert d["blocked"] + d["allowed"] + d["errors"] == d["events"] == 3

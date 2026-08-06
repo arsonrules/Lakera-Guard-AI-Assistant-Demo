@@ -2358,6 +2358,8 @@
         'rm.statThrough': 'Got through',
         'rm.statBlocked': 'Blocked',
         'rm.statTotal': 'Messages',
+        'rm.statErrors': 'Errors',
+        'rm.outError': 'error ({src})',
         'rm.cardEvents': 'events {n} · blocked {blocked}',
         'rm.cardIdle': 'No activity',
         'rm.activityTitle': 'Session activity',
@@ -2714,6 +2716,8 @@
         'rm.statThrough': '통과함',
         'rm.statBlocked': '차단됨',
         'rm.statTotal': '메시지',
+        'rm.statErrors': '오류',
+        'rm.outError': '오류 ({src})',
         'rm.cardEvents': '{n}건 · {blocked}건 차단',
         'rm.cardIdle': '활동 없음',
         'rm.activityTitle': '세션 활동',
@@ -3169,6 +3173,8 @@
         'rm.statThrough': '通過',
         'rm.statBlocked': '已攔截',
         'rm.statTotal': '訊息',
+        'rm.statErrors': '錯誤',
+        'rm.outError': '錯誤（{src}）',
         'rm.cardEvents': '{n} 筆 · 攔截 {blocked}',
         'rm.cardIdle': '無活動',
         'rm.activityTitle': '工作階段活動',
@@ -3640,6 +3646,8 @@
         'rm.statThrough': '通过',
         'rm.statBlocked': '已拦截',
         'rm.statTotal': '消息',
+        'rm.statErrors': '错误',
+        'rm.outError': '错误（{src}）',
         'rm.cardEvents': '{n} 条 · 拦截 {blocked}',
         'rm.cardIdle': '无活动',
         'rm.activityTitle': '会话活动',
@@ -4111,6 +4119,8 @@
         'rm.statThrough': '通過',
         'rm.statBlocked': 'ブロック',
         'rm.statTotal': 'メッセージ',
+        'rm.statErrors': 'エラー',
+        'rm.outError': 'エラー（{src}）',
         'rm.cardEvents': '{n} 件 · {blocked} 件ブロック',
         'rm.cardIdle': '活動なし',
         'rm.activityTitle': 'セッション活動',
@@ -5759,6 +5769,9 @@
       stat('', d.active, 'rm.statActive')
       + stat('bad', d.allowed, 'rm.statThrough')
       + stat('good', d.blocked, 'rm.statBlocked')
+      // Shown even at zero: a run against a broken provider must read as
+      // "5 sent, 3 failed", not silently as "2 sent".
+      + stat(d.errors ? 'warn' : '', d.errors || 0, 'rm.statErrors')
       + stat('', d.events, 'rm.statTotal');
 
     const cards = (d.categories || []).map(c => {
@@ -5802,7 +5815,9 @@
                       : t('rm.activityCount', { n: activity.length }))
       + '</span></div>';
     const body = rows.map(e => {
-      const verdict = e.blocked
+      const verdict = e.outcome === 'error'
+        ? `<span class="os-outcome oc-error">${icon('x')}<span>${esc(t('rm.outError', { src: e.error_source || '?' }))}</span></span>`
+        : e.blocked
         ? `<span class="os-outcome oc-blocked">${icon('check')}<span>${esc(t('os.outBlocked'))}</span></span>`
         : `<span class="os-outcome oc-not_blocked">${icon('alert-triangle')}<span>${esc(t('os.outNotBlocked'))}</span></span>`;
       return '<tr>'

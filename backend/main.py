@@ -673,11 +673,13 @@ async def api_chat(req: ChatRequest):
             logger.exception("failed to record session event")
         return result
     except chat.LakeraNotConfigured:
+        _record_session_error(req, "config")
         raise HTTPException(status_code=400, detail=LAKERA_NOT_SET_MSG)
     except lakera.LakeraAPIError as exc:
         # A Guard failure (e.g. invalid region, bad key) — attribute it to Lakera,
         # NOT the LLM provider, so the user fixes the right setting.
         logger.warning("Lakera Guard error: %s", exc)
+        _record_session_error(req, "guard")
         raise HTTPException(status_code=502, detail=str(exc))
     except httpx.HTTPStatusError as exc:
         # The LLM provider rejected the request (bad model, auth, etc.).
@@ -685,6 +687,7 @@ async def api_chat(req: ChatRequest):
         body = exc.response.text[:300] if exc.response is not None else ""
         status = exc.response.status_code if exc.response is not None else "?"
         logger.warning("LLM provider returned %s: %s", status, body)
+        _record_session_error(req, "llm")
         raise HTTPException(
             status_code=502,
             detail=f"LLM provider error ({status}). {body} "
@@ -692,6 +695,7 @@ async def api_chat(req: ChatRequest):
         )
     except httpx.RequestError as exc:
         logger.warning("LLM provider unreachable: %s", exc)
+        _record_session_error(req, "llm")
         raise HTTPException(
             status_code=502,
             detail=f"Could not reach the LLM provider at {_llm_config.get('base_url')}: "
@@ -1182,6 +1186,21 @@ def _attribute_category(req: ChatRequest) -> str | None:
     return _ID_BY_OWASP.get(code)
 
 
+def _base_event(req: ChatRequest, outcome: str) -> dict:
+    return {
+        "id": logging_setup.request_id_var.get() or "",
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "category_id": _attribute_category(req),
+        "guard_enabled": req.guard_enabled,
+        "outcome": outcome,                     # blocked | allowed | error
+        "blocked": outcome == "blocked",
+        "blocked_at": None,
+        "flagged_categories": [],
+        "latency_ms": None,
+        "error_source": None,
+    }
+
+
 def _record_session_event(req: ChatRequest, result: dict) -> None:
     """Append one outcome record for the Risk Map. Never stores message text."""
     trace = result.get("trace") or {}
@@ -1189,16 +1208,29 @@ def _record_session_event(req: ChatRequest, result: dict) -> None:
     cats: list[str] = []
     for cp in ("cp1", "cp2", "cp3"):
         cats.extend((trace.get(cp) or {}).get("categories") or [])
-    _session_events.append({
-        "id": logging_setup.request_id_var.get() or "",
-        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "category_id": _attribute_category(req),
-        "guard_enabled": req.guard_enabled,
-        "blocked": bool(result.get("blocked")),
-        "blocked_at": result.get("blocked_at"),
-        "flagged_categories": sorted(set(cats)),
-        "latency_ms": latency or None,
-    })
+    blocked = bool(result.get("blocked"))
+    e = _base_event(req, "blocked" if blocked else "allowed")
+    e.update(blocked_at=result.get("blocked_at"),
+             flagged_categories=sorted(set(cats)),
+             latency_ms=latency or None)
+    _session_events.append(e)
+
+
+def _record_session_error(req: ChatRequest, source: str) -> None:
+    """
+    Record a FAILED turn.
+
+    Without this the ledger silently under-counts: a run where the provider is
+    down would show fewer messages than were actually sent, and read as if
+    nothing had happened. Only the failure's source is stored — never the
+    provider's response body, which can echo the prompt back.
+    """
+    try:
+        e = _base_event(req, "error")
+        e["error_source"] = source              # guard | llm | config
+        _session_events.append(e)
+    except Exception:                           # noqa: BLE001 — telemetry is not the feature
+        logger.exception("failed to record session error")
 
 
 @app.get("/api/session/risks")
@@ -1214,7 +1246,10 @@ async def api_session_risks():
     by_cat: dict[str, dict] = {}
     for e in events:
         cid = e.get("category_id")
-        if not cid:
+        # A failed turn proves nothing about the guard, so it must not count
+        # toward a category's detection record — it would otherwise read as a
+        # miss and drag the severity down for an entirely unrelated reason.
+        if not cid or e.get("outcome") == "error":
             continue
         c = by_cat.setdefault(cid, {"attacks": 0, "blocked": 0, "not_blocked": 0,
                                     "breaches": 0, "evasions": 0, "effective_evasions": 0,
@@ -1243,8 +1278,11 @@ async def api_session_risks():
         "events": len(events),
         "limit": SESSION_EVENT_LIMIT,
         "active": sum(1 for c in cards if c["active"]),
-        "blocked": sum(1 for e in events if e["blocked"]),
-        "allowed": sum(1 for e in events if not e["blocked"]),
+        "blocked": sum(1 for e in events if e.get("outcome") == "blocked"),
+        "allowed": sum(1 for e in events if e.get("outcome") == "allowed"),
+        # Surfaced separately so a run against a broken provider reads as
+        # "5 sent, 3 failed" rather than silently as "2 sent".
+        "errors": sum(1 for e in events if e.get("outcome") == "error"),
         "categories": cards,
         "activity": list(reversed(events))[:100],   # newest first, no message text
     }
