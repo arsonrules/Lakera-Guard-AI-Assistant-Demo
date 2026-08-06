@@ -6544,6 +6544,57 @@
     return h;
   }
 
+  // Which regulatory / standards controls this run evidences, and where the gaps
+  // are. MUST stay byte-identical in shape to backend/report_html.py
+  // _compliance_section() — the CLI renders that one, the modal and the
+  // browser export render this one, and drift between the two has already
+  // caused one real bug (DEPLOYMENT_REVIEW.md §1.2).
+  const VERDICT_META = {
+    evidenced:   ['oc-blocked', 'check', 'Evidenced'],
+    partial:     ['oc-false_positive', 'alert-triangle', 'Partial'],
+    gap:         ['oc-not_blocked', 'alert-triangle', 'Gap'],
+    no_evidence: ['oc-skipped', 'minus', 'No evidence'],
+  };
+
+  function complianceSectionHtml(sec) {
+    const c = sec && sec.compliance;
+    if (!c || !(c.frameworks || []).length) return '';
+    const tot = c.totals || {};
+    const sub = `${c.control_count || 0} controls · ${tot.evidenced || 0} evidenced · ${tot.gap || 0} gaps`;
+    let h = '<details class="os-dash-collapsible"><summary>'
+      + `${esc(t('os.complianceTitle'))} <span class="os-catdash-sub">${esc(sub)}</span>`
+      + '</summary><div class="os-compliance">';
+    // Until a compliance owner signs the mapping off, say so in the report itself.
+    if (!c.verified) h += `<div class="os-clsnote">${esc(c.disclaimer || '')}</div>`;
+
+    c.frameworks.forEach(fw => {
+      h += '<div class="os-acc"><div class="os-acc-head">'
+        + `<span class="os-acc-name">${esc(fw.name)}</span>`
+        + `<span class="os-acc-count mono">${fw.evidenced}/${fw.total} ${esc(t('os.complianceEvidenced'))}</span>`
+        + '</div><div class="os-acc-body">';
+      (fw.controls || []).forEach(ctl => {
+        const [cls, ic, label] = VERDICT_META[ctl.verdict] || VERDICT_META.no_evidence;
+        // Bar only where there IS evidence; an unexercised control gets an em
+        // dash, not an empty bar that could read as 0%.
+        const rate = ctl.detection_rate;
+        const bar = ctl.attacks
+          ? `<div class="os-catbar"><span class="seg blk" style="width:${(rate || 0).toFixed(2)}%"></span></div>`
+          : '<div class="os-catbar"></div>';
+        const value = `<span class="bc mono">${ctl.attacks && rate != null ? rate + '%' : '—'}</span>`;
+        const ev = (ctl.evidence || []).map(esc).join(' · ');
+        h += '<div class="os-ctlrow">'
+          + `<div class="os-ctlref mono">${esc(ctl.ref)}</div>`
+          + `<div class="os-ctltitle">${esc(ctl.title)}`
+          + (ev ? `<span class="os-ctlvia">via ${ev}</span>` : '') + '</div>'
+          + `<div class="os-ctlbar">${bar}</div>${value}`
+          + `<span class="os-outcome ${cls}"><svg class="ic"><use href="#i-${ic}"></use></svg><span>${esc(label)}</span></span>`
+          + '</div>';
+      });
+      h += '</div></div>';
+    });
+    return h + '</div></details>';
+  }
+
   // Vulnerability dashboard + findings/recommendations narrative.
   function securitySectionHtml(sec) {
     if (!sec) return '';
@@ -6769,6 +6820,7 @@
 
     // Per-category visual dashboard, tactic classification, run config, posture.
     html += categoryDashboardHtml(s.security, s.compared);
+    html += complianceSectionHtml(s.security);
     html += classificationSectionHtml(s.security);
     html += runConfigHtml(s.run_config);
     html += securitySectionHtml(s.security);
