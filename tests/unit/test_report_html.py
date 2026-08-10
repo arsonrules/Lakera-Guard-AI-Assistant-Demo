@@ -1,6 +1,8 @@
 """Offline tests for the CLI HTML report (backend.report_html) — a mirror of the
 web UI's one-shot report. Assertions use `class="…"` attributes (present only in
 the rendered body) to avoid matching the embedded CSS/comments."""
+import pytest
+
 from backend import report_html
 
 
@@ -138,3 +140,37 @@ def test_per_scenario_lakera_detectors_present():
     h = report_html.render(_payload())
     # Each scenario reveal carries its checkpoint detector results.
     assert 'class="lk-cp"' in h and 'class="lk-cp-tag"' in h
+
+
+# ── Guard-supplied level reaches a class attribute ───────────────────────────
+
+def test_lk_badge_level_cannot_escape_the_class_attribute():
+    """
+    The detector level comes from the Guard response, and it lands in a class
+    ATTRIBUTE — a context where escaping the badge TEXT (which was already done)
+    gives no protection. Levels are the fixed l1..l5 enum, so clamping to a
+    CSS-identifier charset is lossless.
+    """
+    html = report_html._lk_badge('x" onmouseover=alert(1) y="')
+    cls = html.split('class="')[1].split('"')[0]
+    token = cls.replace("lk-badge ", "", 1)
+
+    # What matters is that the level survives as ONE inert CSS identifier: no
+    # quote to close the attribute, no space to start a new class, no `=` to
+    # form an attribute. A substring like "onmouseover" inside the token is
+    # harmless — it is a class name, not markup.
+    assert not set(token) & set('"\'= <>/'), f"level can break out of the attribute: {token!r}"
+    assert html.count('class="') == 1, "level injected a second attribute"
+    # The opening tag carries the class and nothing else.
+    assert html.split(">")[0] == f'<span class="{cls}"'
+    # The same value in TEXT position stays escaped (this part already worked).
+    assert '<' not in html.split(">", 1)[1] or "&quot;" in html
+
+
+@pytest.mark.parametrize("level,expected", [
+    ("l1", "lk-l1"), ("l2", "lk-l2"), ("l3", "lk-l3"), ("l4", "lk-l4"), ("l5", "lk-l5"),
+    ("-", "lk-none"), (None, "lk-none"), ("", "lk-none"),
+])
+def test_lk_badge_renders_real_levels_unchanged(level, expected):
+    """The clamp must not alter any level the app actually receives."""
+    assert f'class="lk-badge {expected}"' in report_html._lk_badge(level)

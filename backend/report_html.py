@@ -109,7 +109,12 @@ def _t(i18n: dict, key: str, **params) -> str:
 
 
 def _lk_badge(level: str) -> str:
-    cls = "lk-none" if level == "-" else "lk-" + str(level).lower()
+    # The level comes from the Guard response, so it is not ours to trust: it
+    # lands in a class ATTRIBUTE, where _e() on the text alone would not help.
+    # Levels are the fixed l1..l5 enum, so clamping to a CSS-identifier charset
+    # cannot change rendering and leaves nothing that could close the attribute.
+    safe = re.sub(r"[^a-z0-9_-]", "", str(level).lower())
+    cls = "lk-none" if level == "-" or not safe else "lk-" + safe
     return f'<span class="lk-badge {cls}">{_e(level or "-")}</span>'
 
 

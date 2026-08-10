@@ -6687,7 +6687,13 @@
     { level: 'L5', desc: 'Unlikely — most likely benign' },
     { level: '-',  desc: 'No graded confidence level for this detector' },
   ];
-  const lkClass = lvl => 'lk-' + (lvl === '-' ? 'none' : String(lvl).toLowerCase());
+  // Guard-supplied level lands in a class ATTRIBUTE, where escaping the text
+  // would not help. Levels are the fixed l1..l5 enum, so clamping to a
+  // CSS-identifier charset changes nothing visually and closes the sink.
+  const lkClass = lvl => {
+    const safe = String(lvl == null ? '' : lvl).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    return 'lk-' + (lvl === '-' || !safe ? 'none' : safe);
+  };
   const lkBadge = lvl => `<span class="lk-badge ${lkClass(lvl)}">${esc(lvl || '-')}</span>`;
 
   // Collapsed-by-default legend explaining L1–L5 (req 3).
