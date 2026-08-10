@@ -903,8 +903,14 @@ async def api_set_lakera_config(req: LakeraKeyRequest):
     if req.project_id is not None:
         _lakera_project_id = _clean(req.project_id)
     if req.endpoint is not None:
+        # Same metadata guard the LLM and judge base-urls get. This is the third
+        # operator-supplied outbound URL and was the only one skipping it — and
+        # it is the one the Guard key rides on, so the inconsistency was the
+        # wrong way round.
+        endpoint = _clean(req.endpoint)
+        _reject_metadata_url(endpoint)
         try:
-            lakera.set_endpoint(_clean(req.endpoint))
+            lakera.set_endpoint(endpoint)
         except ValueError as exc:
             raise HTTPException(400, str(exc))
     return {

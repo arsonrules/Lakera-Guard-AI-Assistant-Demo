@@ -216,3 +216,32 @@ async def test_vendored_fonts_are_actually_served(client):
         r = await client.get(f"/assets/{ref}")
         assert r.status_code == 200, ref
         assert r.content[:4] == b"wOF2", ref
+
+
+# ── Remote-sourced strings must not reach an inline event handler ────────────
+
+def test_onboarding_model_list_is_built_with_dom_apis_not_onclick_markup():
+    """
+    Model ids come from whatever OpenAI-compatible endpoint the user points at
+    (llm.py returns them verbatim from GET {base_url}/models), so they are
+    third-party strings. Interpolating one into an onclick="" attribute is not
+    something HTML-escaping can protect: the parser decodes &#39; back to a
+    quote BEFORE the handler is compiled as JS, so the id can close the string
+    literal and run in our origin — which would hand that endpoint the Lakera
+    key too, not just the provider key it was already given.
+
+    Verified in a browser against a hostile /models endpoint: the old markup
+    executed the payload, the DOM-built version renders it as inert text.
+    """
+    js = (main.FRONTEND_DIR / "onboarding.js").read_text(encoding="utf-8")
+    render = js[js.index("function renderModels()"):]
+    render = render[:render.index("\n  }") + 4]
+    # Strip // comments — the function documents the attack it avoids, and that
+    # prose must not be mistaken for the sink it warns about.
+    code = "\n".join(re.sub(r"//.*$", "", ln) for ln in render.splitlines())
+
+    assert "onclick=" not in code, \
+        "renderModels() puts a remote-sourced model id into an inline handler"
+    assert ".innerHTML" not in code, "renderModels() must not use innerHTML"
+    assert "createElement" in code and "addEventListener" in code
+    assert "textContent" in code

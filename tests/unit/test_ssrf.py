@@ -1,13 +1,15 @@
-"""Offline tests for the SSRF guard on the operator-supplied LLM/judge base URL."""
+"""Offline tests for the SSRF guard on the operator-supplied outbound URLs."""
 import pytest
 from fastapi import HTTPException
 
 import backend.main as main
 from backend.main import (
     JudgeConfigRequest,
+    LakeraKeyRequest,
     LLMConfigRequest,
     _reject_metadata_url,
     api_set_judge_config,
+    api_set_lakera_config,
     api_set_llm_config,
     api_test_llm_config,
 )
@@ -67,3 +69,32 @@ async def test_judge_config_endpoint_blocks_metadata(monkeypatch):
         await api_set_judge_config(req)
     assert exc.value.status_code == 400
     assert main._judge_config is None
+
+
+async def test_lakera_endpoint_blocks_metadata(monkeypatch):
+    """
+    The Guard endpoint is the third operator-supplied outbound URL, and the one
+    the Guard key is actually sent with — it was the only one not passed through
+    the metadata guard.
+    """
+    monkeypatch.setattr(main.lakera, "_endpoint", "https://api.lakera.ai/v2/guard")
+    before = main.lakera.current_endpoint()
+    with pytest.raises(HTTPException) as exc:
+        await api_set_lakera_config(LakeraKeyRequest(endpoint="http://169.254.169.254/"))
+    assert exc.value.status_code == 400
+    # Rejected means unchanged — a partially-applied endpoint would be worse.
+    assert main.lakera.current_endpoint() == before
+
+
+@pytest.mark.parametrize("endpoint", [
+    "https://api.lakera.ai",
+    "https://eu-west-1.api.lakera.ai",
+    "https://us.api.lakera.ai",
+    "https://ap-southeast-1.api.lakera.ai",
+    "http://localhost:9999/v2/guard",          # local mock Guard, must keep working
+])
+async def test_real_lakera_regions_still_accepted(monkeypatch, endpoint):
+    """The guard must not break the documented regional endpoints."""
+    monkeypatch.setattr(main.lakera, "_endpoint", "https://api.lakera.ai/v2/guard")
+    resp = await api_set_lakera_config(LakeraKeyRequest(endpoint=endpoint))
+    assert resp["endpoint"].startswith(endpoint.rstrip("/").split("/v2")[0])

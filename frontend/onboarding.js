@@ -284,9 +284,23 @@
   }
   function renderModels() {
     var list = byId('ob-model-list'); if (!list) return;
-    list.innerHTML = state.models.map(function (m) {
-      return '<button type="button" class="ob-model' + (m === state.model ? ' active' : '') + '" title="' + esc(m) + '" onclick="Onboarding._pickModel(\'' + esc(m).replace(/'/g, "\\'") + '\')">' + esc(m) + '</button>';
-    }).join('');
+    // Built with DOM APIs, NOT innerHTML. These ids come from whatever
+    // OpenAI-compatible endpoint the user pointed us at, and an onclick=""
+    // attribute is not a context esc() can protect: the HTML parser decodes
+    // &#39; back to a quote before the handler is compiled as JS, so an id
+    // could close the string literal and run in our origin — which would hand
+    // that endpoint the Lakera key too, not just its own. textContent and
+    // addEventListener have no such parsing step.
+    list.textContent = '';
+    state.models.forEach(function (m) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ob-model' + (m === state.model ? ' active' : '');
+      btn.title = m;
+      btn.textContent = m;
+      btn.addEventListener('click', function () { window.Onboarding._pickModel(m); });
+      list.appendChild(btn);
+    });
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
