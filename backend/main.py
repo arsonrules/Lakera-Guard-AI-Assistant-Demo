@@ -17,11 +17,12 @@ import httpx
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lakera_demo")
 
-from backend import assertions, attacker, chat, classify, datasets, extract, frameworks, history, judge, lakera, llm, logging_setup, rag, report, scenarios, strategies, tools
+from backend import assertions, attacker, chat, classify, datasets, extract, frameworks, history, judge, lakera, llm, logging_setup, rag, redact, report, scenarios, strategies, tools
 from backend.config import ENV_PATH, settings
 
 # Configure logging before anything else emits a record.
@@ -425,6 +426,38 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Lakera Guard Demo", lifespan=lifespan)
+
+# Teach the redactor which values are secret. Callables, not snapshots: all
+# three are runtime-mutable, so a key set through the UI after startup must be
+# redacted too.
+redact.register(lambda: [
+    _lakera_key,
+    (_llm_config or {}).get("api_key", ""),
+    (_judge_config or {}).get("api_key", ""),
+    settings.lakera_guard_api_key,
+    settings.llm_api_key,
+    settings.judge_api_key,
+    settings.openrouter_api_key,
+])
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _scrubbed_http_exception(request: Request, exc: StarletteHTTPException):
+    """
+    Strip secrets from every error response.
+
+    Several handlers deliberately forward upstream failure text so a user can
+    fix their own provider config — `str(exc)` for Guard errors, up to 300
+    characters of the provider's body for LLM errors. `base_url` is
+    user-controlled, so that text is arbitrary third-party output that can echo
+    the key straight back. Scrubbing centrally covers the handlers nobody
+    re-audits, rather than relying on each one to remember.
+    """
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": redact.scrub_obj(exc.detail)},
+        headers=getattr(exc, "headers", None),
+    )
 
 
 def _access_token_ok(request: Request) -> bool:
@@ -903,7 +936,19 @@ def _write_env(values: dict[str, str]) -> None:
             out.append(line)
     for key, val in remaining.items():
         out.append(f"{key}={val}")
-    ENV_PATH.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+    # 0600, and created that way rather than chmod'ed afterwards. This file holds
+    # the Guard key and both provider keys in plaintext; the default umask gives
+    # 0644, which makes every local account and every process on the host able to
+    # read them. Writing via os.open with an explicit mode closes the window where
+    # the secrets would sit world-readable between write and chmod.
+    body = "\n".join(out) + "\n"
+    fd = os.open(ENV_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(body)
+    # O_CREAT does not re-apply the mode to a file that already existed, so a
+    # .env written before this change (or by hand) still needs tightening.
+    os.chmod(ENV_PATH, 0o600)
 
 
 @app.post("/api/config/save-env")

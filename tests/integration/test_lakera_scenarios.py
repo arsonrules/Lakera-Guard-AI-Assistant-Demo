@@ -148,39 +148,46 @@ class TestCheckpoint1PIIExtraction:
     @pytest.mark.parametrize("scenario", load_attack_fixtures("checkpoint_1_user_input", "pii_extraction"))
     def test_pii_extraction_matches_its_declared_cp1_expectation(self, scenario):
         """
-        Most extraction requests trip Guard on phrasing alone. PII-02 does not,
-        and that is correct rather than a miss: an input scan can only match PII
-        that is PRESENT, and PII-02 asks for a card number without containing
-        one. The fixture declares `cp1_expected` so the difference is stated,
-        not silently tolerated — and
-        test_pii_request_missed_at_cp1_is_caught_at_cp3 proves the attack is
-        still stopped.
-        """
-        result = call_lakera_on_input(scenario["prompt"])
-        if scenario.get("cp1_expected") == "ALLOWED":
-            assert not is_flagged(result), (
-                f"[{scenario['id']}] was flagged at CP1, but the fixture declares ALLOWED. "
-                "Guard improved — update the fixture and drop cp1_expected."
-            )
-        else:
-            assert is_flagged(result), (
-                f"[{scenario['id']}] '{scenario['label']}' was NOT blocked — expected BLOCKED"
-            )
+        These prompts REQUEST PII; none of them contain any. An input scan has
+        nothing to pattern-match, so the CP1 verdict rests entirely on the
+        prompt_attack classifier reading intent from phrasing.
 
-    def test_pii_request_missed_at_cp1_is_caught_at_cp3(self):
-        """
-        Defense in depth is the whole point of having four checkpoints, so the
-        one scenario that slips past CP1 must be shown to die at CP3. Without
-        this, dropping PII-02 to ALLOWED at CP1 would just be a weakened test.
-        """
-        scenario = next(s for s in load_attack_fixtures("checkpoint_1_user_input", "pii_extraction")
-                        if isinstance(s, dict) and s.get("cp1_expected") == "ALLOWED")
-        assert not is_flagged(call_lakera_on_input(scenario["prompt"]))
+        For PII-01/04 ("list all customer emails", "export all addresses") that
+        reads as an attack and fires reliably. PII-02/03 are phrased as ordinary
+        account-holder requests and sit on the classifier's boundary — PII-03
+        was observed flagging and then not flagging within a single session.
+        Asserting a fixed verdict on those would make the suite flap, and
+        asserting ALLOWED would be just as wrong the next time it fires.
 
+        So `cp1_detection: best_effort` scenarios are not asserted here. They do
+        NOT get a free pass: every one must name a CP3 pair, and
+        test_a_best_effort_scenario_is_still_stopped_at_cp3 proves the leak is
+        caught there.
+        """
+        if scenario.get("cp1_detection") == "best_effort":
+            assert scenario.get("defense_in_depth_pair"), (
+                f"[{scenario['id']}] is best_effort at CP1 but names no CP3 pair — "
+                "it would be asserting nothing at all"
+            )
+            pytest.skip(f"{scenario['id']}: CP1 best-effort, guarantee is at CP3")
+        assert is_flagged(call_lakera_on_input(scenario["prompt"])), (
+            f"[{scenario['id']}] '{scenario['label']}' was NOT blocked — expected BLOCKED"
+        )
+
+    @pytest.mark.parametrize("scenario", [
+        s for s in load_attack_fixtures("checkpoint_1_user_input", "pii_extraction")
+        if isinstance(s, dict) and s.get("cp1_detection") == "best_effort"
+    ])
+    def test_a_best_effort_scenario_is_still_stopped_at_cp3(self, scenario):
+        """
+        Defense in depth is the reason four checkpoints exist. Anything CP1 is
+        allowed to miss must be shown to die at CP3 — otherwise 'best effort'
+        would just be a weakened assertion with extra words.
+        """
         leaked = _simulate_pii_output(scenario["defense_in_depth_pair"])
-        assert leaked, "the paired CP3 scenario has no simulated output"
+        assert leaked, f"[{scenario['id']}] names a CP3 pair with no simulated output"
         assert is_flagged(call_lakera_on_output(leaked)), (
-            f"[{scenario['id']}] slips past CP1 AND its response slips past CP3 — "
+            f"[{scenario['id']}] may slip past CP1 AND its response slips past CP3 — "
             "nothing in the pipeline stops this attack"
         )
 

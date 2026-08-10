@@ -5,7 +5,7 @@ import urllib.parse
 
 import httpx
 
-from backend import ratelimit
+from backend import ratelimit, redact
 
 
 # Shared, connection-pooled HTTP client — same rationale (and shape) as the one
@@ -283,7 +283,23 @@ async def complete(
                                api_key=api_key, model=model)
 
 
-async def test_connection(
+async def test_connection(*, provider: str, base_url: str, api_key: str, model: str) -> dict:
+    """
+    Probe an LLM endpoint, with any configured secret stripped from the result.
+
+    The probe reports failures verbatim (up to 200 characters of the upstream
+    body) so a user can see why their endpoint rejected them. `base_url` is
+    user-supplied, so that body is arbitrary third-party text that may echo the
+    key back — and unlike the error paths, this returns HTTP 200, so the
+    exception handler never sees it. Scrubbing here covers both callers: the
+    UI's Test Connection button and the CLI preflight.
+    """
+    return redact.scrub_obj(
+        await _probe_connection(provider=provider, base_url=base_url, api_key=api_key, model=model)
+    )
+
+
+async def _probe_connection(
     *,
     provider: str,
     base_url: str,

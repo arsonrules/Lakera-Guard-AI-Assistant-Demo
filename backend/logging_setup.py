@@ -15,6 +15,8 @@ import logging
 import sys
 import uuid
 
+from backend import redact
+
 # Set per request by the HTTP middleware; empty outside a request (e.g. CLI).
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="")
 
@@ -61,6 +63,10 @@ def configure(level: str = "INFO", *, json_output: bool = False) -> None:
 
     handler = logging.StreamHandler(sys.stderr)
     handler.addFilter(_RequestIdFilter())
+    # Scrub configured API keys from every record. On the handler, not at the
+    # call sites, so log lines added later are covered without anyone
+    # remembering to — including messages that originate inside dependencies.
+    handler.addFilter(redact.RedactingFilter())
     handler.setFormatter(
         _JsonFormatter()
         if json_output

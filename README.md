@@ -200,6 +200,24 @@ Every response carries an `X-Request-ID` (an inbound one is preserved, so traces
 proxies); it appears on every log line emitted while handling that request, so a user can
 quote the id from a failure.
 
+**API keys are write-only.** The Guard, LLM and judge keys can be set but never read
+back. They are excluded from every response, export and log:
+
+| Surface | Behaviour |
+|---|---|
+| `GET /api/*-config` | `api_key_set` + a short `api_key_masked` fingerprint; never the value |
+| Reports (`.html` / `.json` / `.csv`) and saved history | key stripped from the run payload |
+| Error responses | upstream text is scrubbed before it reaches the client |
+| Logs | a handler-level filter scrubs every record |
+| Browser `localStorage` | keys are held in memory only, never persisted |
+| `.env` written by *Save to .env* | created `0600`, not the default `0644` |
+
+Scrubbing matters because the app forwards upstream failures verbatim so you can debug
+your own provider config, and `LLM_BASE_URL` is yours to set — a gateway that echoes the
+`Authorization` header would otherwise put the key in an error banner and a log file.
+`tests/unit/test_key_confidentiality.py` enforces all of the above by setting each key to
+a sentinel and searching every surface for it.
+
 **No third-party requests.** The UI makes zero outbound calls to anything but your own
 LLM provider and Lakera Guard — webfonts are vendored into `frontend/fonts/`, so the CSP
 allows no remote origin at all (`default-src 'self'`). The app runs unchanged in an
