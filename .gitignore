@@ -1,5 +1,8 @@
 # Secrets — never commit real credentials
 .env
+# Target Test endpoint specs (--target-file): the headers are live credentials
+target.json
+target*.json
 
 # Python build artifacts
 __pycache__/

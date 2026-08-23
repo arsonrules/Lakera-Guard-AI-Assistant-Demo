@@ -75,7 +75,9 @@ def _app_assets() -> tuple[str, str, dict]:
     styles = "\n".join(re.findall(r"<style>(.*?)</style>", no_scripts, re.S))
     sprite = next((b for b in re.findall(r"<svg\b.*?</svg>", txt, re.S) if "<symbol" in b), "")
     i18n: dict[str, str] = {}
-    for k, v in re.findall(r"'((?:os|badge|cat)\.[A-Za-z0-9_]+)':\s*'((?:[^'\\]|\\.)*)'", txt):
+    # `tgt` carries the Target Test report banner; without it the banner renders
+    # as the raw key.
+    for k, v in re.findall(r"'((?:os|badge|cat|tgt)\.[A-Za-z0-9_]+)':\s*'((?:[^'\\]|\\.)*)'", txt):
         if k not in i18n:                      # English appears first in the file
             i18n[k] = v.replace("\\'", "'").replace('\\"', '"').replace("\\\\", "\\")
     return styles, sprite, i18n
@@ -164,6 +166,15 @@ def render(payload: dict) -> str:
                 f'<div class="num">{_e(num)}</div><div class="lbl">{_e(T(key))}</div></button>')
 
     body: list[str] = []
+
+    # A report is an evidence artifact: a run against a third-party endpoint has to
+    # say WHICH one, at the top, not only in the meta line. Mirrors
+    # targetBannerHtml() in frontend/index.html.
+    if llm.get("provider") == "http" and llm.get("base_url"):
+        body.append('<div class="tgt-note" style="font-size:0.82rem;padding:9px 12px;'
+                    'margin-bottom:14px;border-radius:8px;border:1px solid var(--skip-br);'
+                    'background:var(--skip-bg);color:var(--skip)">'
+                    + _e(T("tgt.reportBanner", url=llm["base_url"])) + '</div>')
 
     # ── Top strip: L1–L5 legend (collapsed) + judge model ─────────────────────
     legend_rows = "".join(f'<div class="os-legend-row">{_lk_badge(lv)}<span>{_e(desc)}</span></div>'

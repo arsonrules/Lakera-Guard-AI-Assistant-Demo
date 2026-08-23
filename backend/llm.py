@@ -1,5 +1,7 @@
 import asyncio
+import json
 import os
+import re
 import time
 import urllib.parse
 
@@ -116,6 +118,171 @@ def describe_error(exc: Exception) -> str:
         return f"request to {_error_target(exc)} failed: {type(exc).__name__}."
     return f"{type(exc).__name__}: {exc}"
 
+# ── Custom HTTP targets ───────────────────────────────────────────────────────
+# A third-party assistant endpoint that does NOT speak OpenAI Chat Completions:
+# a customer chatbot, an internal service, a gateway. The operator supplies the
+# request template and says where the answer lives in the response body.
+#
+# The spec rides inside `llm_config["target"]`, so it reaches the chat paths
+# without a new parameter on every function in between, and the judge/attacker —
+# which resolve their own config — can never accidentally become the system under
+# test.
+#
+#   {"url": "https://api.example.com/v1/assistant", "method": "POST",
+#    "headers": {"Authorization": "Bearer …"},
+#    "body": "{\"question\": {{prompt}}}",
+#    "response_path": "data.answer", "timeout": 60}
+
+DEFAULT_TARGET_BODY = '{"prompt": {{prompt}}}'
+DEFAULT_TARGET_TIMEOUT = 60.0
+
+# One pass over the template, so a prompt that itself contains "{{history}}"
+# cannot be re-substituted by a second replace(). Both the bare form
+# ({"q": {{prompt}}}) and the quoted form ({"q": "{{prompt}}"}) are accepted —
+# people write both, and the substituted value carries its own quotes either way.
+_TARGET_PLACEHOLDER = re.compile(
+    r'"\{\{\s*(prompt|history)\s*\}\}"|\{\{\s*(prompt|history)\s*\}\}')
+
+
+def render_target_body(template: str, messages: list[dict],
+                       extra_fields: dict | None = None) -> str:
+    """
+    Fill `{{prompt}}` / `{{history}}` in a request-body template, then merge any
+    operator-supplied `extra_fields` over the result.
+
+    Placeholders are substituted **JSON-encoded** (quotes included). Raw
+    substitution would emit invalid JSON on the first prompt containing a `"` or
+    a newline — which, for an attack corpus, is immediately.
+
+    `extra_fields` wins over the template: it exists precisely to override what
+    the template sets (a model id, a temperature, a tenant), so a caller who
+    names a key gets that key's value.
+    """
+    convo = [m for m in messages if m.get("role") != "system"]
+    prompt = next((m.get("content") or "" for m in reversed(convo)
+                   if m.get("role") == "user"), "")
+    values = {"prompt": json.dumps(prompt), "history": json.dumps(convo)}
+    # A function replacement is used verbatim — no backslash expansion, which
+    # matters because json.dumps output is full of \n and \\ escapes.
+    body = _TARGET_PLACEHOLDER.sub(
+        lambda m: values[m.group(1) or m.group(2)], template or DEFAULT_TARGET_BODY)
+    if not extra_fields:
+        return body
+    try:
+        payload = json.loads(body)
+    except ValueError as exc:
+        raise ValueError(
+            f"additional fields need a JSON request body, but the body is not valid "
+            f"JSON once the prompt is substituted ({exc})")
+    if not isinstance(payload, dict):
+        raise ValueError("additional fields can only be merged into a JSON object body")
+    payload.update(extra_fields)
+    return json.dumps(payload)
+
+
+def _dig(data, path: str):
+    """
+    Resolve a dotted `response_path` with numeric list indices, e.g.
+    "choices.0.message.content". An empty path means "the body is the answer".
+    Raises ValueError with a path-specific message — never a KeyError/IndexError,
+    because this failure is shown to the user who typed the path.
+    """
+    if not path:
+        if isinstance(data, str):
+            return data
+        raise ValueError(
+            "the endpoint returned a JSON object, so a response path is required "
+            "(e.g. 'data.answer')")
+    cur = data
+    walked: list[str] = []
+    for part in path.split("."):
+        where = ".".join(walked) or "the response body"
+        if isinstance(cur, list):
+            try:
+                cur = cur[int(part)]
+            except (ValueError, IndexError):
+                raise ValueError(f"response path '{path}': {where} is a list with no index {part}")
+        elif isinstance(cur, dict):
+            if part not in cur:
+                keys = ", ".join(list(cur)[:8]) or "nothing"
+                raise ValueError(f"response path '{path}': '{part}' not found in {where} (has: {keys})")
+            cur = cur[part]
+        else:
+            raise ValueError(f"response path '{path}': {where} is not an object or list")
+        walked.append(part)
+    return cur if isinstance(cur, str) else json.dumps(cur)
+
+
+def _extract_target(resp: httpx.Response, path: str) -> str:
+    try:
+        data = resp.json()
+    except ValueError:
+        if not path:
+            return resp.text
+        raise ValueError(
+            f"response path '{path}' was given but the endpoint did not return JSON")
+    return _dig(data, path)
+
+
+async def _request_target(spec: dict, messages: list[dict]) -> httpx.Response:
+    method = (spec.get("method") or "POST").upper()
+    headers = {"Content-Type": "application/json", **(spec.get("headers") or {})}
+    body = render_target_body(spec.get("body") or DEFAULT_TARGET_BODY, messages,
+                              spec.get("extra_fields"))
+    await ratelimit.acquire()          # share the global outbound-request rate cap
+    client = await _get_client()
+    return await client.request(
+        method, spec.get("url") or "",
+        headers=headers,
+        content=None if method in ("GET", "HEAD") else body.encode("utf-8"),
+        timeout=float(spec.get("timeout") or DEFAULT_TARGET_TIMEOUT),
+    )
+
+
+async def _complete_http(messages: list[dict], spec: dict) -> str:
+    resp = await _request_target(spec, messages)
+    resp.raise_for_status()
+    return _extract_target(resp, spec.get("response_path") or "")
+
+
+async def probe_target(spec: dict, prompt: str = "Hello, can you help me?") -> dict:
+    """
+    Send ONE sample prompt at a target and report what came back, so the user can
+    see the real response shape and pick `response_path` instead of guessing.
+    Without this, every misconfiguration looks identical to "all rows errored".
+
+    Never raises; the result is scrubbed of configured secrets because the body is
+    arbitrary third-party text that may echo the Authorization header back.
+    """
+    start = time.monotonic()
+    try:
+        resp = await _request_target(spec, [{"role": "user", "content": prompt}])
+        out = {
+            "ok": 200 <= resp.status_code < 300,
+            "status": resp.status_code,
+            "latency_ms": int((time.monotonic() - start) * 1000),
+            "raw_body_preview": resp.text[:4000],
+            "extracted": None,
+            "path_error": False,
+            "error": None,
+        }
+        if out["ok"]:
+            try:
+                out["extracted"] = _extract_target(resp, spec.get("response_path") or "")
+            except ValueError as exc:
+                out.update(ok=False, path_error=True, error=str(exc))
+        else:
+            out["error"] = f"HTTP {resp.status_code} from the endpoint."
+        return redact.scrub_obj(out)
+    except Exception as exc:  # noqa: BLE001 — a probe reports failures, it doesn't raise
+        return redact.scrub_obj({
+            "ok": False, "status": None,
+            "latency_ms": int((time.monotonic() - start) * 1000),
+            "raw_body_preview": "", "extracted": None, "path_error": False,
+            "error": describe_error(exc),
+        })
+
+
 # No PII is kept in the system prompt. The CP2 (poisoned RAG docs) and CP3
 # (simulated LLM output) scenarios provide their own synthetic PII for the demo.
 SYSTEM_PROMPT = """You are a helpful customer service assistant for ShopEase, an online retail company.
@@ -224,8 +391,11 @@ async def complete_chat(
     base_url: str,
     api_key: str,
     model: str,
+    target: dict | None = None,
 ) -> str:
     """Post a fully-assembled message list and return the assistant's text."""
+    if target:                          # a custom HTTP endpoint, not an OpenAI API
+        return await _complete_http(messages, target)
     endpoint = f"{_normalize_base_url(base_url)}/chat/completions"
     await ratelimit.acquire()          # share the global outbound-request rate cap
     client = await _get_client()
@@ -247,12 +417,17 @@ async def complete_with_tools(
     base_url: str,
     api_key: str,
     model: str,
+    target: dict | None = None,
 ) -> dict:
     """
     Like complete_chat, but offers the model `tools` (OpenAI function calling).
     Returns {"content": str, "tool_calls": list}. The caller decides what a tool
     call means — we never execute it.
     """
+    if target:
+        # A black-box endpoint has no tool-calling contract to offer tools through,
+        # so the agentic scenarios simply aren't runnable against one.
+        raise ValueError("tool-calling is not supported for HTTP targets.")
     endpoint = f"{_normalize_base_url(base_url)}/chat/completions"
     await ratelimit.acquire()          # share the global outbound-request rate cap
     client = await _get_client()
@@ -276,11 +451,12 @@ async def complete(
     api_key: str,
     model: str,
     system_prompt: str | None = None,
+    target: dict | None = None,
 ) -> str:
     messages = build_messages([{"role": "user", "content": user_message}],
                               context_docs, system_prompt)
     return await complete_chat(messages, provider=provider, base_url=base_url,
-                               api_key=api_key, model=model)
+                               api_key=api_key, model=model, target=target)
 
 
 async def test_connection(*, provider: str, base_url: str, api_key: str, model: str) -> dict:

@@ -20,6 +20,7 @@ An interactive single-page application that demonstrates how [Lakera Guard](http
 6. [Configuration](#configuration)
 7. [Running the Application](#running-the-application)
 8. [Using the UI](#using-the-ui)
+   - [Three modes: Demo, Benchmark, Target Test](#three-modes-demo-benchmark-target-test)
    - [Chat panel](#chat-panel)
    - [Security Trace inspector](#security-trace-inspector)
    - [Scenario categories](#scenario-categories)
@@ -28,10 +29,11 @@ An interactive single-page application that demonstrates how [Lakera Guard](http
    - [Custom system prompt](#custom-system-prompt)
 9. [LLM Provider Configuration](#llm-provider-configuration)
 10. [One-Shot Testing](#one-shot-testing)
-11. [Report Generation](#report-generation)
-12. [Running Integration Tests](#running-integration-tests)
-13. [Project Structure](#project-structure)
-14. [Notes on Intentional Demo Data](#notes-on-intentional-demo-data)
+11. [Target Test — your own endpoint](#target-test--your-own-endpoint)
+12. [Report Generation](#report-generation)
+13. [Running Integration Tests](#running-integration-tests)
+14. [Project Structure](#project-structure)
+15. [Notes on Intentional Demo Data](#notes-on-intentional-demo-data)
 
 ---
 
@@ -47,6 +49,17 @@ The demo simulates a fictional online retailer (**ShopEase**) whose customer-ser
 - **Choose any LLM backend** — OpenRouter (cloud) or an on-prem / local server such as LM Studio, Ollama, or oMLX — and switch live from the header without restarting.
 - **Run a One-Shot Test** that fires every scenario at once and reports, per checkpoint, what Lakera blocked, allowed, or let through.
 - **Export a report** (standalone HTML or JSON) of a One-Shot run for sharing or compliance evidence.
+
+These land in **three modes**, picked from the segmented control in the header:
+
+| Mode | Route | What it does | What it runs against |
+|---|---|---|---|
+| **Demo** (chat) | `#/chat` | One message at a time, with the live checkpoint trace beside it | This app's guarded pipeline |
+| **Benchmark** | `#/bench` | Fires a built-in category or an imported/uploaded dataset in one batch | This app's guarded pipeline |
+| **Target Test** | `#/target` | Fires the same datasets at **someone else's** API endpoint, scanned by Guard on the way in and on the way back | Your own third-party endpoint |
+
+Each mode is deep-linkable (`http://localhost:8000/#/bench`) and the last one used is
+remembered, so a demo script can jump straight where it needs to.
 
 The goal is to give security engineers, developers, and product teams a hands-on understanding of *where* and *how* LLM guardrails fire in a realistic pipeline.
 
@@ -372,6 +385,27 @@ The app is available at [http://localhost:8000](http://localhost:8000).
 
 ## Using the UI
 
+### Three modes: Demo, Benchmark, Target Test
+
+The segmented control at the left of the header switches modes. It is one page — the
+header, settings panels and onboarding wizard are shared — so only the working area
+changes:
+
+- **Demo** keeps the chat, the scenario bar, the Security Trace inspector, the
+  Guard ON/OFF toggle, the Knowledge Base controls and the Risk Map.
+- **Benchmark** replaces them with a numbered configuration rail (Scope → Target →
+  Guard → Attack → Context → Limits → History) and a results pane whose sticky top bar
+  holds **Run Test**, the progress counter, **Save current run** and the three exports.
+  Each rail group shows its current value, and the run bar shows the whole recipe
+  ("300 rows · 100 sampled of 12,043 · +2 obfuscation variants"), so what is about to
+  execute is legible *before* it starts.
+- **Target Test** is the same rail with an **Endpoint** step added on top and the
+  Target-model and Context steps removed — see
+  [Target Test](#target-test--your-own-endpoint).
+
+Both work modes share one set of controls and one results renderer, so a run
+configured in one behaves identically in the other.
+
 ### Chat panel
 
 Type any message in the text box at the bottom-left and press **Enter** or click **SEND**. The assistant responds as a ShopEase customer-service agent. While processing, a pulsing "LAKERA GUARD PROCESSING…" indicator appears.
@@ -385,7 +419,7 @@ The **Guard: ON/OFF** button in the header flips Lakera Guard for the chat. With
 (no Lakera key required), a red banner warns that responses are unscanned, and the
 Security Trace shows every checkpoint as `OFF`. Toggle it on and resend the same
 prompt to watch the guard intercept it — a quick way to demo the difference with your
-own manual inputs. (This is the live, single-message switch; the one-shot modal's
+own manual inputs. (This is the live, single-message switch; Benchmark mode's
 *Guard ON vs OFF* runs the same comparison across the whole scenario set.)
 
 ### Security Trace inspector
@@ -497,7 +531,7 @@ Notes:
 
 ## One-Shot Testing
 
-The **One-Shot Test** button in the header opens a modal that fires an entire scenario set through the full CP1→CP2→CP3 pipeline in one click (run concurrently, server-side).
+**Benchmark** mode (the `#/bench` tab in the header) fires an entire scenario set through the full CP1→CP2→CP3 pipeline in one click (run concurrently, server-side).
 
 1. Choose a **scope** — *All categories* or a single OWASP category.
 2. Click **Run Test**. Each scenario is executed against the currently configured LLM provider and Lakera checkpoints.
@@ -780,7 +814,7 @@ So if you leave both at their defaults, the report makes clear a system prompt *
 
 #### Security posture dashboard & recommendations
 
-Every run is analysed into a **security report** (shown in the modal and the exported
+Every run is analysed into a **security report** (shown in the results pane and the exported
 HTML report, and carried in the JSON):
 
 - **Posture banner** — an overall rating from `Secure` → `Critical` based on the worst finding.
@@ -791,9 +825,172 @@ Severity is derived from the run: a **real breach** (guard missed × model compl
 
 > Attack scenarios that block at CP1 never reach the LLM, so a One-Shot run over injection-heavy categories is cheap. Running *All categories* will make real LLM calls for the scenarios that pass CP1 — point the provider at a local model (LM Studio / Ollama / oMLX) to run the full sweep at zero cost.
 
+## Target Test — your own endpoint
+
+Benchmark measures *this* app's pipeline. **Target Test** (`#/target`) points the same
+harness at a third-party assistant API — a customer's chatbot, an internal service, a
+gateway — feeds it a dataset, and reports what Lakera Guard sees on the way in and on
+the way back.
+
+### What applies, and what doesn't
+
+A third-party endpoint is a **black box**: it owns its own system prompt and its own
+knowledge base. So in this mode:
+
+| Checkpoint | Applies? | Why |
+|---|---|---|
+| **CP1** — input scan | ✅ | Every dataset prompt is scanned before it is forwarded |
+| **CP2** — RAG scan | ❌ | Our knowledge base is never sent to the endpoint, so there is nothing to scan. Reporting `CP2: 0 blocked` would overstate coverage, so the checkpoint is switched off rather than reported empty |
+| **CP3** — output scan | ✅ | Whatever the endpoint returns is scanned before it is counted |
+| **CP0** — system-prompt scan | ❌ | The endpoint supplies its own prompt |
+
+**Guard ON vs OFF is the headline number here** — it quantifies what Guard would add
+in front of an endpoint that is already in production.
+
+**The judge is never the target.** Grading is resolved from the judge picked in the
+rail, then the app's global judge model, then the configured LLM provider — never from
+the endpoint under test, which would otherwise be asked to grade its own answers. If
+judging is requested with no judge model available, the run is refused with a clear
+message instead of producing a misleading result.
+
+Step ③ of the rail picks that judge **for this run only**: provider (OpenRouter,
+LM Studio, Ollama, oMLX, or any OpenAI-compatible endpoint), base URL, model, and
+whether it needs an API key. **Load models** probes the provider and fills the model
+list, so the id does not have to be typed from memory. The choice never touches the
+global judge settings in the Settings panel, and the report names the model that
+actually graded the run. On the CLI the same job is done by
+`--judge-provider` / `--judge-base-url` / `--judge-model` / `--judge-api-key`.
+
+### Configuring an endpoint
+
+Step ① of the rail describes the request:
+
+| Field | Meaning |
+|---|---|
+| **URL** + method | Where to POST (also PUT/PATCH/GET) |
+| **Authentication** | None · API Key · Basic Auth · Bearer Token — see below |
+| **Extra headers** | Anything else the endpoint needs (a tenant id, an API version) |
+| **Request body** | A JSON template with `{{prompt}}` where the user message goes |
+| **Additional fields** | A JSON object merged into every request — see below |
+| **Response path** | A dotted path to the answer in the response, e.g. `data.answer` or `choices.0.message.content`. Leave blank if the whole body is the answer |
+| **Timeout** | Per-request, in seconds |
+
+#### Authentication
+
+Every scheme resolves to one request header — the picker exists because putting
+the right string in the right header is the step people get wrong, not because the
+schemes differ underneath:
+
+| Type | Sends |
+|---|---|
+| **None** | nothing |
+| **API Key** | `<your header name>: <key>` — the header name is configurable (default `X-API-Key`) because there is no standard one |
+| **Basic Auth** | `Authorization: Basic base64(username:password)` — an empty password is allowed, since some gateways use a token-as-username |
+| **Bearer Token** | `Authorization: Bearer <token>` |
+
+The picker wins over a hand-typed `Authorization` in **Extra headers**: it is the
+explicit, structured choice, so it is taken as what you meant.
+
+#### Additional fields
+
+A JSON object merged into the request **after** the body template is rendered, so
+these override whatever the template set. It is how an endpoint's own required
+fields get in without rewriting the template each time:
+
+```json
+{ "model": "acme-assistant-v2", "temperature": 0, "stream": false }
+```
+
+The box is parsed as you type, and a malformed value blocks both the probe and the
+run rather than turning into 500 identical errored rows. Merging needs a JSON
+object body; a form-encoded body still works as long as nothing needs merging.
+
+`{{prompt}}` is substituted **JSON-encoded**, quotes included — raw substitution would
+emit invalid JSON the first time a prompt contains a `"`, which for an attack corpus is
+immediately. `{{history}}` is also available (a JSON array) for multi-turn scenarios.
+
+A worked example, for an endpoint that answers like
+`{"data": {"answer": "…"}}`:
+
+```json
+{
+  "url": "https://api.example.com/v1/assistant",
+  "method": "POST",
+  "auth": { "type": "bearer", "token": "sk-…" },
+  "headers": { "X-Tenant": "acme" },
+  "body": "{\"question\": {{prompt}}, \"session\": \"guard-test\"}",
+  "extra_fields": { "model": "acme-assistant-v2", "temperature": 0 },
+  "response_path": "data.answer",
+  "timeout": 60
+}
+```
+
+The equivalent call, for comparison:
+
+```bash
+curl -X POST https://api.example.com/v1/assistant \
+  -H "Authorization: Bearer sk-…" -H "X-Tenant: acme" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Where is my order?", "session": "guard-test",
+       "model": "acme-assistant-v2", "temperature": 0}'
+```
+
+### Test the endpoint before you run 500 rows
+
+**Test endpoint** sends **one** sample prompt and shows the status, the latency, the
+value at your response path, and the raw body with that value highlighted — so you can
+pick the path from what the endpoint actually returns instead of guessing at it.
+Without it, every misconfiguration looks identical to "all rows errored".
+
+The chip on the button and in the header reports one of five states, and **Run Test
+stays disabled until it is green**:
+
+| Chip | Meaning |
+|---|---|
+| `Endpoint: untested` (grey) | Nothing probed yet, or the config changed since the last probe |
+| `Endpoint: testing…` | Probe in flight |
+| `Endpoint: OK · 412 ms` (green) | 2xx and the response path resolved |
+| `Endpoint: path not found` (amber) | 2xx, but nothing at that path — the message names the keys the body *does* have |
+| `Endpoint: failed` (red) | Non-2xx, unreachable, or a timeout |
+
+Any edit to the form drops the chip back to grey: a green light must describe the
+configuration that is actually about to run.
+
+### Handling of credentials
+
+- **Credentials are never persisted.** The URL, method, body template, additional
+  fields, response path, timeout, and *which* auth scheme you picked are remembered in
+  `localStorage`. The key, token, password and extra header values are not, and have to
+  be re-entered after a reload — as does the judge's API key. The rail says so, so
+  their disappearance reads as intentional rather than as a bug.
+- Every credential is registered with the process's redactor — including the base64
+  blob Basic auth actually sends, since that is the string a chatty endpoint could echo
+  back — so none of them can surface in an error body, a log line, or an exported
+  report. The Lakera and LLM keys get the same treatment.
+- A target endpoint is **per-run and in-memory only**. It is never written to `.env`,
+  and it never touches the process-global LLM config, so a Target Test run cannot
+  change what the chat or a Benchmark run talks to.
+- The target URL goes through the same SSRF guard as every other operator-supplied
+  outbound URL: cloud-metadata hosts and link-local addresses are refused, loopback and
+  private LAN stay allowed so on-prem endpoints work. As elsewhere in this demo, that
+  check reads the URL as written and does not resolve DNS, so it is **not** a defense
+  against DNS rebinding — run the demo in a trusted network.
+
+Tool-calling scenarios are not runnable against a black box (there is no tool contract
+to offer), and streaming responses are out of scope — request/response only.
+
+### The report names the endpoint
+
+A report is an evidence artifact, so a Target Test run carries a banner at the top of
+the results and of every export naming the endpoint that was tested. The exports
+themselves (HTML / JSON / CSV), the history save, and the regression diff work exactly
+as they do in Benchmark mode.
+
+---
+
 ## Report Generation
 
-After a One-Shot run, two export buttons become active in the modal toolbar:
+After a One-Shot run, the export buttons become active in the results pane's run bar:
 
 - **HTML Report** — a self-contained, styled `.html` file (no external assets) with the summary cards, checkpoint legend, and full results table, stamped with the timestamp, provider, model, and endpoint. Each row has a native **"Show prompt & RAG documents"** disclosure (click-to-reveal, collapsed by default) carrying the prompt, simulated output, and retrieved docs. Open it in any browser or attach it to a ticket.
 - **JSON** — the raw run payload (summary + per-scenario traces + provider metadata) for programmatic analysis or diffing across runs.
@@ -895,7 +1092,7 @@ python -m backend.oneshot --suite suite.yaml \
 `--save-history` writes the run to `runs/` (gitignored); `--baseline <run.json>`
 prints a per-metric diff; `--fail-on-regression` turns a regression into a non-zero
 exit. Detection rates regress when they **drop**; breaches / evasions /
-false-positives regress when they **rise**. In the UI, the one-shot modal's
+false-positives regress when they **rise**. In the UI, the Benchmark rail's
 **History** panel saves runs and diffs the latest two. (API: `GET/POST /api/history`,
 `GET/DELETE /api/history/{id}`, `POST /api/history/diff`.)
 

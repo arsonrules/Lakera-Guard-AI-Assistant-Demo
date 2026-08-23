@@ -236,6 +236,79 @@ python -m backend.oneshot \
 
 ---
 
+## 7b. Test someone else's endpoint (`--target-file`)
+
+Everything above runs your dataset through *this* app's pipeline against a
+configured LLM provider. `--target-file` swaps the model for a **third-party HTTP
+endpoint** — a customer's assistant, an internal service, a gateway — while CP1 and
+CP3 still scan every prompt on the way in and every reply on the way back. This is
+the CLI half of the UI's **Target Test** mode, and it is where a CI gate against a
+production assistant lives.
+
+Describe the endpoint in a JSON file:
+
+```json
+{
+  "url": "https://api.example.com/v1/assistant",
+  "method": "POST",
+  "auth": { "type": "bearer", "token": "sk-…" },
+  "headers": { "X-Tenant": "acme" },
+  "body": "{\"question\": {{prompt}}, \"session\": \"guard-test\"}",
+  "extra_fields": { "model": "acme-assistant-v2", "temperature": 0 },
+  "response_path": "data.answer",
+  "timeout": 60
+}
+```
+
+- `auth.type` is `none` | `api_key` | `basic` | `bearer`, and each resolves to one
+  header: `api_key` sends `{"type":"api_key","header":"X-API-Key","key":"…"}` under
+  the header name you choose, `basic` sends `{"username":"…","password":"…"}` as
+  `Authorization: Basic base64(user:pass)`, `bearer` sends `{"token":"…"}` as
+  `Authorization: Bearer …`. It wins over a hand-written `Authorization` in
+  `headers`.
+- `extra_fields` is merged into the request **after** the template is rendered, so
+  it overrides what the template set — the place for an endpoint's own required
+  fields (a model id, a temperature, a tenant). Merging needs a JSON object body.
+- `{{prompt}}` is substituted **JSON-encoded** (quotes included), so a prompt
+  containing `"` or a newline cannot break the body — which, for an attack corpus,
+  it otherwise would on roughly the first row. Both `{{prompt}}` and `"{{prompt}}"`
+  are accepted. `{{history}}` (a JSON array) is available for multi-turn scenarios.
+- `response_path` is a dotted path with numeric indices — `data.answer`,
+  `choices.0.message.content`. Leave it out when the whole body is the answer.
+- The file holds credentials. **Keep it out of version control** and inject it from
+  your CI secret store.
+
+```bash
+# Fire an imported dataset at a third-party endpoint, judged by a separate model
+python -m backend.oneshot \
+  --target-file target.json \
+  --dataset-file datasets/prompts.csv --max-scenarios 200 \
+  --provider openrouter --model anthropic/claude-sonnet-4.6 \
+  --compare --output-dir reports/
+
+# Check the plan first — no API calls, no keys needed
+python -m backend.oneshot --target-file target.json --category llm01 --no-judge --dry-run
+```
+
+A few rules the runner enforces for you:
+
+- **The judge is never the target.** `--provider` / `--model` (and the `--judge-*`
+  overrides) supply the judge; the endpoint under test is never asked to grade its
+  own answers. Asking for judging with no judge model resolvable is a config error
+  (exit 2), not a misleading result.
+- **CP2 is switched off.** Your knowledge base is never sent to a black box, so
+  there is nothing for it to scan; the dry-run plan shows `checkpoints : CP1 CP3`.
+- **The pre-flight probes the endpoint**, not `/models` — one sample prompt, so a
+  wrong URL, a dead token or (the common one) a wrong `response_path` costs one
+  request instead of a whole run of identical errors. `--no-preflight` skips it.
+- **The endpoint URL goes through the same SSRF guard** as `--base-url`, and the
+  header values are registered with the redactor, so a token cannot land in a log
+  line or an exported report. `target` is stripped from the written report entirely.
+- Tool-calling scenarios are not runnable against a black box; they error per row
+  rather than failing the run.
+
+---
+
 ## 8. Make it fast — burst size & streaming
 
 **`--burst-size N`** (default 8) sets the **parallel scan pool** — how many
@@ -416,7 +489,8 @@ python -m backend.oneshot --suite suite.yaml \
 | | `--lakera-api-key KEY` | Guard API key — overrides `$LAKERA_GUARD_API_KEY`. |
 | | `--lakera-projects K=V,…` | Per-checkpoint Lakera Project IDs: `input=<id>` (CP1), `rag=<id>` (CP2), `output=<id>` (CP3). Unset checkpoints use the key's default policy. `cp1/cp2/cp3` accepted as aliases. |
 | **Provider** | `--provider` / `--base-url` / `--model` / `--api-key` | Target LLM (`openrouter`, `lmstudio`, `ollama`, `omlx`, `custom`); key overrides `$LLM_API_KEY`/`$OPENROUTER_API_KEY`. |
-| | `--preflight` / `--no-preflight` | Ping the target LLM once **before** the run and abort with a clear message if the host/port/model is wrong (default on). |
+| | `--target-file PATH` | **Target Test** — a JSON file describing a third-party HTTP endpoint (`url`/`method`/`auth`/`headers`/`body`/`extra_fields`/`response_path`/`timeout`) to fire the dataset at instead of an OpenAI-compatible provider. Replaces `--base-url`/`--model` for the run; `--provider`/`--model` then supply only the **judge**, which must be a different model. CP2 is switched off (a black box owns its own knowledge base). The file holds credentials — keep it out of version control. |
+| | `--preflight` / `--no-preflight` | Ping the target LLM once **before** the run and abort with a clear message if the host/port/model is wrong (default on). With `--target-file`, the probe sends one sample prompt at the endpoint instead. |
 | **Judge** | `--judge-provider` / `--judge-base-url` / `--judge-model` / `--judge-api-key` | Optional stronger judge model. **Each omitted flag falls back to the matching main-model value** (provider→`--provider`, base-url/model→`--base-url`/`--model` when the provider matches, key→`--judge-api-key` → `$JUDGE_API_KEY` → `--api-key`). Omit **all four** → judge with the target model. |
 | **Gate** | `--min-detection 0..1` · `--max-breaches` · `--max-evasions` · `--max-effective-evasions` · `--max-false-positives` | CI thresholds (a `null`/unset threshold isn't enforced). |
 | **Output** | `--output-dir DIR` | Write **both** a timestamped JSON **and** a styled HTML report into DIR. |

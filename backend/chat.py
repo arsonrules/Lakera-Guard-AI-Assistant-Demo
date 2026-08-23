@@ -98,6 +98,9 @@ async def _call_llm(
         api_key=cfg.get("api_key", settings.openrouter_api_key),
         model=cfg.get("model", settings.openrouter_model),
         system_prompt=system_prompt,
+        # Set only in Target-Test mode: a custom HTTP endpoint replaces the
+        # OpenAI-compatible call entirely (backend/llm.py).
+        target=cfg.get("target"),
     )
 
 
@@ -331,6 +334,7 @@ async def process_agentic(
         base_url=cfg.get("base_url", llm.preset(llm.DEFAULT_PROVIDER)["base_url"]),
         api_key=cfg.get("api_key", settings.openrouter_api_key),
         model=cfg.get("model", settings.openrouter_model),
+        target=cfg.get("target"),
     )
     content, tool_calls = out["content"], out["tool_calls"]
 
@@ -363,6 +367,7 @@ async def _llm_with_history(history: list[dict], context_docs: list[str],
         base_url=cfg.get("base_url", llm.preset(llm.DEFAULT_PROVIDER)["base_url"]),
         api_key=cfg.get("api_key", settings.openrouter_api_key),
         model=cfg.get("model", settings.openrouter_model),
+        target=cfg.get("target"),
     )
 
 

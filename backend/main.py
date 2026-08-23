@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import collections
 import ipaddress
 import json
@@ -19,6 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field
+from typing import Any, Literal
 
 logger = logging.getLogger("lakera_demo")
 
@@ -261,6 +263,165 @@ def _public_judge_config() -> dict:
             "base_url": _judge_config["base_url"], "model": _judge_config["model"],
             "api_key_set": bool(key), "api_key_masked": _mask(key)}
 
+
+# ── Target Test mode: a per-run third-party endpoint ─────────────────────────
+
+# Header values from per-run targets. Registered with the redactor (below) so a
+# bearer token can't surface in an error body, a log line or an exported report —
+# the same treatment _lakera_key and llm_api_key already get. Bounded, so a
+# long-lived process doesn't accumulate every credential it has ever been shown.
+_target_secrets: collections.deque = collections.deque(maxlen=64)
+
+MAX_TARGET_HEADER_LEN = 2_000
+TARGET_METHODS = ("POST", "PUT", "PATCH", "GET")
+
+
+def _target_auth_headers(auth) -> dict[str, str]:
+    """
+    Turn the chosen auth scheme into the one header it actually sends. Every
+    credential here is also handed to the redactor, including the base64 blob for
+    Basic — that encoded string is what travels, so it is what could be echoed
+    back by a chatty endpoint and land in a report.
+    """
+    if auth is None or auth.type == "none":
+        return {}
+    if auth.type == "api_key":
+        name = _clean(auth.header) or "X-API-Key"
+        key = _clean(auth.key)
+        if not key:
+            raise HTTPException(400, "API-key authentication needs a key.")
+        _target_secrets.append(key)
+        return {name: key}
+    if auth.type == "bearer":
+        token = _clean(auth.token)
+        if not token:
+            raise HTTPException(400, "Bearer authentication needs a token.")
+        _target_secrets.append(token)
+        return {"Authorization": f"Bearer {token}"}
+    # basic
+    username, password = _clean(auth.username), _clean(auth.password)
+    if not username:
+        raise HTTPException(400, "Basic authentication needs a username.")
+    encoded = base64.b64encode(f"{username}:{password}".encode()).decode()
+    _target_secrets.extend([password, encoded] if password else [encoded])
+    return {"Authorization": f"Basic {encoded}"}
+
+
+def _target_llm_config(t) -> dict:
+    """
+    Validate a per-run target and turn it into an `llm_config` for that run only.
+    The process-global `_llm_config` is never written, and nothing here reaches
+    `.env` — a target endpoint is in-memory and per-run by design.
+    """
+    url = _clean(t.url)
+    if not re.match(r"^https?://", url):
+        raise HTTPException(400, "Target URL must start with http:// or https://")
+    _reject_metadata_url(url)                  # same SSRF guard as every other outbound URL
+    method = (_clean(t.method) or "POST").upper()
+    if method not in TARGET_METHODS:
+        raise HTTPException(400, f"Unsupported method '{method}'. Use one of: "
+                                 + ", ".join(TARGET_METHODS))
+    headers: dict[str, str] = {}
+    for name, value in (t.headers or {}).items():
+        # _clean strips control characters, so a header value can't inject a
+        # second header or a request line.
+        name, value = _clean(name), _clean(value)
+        if not name:
+            continue
+        if len(value) > MAX_TARGET_HEADER_LEN:
+            raise HTTPException(400, f"Header '{name}' exceeds {MAX_TARGET_HEADER_LEN} characters.")
+        headers[name] = value
+        _target_secrets.append(value)
+    # Auth is applied last: it is the explicit, structured choice, so if someone
+    # also hand-typed an Authorization header the picker is what they meant.
+    headers.update(_target_auth_headers(getattr(t, "auth", None)))
+    host = urllib.parse.urlsplit(url).netloc or url
+    return {
+        # provider/base_url/model are what logs, reports and the UI badge print.
+        # Keep them populated so every existing readout still says something true.
+        "provider": "http", "base_url": url, "api_key": "", "model": f"http:{host}",
+        "target": {"url": url, "method": method, "headers": headers,
+                   "body": t.body, "extra_fields": getattr(t, "extra_fields", None),
+                   "response_path": _clean(t.response_path),
+                   "timeout": float(t.timeout)},
+    }
+
+
+def _run_judge_config(j) -> dict | None:
+    """
+    Validate a per-run judge model. Same checks as the global judge endpoint —
+    known provider, http(s) base URL, SSRF guard, key required where the preset
+    says so — but nothing is stored: this config lives for one run.
+    """
+    if j is None:
+        return None
+    provider = _clean(j.provider) or llm.DEFAULT_PROVIDER
+    if provider not in llm.PROVIDER_PRESETS:
+        raise HTTPException(400, f"Unknown judge provider '{provider}'.")
+    p = llm.preset(provider)
+    base_url = _clean(j.base_url) or p["base_url"]
+    if not re.match(r"^https?://", base_url or ""):
+        raise HTTPException(400, "Judge base URL must start with http:// or https://")
+    _reject_metadata_url(base_url)
+    model = _clean(j.model) or p["default_model"]
+    if not model:
+        raise HTTPException(400, f"A judge model id is required for {p['label']}.")
+    api_key = _clean(j.api_key)
+    if p["requires_key"] and not api_key:
+        raise HTTPException(400, f"The judge provider {p['label']} requires an API key.")
+    if api_key:
+        _target_secrets.append(api_key)
+    return {"provider": provider, "base_url": base_url, "api_key": api_key, "model": model}
+
+
+def _public_run_judge(cfg: dict) -> dict:
+    """Judge readout for a per-run judge — never returns the key."""
+    key = cfg.get("api_key") or ""
+    return {"enabled": True, "provider": cfg["provider"], "base_url": cfg["base_url"],
+            "model": cfg["model"], "api_key_set": bool(key), "api_key_masked": _mask(key)}
+
+
+def _public_target_config(cfg: dict) -> dict:
+    """Run readout for a target run — the endpoint, never the headers."""
+    return {"provider": "http", "base_url": cfg["base_url"], "model": cfg["model"],
+            "api_key_set": False, "api_key_masked": ""}
+
+
+def _oneshot_llm(req: "OneShotRequest") -> tuple[dict, dict, dict, dict]:
+    """
+    Resolve (target config, judge config, public LLM readout, public judge readout)
+    for one run.
+
+    A per-run `judge_llm` wins over the global judge settings; failing that the
+    global judge, and failing that the configured provider. What is never allowed
+    is the run's own target: `_effective_judge_config()` falls back to
+    `_llm_config`, which under a per-run override would put the system under test
+    in charge of grading its own answers — so the override is deliberately never
+    visible to the judge or the adaptive attacker, both of which take
+    `judge_config`.
+    """
+    run_judge = _run_judge_config(req.judge_llm)
+    judge_cfg = run_judge or _effective_judge_config()
+    judge_public = _public_run_judge(run_judge) if run_judge else _public_judge_config()
+
+    if req.target is None:
+        return dict(_llm_config), judge_cfg, _public_llm_config(), judge_public
+    if (req.judge or req.compare) and not (
+            run_judge or _judge_config
+            or (_llm_config.get("model") and _llm_config.get("base_url"))):
+        raise HTTPException(400,
+            "Judging a custom target needs a separate model to judge with — the "
+            "target can't grade itself. Pick a judge model for this run (or "
+            "configure the LLM provider), or turn judging off.")
+    cfg = _target_llm_config(req.target)
+    # CP2 has nothing to scan: our knowledge base is never sent to a black-box
+    # endpoint (llm.render_target_body drops system messages), and a third-party
+    # assistant owns its own RAG. Reporting "CP2: 0 blocked" would be a lie about
+    # coverage, so the checkpoint is forced off rather than reported empty.
+    req.checkpoints.cp2 = False
+    return cfg, judge_cfg, _public_target_config(cfg), judge_public
+
+
 DEMO_SCENARIOS = [
     {
         "id": "SAFE-01",
@@ -438,6 +599,7 @@ redact.register(lambda: [
     settings.llm_api_key,
     settings.judge_api_key,
     settings.openrouter_api_key,
+    *_target_secrets,
 ])
 
 
@@ -613,6 +775,63 @@ class JudgeConfigRequest(BaseModel):
     api_key: str | None = Field(default=None, max_length=400)
 
 
+class TargetAuth(BaseModel):
+    """
+    How to authenticate to the target endpoint. Every scheme here resolves to one
+    request header, so the transport stays a plain request/response — the picker
+    exists because "put the right string in the right header" is exactly the step
+    people get wrong, not because the schemes differ underneath.
+    """
+    type: Literal["none", "api_key", "basic", "bearer"] = "none"
+    # api_key — the header name is configurable because there is no standard one.
+    header: str = Field(default="X-API-Key", max_length=100)
+    key: str = Field(default="", max_length=2_000)
+    # basic
+    username: str = Field(default="", max_length=200)
+    password: str = Field(default="", max_length=500)
+    # bearer
+    token: str = Field(default="", max_length=2_000)
+
+
+class TargetConfig(BaseModel):
+    """
+    A third-party assistant endpoint to fire a dataset at (Target Test mode).
+    Per-run and in-memory only — never written to .env, never stored in a run's
+    history, because `auth` and `headers` hold the operator's credentials.
+    """
+    url: str = Field(max_length=2_000)
+    method: str = Field(default="POST", max_length=10)
+    auth: TargetAuth = Field(default_factory=TargetAuth)
+    # Bounded so a config POST can't be used to stage an oversized outbound request.
+    headers: dict[str, str] = Field(default_factory=dict, max_length=30)
+    body: str = Field(default=llm.DEFAULT_TARGET_BODY, max_length=8_000)
+    # Merged over the rendered body, overriding whatever the template set. This is
+    # how an endpoint's own required fields (a model id, a temperature, a tenant)
+    # get in without rewriting the template each time.
+    extra_fields: dict[str, Any] | None = Field(default=None, max_length=50)
+    # Dotted path with numeric indices ("choices.0.message.content").
+    # "" → the whole body, which must then be a string.
+    response_path: str = Field(default="", max_length=300)
+    timeout: float = Field(default=llm.DEFAULT_TARGET_TIMEOUT, ge=1, le=300)
+
+
+class JudgeLLMConfig(BaseModel):
+    """
+    A judge model chosen for ONE run, without touching the global judge settings.
+    Target Test needs this: the judge must be a different model from the endpoint
+    under test, and which model that is belongs to the run, not to the process.
+    """
+    provider: str = Field(default="", max_length=40)
+    base_url: str = Field(default="", max_length=400)
+    model: str = Field(default="", max_length=200)
+    api_key: str = Field(default="", max_length=400)
+
+
+class TargetTestRequest(TargetConfig):
+    # One sample prompt for the probe (see /api/target/test).
+    prompt: str = Field(default="Hello, can you help me?", max_length=4_000)
+
+
 class OneShotRequest(BaseModel):
     # Run a single category, or omit category_id to run the whole catalogue.
     category_id: str | None = Field(default=None, max_length=40)
@@ -655,6 +874,12 @@ class OneShotRequest(BaseModel):
     # Optional per-checkpoint Project ID overrides (each inherits lakera_project_id
     # when null), so CP1/CP2/CP3 can scan under different projects' Guard policies.
     checkpoint_projects: CheckpointProjects = Field(default_factory=CheckpointProjects)
+    # Target Test mode: fire this run at a custom third-party endpoint instead of
+    # the configured LLM provider. The process-global _llm_config is never written.
+    target: TargetConfig | None = None
+    # Judge this run with a specific model, instead of the global judge settings.
+    # Per-run and in-memory only, like `target`.
+    judge_llm: JudgeLLMConfig | None = None
 
 
 class LakeraKeyRequest(BaseModel):
@@ -839,6 +1064,25 @@ async def api_test_llm_config(req: LLMConfigRequest):
     # Echo the exact endpoint probed so the UI can show what it actually hit
     # (makes a wrong host/port immediately obvious).
     result["base_url"] = base_url
+    return result
+
+
+# ── Target Test: probe a custom third-party endpoint ─────────────────────────
+
+@app.post("/api/target/test")
+async def api_target_test(req: TargetTestRequest):
+    """
+    Fire ONE sample prompt at a target endpoint and report what came back —
+    status, latency, the value at `response_path`, and a truncated, scrubbed copy
+    of the raw body.
+
+    This is the difference between "pick your response path from what you can
+    see" and "run 500 rows and find out every one errored the same way", so it is
+    the first thing the Target Test rail asks the user to do.
+    """
+    cfg = _target_llm_config(req)     # URL/SSRF/header validation + secret registration
+    result = await llm.probe_target(cfg["target"], req.prompt)
+    result["url"] = cfg["base_url"]   # echo what was actually hit
     return result
 
 
@@ -1031,6 +1275,31 @@ async def api_list_datasets():
             "X-Dataset-Rows": f"{_total_dataset_rows()}/{MAX_TOTAL_DATASET_ROWS}",
         },
     )
+
+
+DATASET_PREVIEW_ROWS = 3
+DATASET_PREVIEW_CHARS = 400
+
+
+@app.get("/api/datasets/{slug}/preview")
+async def api_dataset_preview(slug: str):
+    """
+    The first few rows of an imported dataset, as they will actually be run.
+
+    A wrong column mapping is invisible until the results come back empty — and
+    by then it has cost a 10,000-row run. Three rows shown before the run makes it
+    obvious. The rows are already resident in `_datasets`, so this reads memory.
+    """
+    d = _datasets.get(slug)
+    if not d:
+        raise HTTPException(404, f"No dataset '{slug}'.")
+    rows = [
+        {"prompt": (r.get("prompt") or "")[:DATASET_PREVIEW_CHARS],
+         "category": r.get("category") or ""}
+        for r in d["rows"][:DATASET_PREVIEW_ROWS]
+    ]
+    return {"slug": slug, "name": d["name"], "count": d["count"],
+            "column": d.get("column"), "rows": rows}
 
 
 @app.post("/api/datasets/import-hf")
@@ -2149,12 +2418,12 @@ async def run_oneshot(req: OneShotRequest, *, llm_config: dict, lakera_key: str,
 @app.post("/api/oneshot")
 async def api_oneshot(req: OneShotRequest):
     # Snapshot the provider config + key once (see run_oneshot).
-    out = await run_oneshot(req, llm_config=dict(_llm_config), lakera_key=_lakera_key,
+    cfg, jc, pub, judge_pub = _oneshot_llm(req)
+    out = await run_oneshot(req, llm_config=cfg, lakera_key=_lakera_key,
                             lakera_project_id=_oneshot_project_id(req),
-                            judge_config=_effective_judge_config(),
+                            judge_config=jc,
                             checkpoint_projects=_oneshot_cp_projects(req))
-    return {**out, "llm": _public_llm_config(), "judge": _public_judge_config(),
-            "category_id": req.category_id}
+    return {**out, "llm": pub, "judge": judge_pub, "category_id": req.category_id}
 
 
 @app.post("/api/oneshot/stream")
@@ -2168,10 +2437,10 @@ async def api_oneshot_stream(req: OneShotRequest):
     rows, scope = _prepare_oneshot_rows(req)
     do_judge = req.judge or req.compare
     sp = _oneshot_system_prompt(req)
-    cfg, key = dict(_llm_config), _lakera_key   # snapshot (see api_oneshot)
+    cfg, jc, pub, judge_pub = _oneshot_llm(req)  # snapshot (see api_oneshot)
+    key = _lakera_key
     proj = _oneshot_project_id(req)
     cp_proj = _oneshot_cp_projects(req)
-    jc = _effective_judge_config()
     sem = asyncio.Semaphore(req.concurrency or ONESHOT_CONCURRENCY)
     total = len(rows)
 
@@ -2225,7 +2494,7 @@ async def api_oneshot_stream(req: OneShotRequest):
                     _, summary, results = item
                     yield json.dumps({
                         "type": "done", "summary": summary, "results": results,
-                        "llm": _public_llm_config(), "judge": _public_judge_config(),
+                        "llm": pub, "judge": judge_pub,
                         "category_id": req.category_id,
                     }) + "\n"
                     break

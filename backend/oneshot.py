@@ -391,6 +391,7 @@ def build_effective_config(args: argparse.Namespace) -> dict:
     cfg["_hf_all"] = args.hf_all
     cfg["_hf_download"] = args.hf_download   # download + verify original files, then scan locally
     cfg["_datasets_dir"] = args.datasets_dir
+    cfg["_target_file"] = args.target_file  # Target Test mode: a third-party endpoint
     cfg["_stream"] = args.stream          # concurrent HF download + scan (default on)
     cfg["_output_dir"] = args.output_dir  # write both report.json + report.html here
     # Optional RAG knowledge base:
@@ -434,6 +435,48 @@ def resolve_llm_config(llm_cfg: dict, *, dry_run: bool = False) -> dict:
             raise ConfigError(f"a model id is required for {p['label']} — set --model (or llm.model in the suite).")
     return {"provider": provider, "base_url": base_url, "api_key": api_key,
             "model": model or "(unset)"}
+
+
+def load_target_file(path: str) -> dict:
+    """
+    Load a Target Test endpoint spec (the same JSON shape the UI posts) and turn it
+    into the `llm_config` for the run. Validation — SSRF guard, allowed methods,
+    header sanitising, secret registration — is the web app's, not a second copy:
+
+        {"url": "https://api.example.com/v1/assistant", "method": "POST",
+         "headers": {"Authorization": "Bearer …"},
+         "body": "{\"question\": {{prompt}}}",
+         "response_path": "data.answer", "timeout": 60}
+    """
+    p = pathlib.Path(path)
+    if not p.exists():
+        raise ConfigError(f"target file not found: {path}")
+    try:
+        spec = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"target file '{path}': {exc}")
+    if not isinstance(spec, dict):
+        raise ConfigError(f"target file '{path}': expected a JSON object with a 'url'.")
+    spec.pop("kind", None)          # tolerated, for symmetry with the docs
+    try:
+        return core._target_llm_config(core.TargetConfig(**spec))
+    except ValidationError as exc:
+        raise ConfigError(f"target file '{path}': {exc.errors()[0].get('msg', exc)}")
+    except HTTPException as exc:
+        raise ConfigError(f"target file '{path}': {exc.detail}")
+
+
+async def _preflight_target_endpoint(llm_config: dict) -> str | None:
+    """
+    The --target-file counterpart of _preflight_target_llm: one sample prompt at
+    the endpoint, so a wrong URL, a dead token or — the common one — a wrong
+    `response_path` costs one request instead of a whole run of identical errors.
+    """
+    res = await llm.probe_target(llm_config["target"])
+    if res.get("ok"):
+        return None
+    return (f"target endpoint {llm_config['base_url']} is not usable — {res.get('error')} "
+            f"Fix the target file (or pass --no-preflight to skip this check).")
 
 
 def resolve_judge_config(judge_cfg: dict, main_cfg: dict, *, dry_run: bool = False) -> dict | None:
@@ -559,6 +602,12 @@ def _checkpoints_for(project_id: str | None) -> dict:
 def build_request(cfg: dict) -> OneShotRequest:
     s, o = cfg["scope"], cfg["options"]
     cp_projects = resolve_lakera_projects(cfg.get("lakera", {}).get("projects"))
+    checkpoints = _checkpoints_for(o.get("project_id"))
+    if cfg.get("_target_file"):
+        # A black-box endpoint owns its own knowledge base — ours is never sent to
+        # it (llm.render_target_body drops system messages), so CP2 has nothing to
+        # scan and reporting on it would overstate coverage. Same rule as the app.
+        checkpoints = {**checkpoints, "cp2": False}
     try:
         return OneShotRequest(
             category_id=s["category"], include_safe=s["include_safe"], dataset=s["dataset"],
@@ -568,7 +617,7 @@ def build_request(cfg: dict) -> OneShotRequest:
             doc_mode=o["doc_mode"], system_prompt=o["system_prompt"],
             no_system_prompt=o["no_system_prompt"], concurrency=o["concurrency"],
             max_rounds=o["max_rounds"],
-            checkpoints=_checkpoints_for(o.get("project_id")),
+            checkpoints=checkpoints,
             # Per-checkpoint Lakera Project IDs from --lakera-projects (input=CP1,
             # rag=CP2, output=CP3); each None → inherits the run-level project.
             checkpoint_projects=cp_projects,
@@ -858,9 +907,16 @@ def render_plan(scope: dict, req: OneShotRequest, llm_config: dict,
     rate_str = f"{rate_limit:g} req/s" if rate_limit and rate_limit > 0 else "unlimited"
     cpp = req.checkpoint_projects.model_dump()
     proj_bits = [f"{cp.upper()}={cpp[cp]}" for cp in ("cp1", "cp2", "cp3") if cpp[cp]]
+    tgt = llm_config.get("target")
+    # In Target Test mode "provider · model" says nothing useful; what the reader
+    # needs to confirm before spending a run is the endpoint and the response path.
+    provider_lines = ([f"  target       : {tgt['method']} {tgt['url']}",
+                       f"  response path: {tgt['response_path'] or '(whole body)'}"]
+                      if tgt else
+                      [f"  provider     : {llm_config['provider']} · {llm_config['model']}"])
     lines = [
         "Run plan (dry-run — no API calls):",
-        f"  provider     : {llm_config['provider']} · {llm_config['model']}",
+        *provider_lines,
         f"  judge model  : {judge}",
         f"  lakera guard : {lakera_endpoint or lakera.current_endpoint()}",
         f"  rate limit   : {rate_str}",
@@ -1108,6 +1164,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--api-key", metavar="KEY",
                    help="target provider API key (overrides $LLM_API_KEY / $OPENROUTER_API_KEY). "
                         "Prefer the env var — a CLI key is visible in the process list & shell history.")
+    p.add_argument("--target-file", metavar="PATH",
+                   help="Target Test mode: a JSON file describing a third-party HTTP endpoint "
+                        "(url/method/headers/body/response_path/timeout) to fire the dataset at "
+                        "instead of an OpenAI-compatible provider. Replaces --provider/--base-url/"
+                        "--model for the run; --provider/--model then only supply the JUDGE, which "
+                        "must be a different model. Credentials live in this file, so keep it out "
+                        "of version control.")
     p.add_argument("--preflight", action=argparse.BooleanOptionalAction, default=True,
                    help="before a real run, ping the target LLM once and abort with a clear "
                         "message if the base-url/host/port/model is wrong (default: on; "
@@ -1148,9 +1211,26 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         cfg = build_effective_config(args)
-        llm_config = resolve_llm_config(cfg["llm"], dry_run=args.dry_run)
-        # Judge inherits any omitted field from the resolved main model (fallback rule).
-        judge_config = resolve_judge_config(cfg["judge_llm"], llm_config, dry_run=args.dry_run)
+        target_config = load_target_file(cfg["_target_file"]) if cfg["_target_file"] else None
+        if target_config is None:
+            llm_config = resolve_llm_config(cfg["llm"], dry_run=args.dry_run)
+            # Judge inherits any omitted field from the resolved main model (fallback rule).
+            judge_config = resolve_judge_config(cfg["judge_llm"], llm_config, dry_run=args.dry_run)
+        else:
+            # Target Test mode. The judge grades the target's own answers, so it
+            # must never BE the target: it resolves from --provider/--model (and
+            # the --judge-* overrides) exactly as if no target file were given.
+            llm_config = target_config
+            needs_judge = cfg["options"]["judge"] or cfg["options"]["compare"]
+            try:
+                provider_cfg = resolve_llm_config(
+                    cfg["llm"], dry_run=args.dry_run or not needs_judge)
+            except ConfigError as exc:
+                raise ConfigError(
+                    f"--target-file needs a separate model to judge with — a target can't "
+                    f"grade its own answers ({exc}) Or pass --no-judge to skip judging.")
+            judge_config = resolve_judge_config(cfg["judge_llm"], provider_cfg,
+                                                dry_run=args.dry_run) or provider_cfg
         lakera_key = resolve_lakera_key(cfg["lakera"].get("api_key"), dry_run=args.dry_run)
         lakera_endpoint = resolve_lakera_endpoint(cfg["lakera"])   # custom region URL (or None)
         # Offline dataset sources (files/dir); HuggingFace imports happen at run time.
@@ -1216,10 +1296,12 @@ def main(argv: list[str] | None = None) -> int:
                 # Fail fast on a misconfigured target LLM (wrong host/port/model) so a
                 # 50k-row run doesn't hammer a dead endpoint scenario-by-scenario.
                 if args.preflight:
-                    problem = await _preflight_target_llm(llm_config)
+                    problem = await (_preflight_target_endpoint(llm_config)
+                                     if target_config else _preflight_target_llm(llm_config))
                     if problem:
                         raise PreflightError(problem)
-                    _status("target LLM reachable ✓", "green")
+                    _status("target endpoint reachable ✓" if target_config
+                            else "target LLM reachable ✓", "green")
                 if use_stream:
                     req = build_request(cfg)   # datasets empty; streaming feeds rows directly
                     burst = req.concurrency or core.ONESHOT_CONCURRENCY
@@ -1268,7 +1350,10 @@ def main(argv: list[str] | None = None) -> int:
     judge_public = {"enabled": judge_config is not None,
                     "provider": _jc.get("provider"), "model": _jc.get("model"),
                     "base_url": _jc.get("base_url")}
-    out_payload = {**out, "llm": {k: v for k, v in llm_config.items() if k != "api_key"},
+    # `target` holds the endpoint's headers, i.e. the operator's credentials —
+    # a report is an artifact that gets mailed around, so it never carries them.
+    out_payload = {**out, "llm": {k: v for k, v in llm_config.items()
+                                  if k not in ("api_key", "target")},
                    "judge": judge_public,
                    "generated_at": datetime.now(timezone.utc).isoformat()}
     if not args.quiet:

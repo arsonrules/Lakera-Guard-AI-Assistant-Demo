@@ -1416,10 +1416,175 @@
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #2E3C5A; }
 
+    /* ── Mode shell: one page, three modes ───────────────────────────────── */
+
+    /* Segmented control — the same skin as .ctl, joined into one pill. */
+    .mode-nav { display: inline-flex; }
+    .mode-nav .ctl { border-radius: 0; margin-left: -1px; }
+    .mode-nav .ctl:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); margin-left: 0; }
+    .mode-nav .ctl:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+    .mode-nav .ctl[aria-selected="true"] {
+      color: var(--brand); border-color: var(--brand-br); background: var(--brand-bg); z-index: 1;
+    }
+
+    /* `data-only` lists the modes an element belongs to. These rules only ever
+       HIDE, so a visible element keeps whatever display it already had — and they
+       compose with onboarding's `body.env-basic [data-adv]`: either rule can hide
+       a node that is both mode-scoped and advanced-only. */
+    body[data-mode="chat"]   [data-only]:not([data-only~="chat"]),
+    body[data-mode="bench"]  [data-only]:not([data-only~="bench"]),
+    body[data-mode="target"] [data-only]:not([data-only~="target"]) { display: none !important; }
+
+    .mode { display: none; flex: 1; overflow: hidden; }
+    body[data-mode="chat"]   #mode-chat,
+    body[data-mode="bench"]  #mode-bench,
+    body[data-mode="target"] #mode-target { display: grid; }
+
+    /* Both work modes share one primitive: a fixed config rail plus a fluid
+       results pane, mirroring the chat's own 1fr/384px split. */
+    #mode-bench, #mode-target { grid-template-columns: 340px 1fr; }
+    .cfg-rail {
+      display: flex; flex-direction: column; gap: 14px;
+      /* A grid item's default `min-width: auto` makes its min-content width the
+         column's floor, which is how a 340px rail ends up 442px wide on a phone. */
+      min-width: 0;
+      overflow-y: auto; padding: 18px 16px;
+      background: var(--bg-soft); border-right: 1px solid var(--border);
+      counter-reset: cfg-step;                       /* see .cfg-step > h3::before */
+    }
+    .run-pane { display: flex; flex-direction: column; min-width: 0; overflow-y: auto; }
+
+    /* Numbered step groups, so the order of operations is visible without docs.
+       The number is a CSS counter rather than markup: a step the current mode
+       hides (display:none) does not increment it, so Benchmark reads 1,2,3… and
+       Target Test reads 1,2,3… without either owning a hardcoded set. */
+    .cfg-step > h3 {
+      display: flex; align-items: center; gap: 8px;
+      font-family: 'Lexend', sans-serif; font-size: 0.72rem; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--heading); margin-bottom: 8px;
+    }
+    .cfg-step > h3::before {
+      counter-increment: cfg-step; content: counter(cfg-step);
+      display: grid; place-items: center; flex: none;
+      width: 20px; height: 20px; border-radius: 50%;
+      background: var(--brand-bg); border: 1px solid var(--brand-br); color: var(--brand);
+      font-family: 'JetBrains Mono', monospace; font-size: 0.66rem; font-weight: 700;
+    }
+    .cfg-step.done > h3::before { background: var(--pass-bg); border-color: var(--pass-br); color: var(--pass); }
+    .cfg-step.todo > h3::before { background: var(--block-bg); border-color: var(--block-br); color: var(--block); }
+    /* Always shows the group's current value, so a rail read top to bottom is a
+       run recipe ("42 scenarios", "CP1+CP3", "100 x 3 strategies"). */
+    .cfg-sum {
+      margin-left: auto; text-align: right; max-width: 55%;
+      font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+      font-variant-numeric: tabular-nums; color: var(--muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* The panels were built for a 20px-padded modal toolbar; in a 340px rail
+       their min-widths would force a horizontal scrollbar. */
+    .cfg-step .os-ds-panel, .cfg-step .os-sp-panel { margin-top: 0; min-width: 0; }
+    .cfg-step .os-strats-list { min-width: 0; }
+    .cfg-step select {
+      appearance: none; -webkit-appearance: none; flex: 1 1 140px; min-width: 0;
+      padding: 7px 10px; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--text);
+      font-family: 'Lexend', sans-serif; font-size: 0.74rem; font-weight: 600;
+      border-radius: var(--radius-sm); cursor: pointer;
+    }
+    .cfg-step select option { background: var(--panel); color: var(--text); }
+    .cfg-step textarea {
+      width: 100%; padding: 8px 10px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text);
+      font-family: 'JetBrains Mono', monospace; font-size: 0.76rem; line-height: 1.5;
+      border-radius: var(--radius-sm); resize: vertical; outline: none;
+    }
+    .cfg-step textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-bg); }
+    .cfg-step .os-cp-row > label { min-width: 0; flex: 1 1 auto; }
+
+    /* Run bar: sticky at the top of the results pane, so Run / progress / exports
+       stay reachable however far down a 500-row table the reader has scrolled. */
+    .run-bar {
+      position: sticky; top: 0; z-index: 2;
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+      padding: 12px 20px; background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .run-recipe {
+      font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+      font-variant-numeric: tabular-nums; color: var(--muted);
+    }
+    .run-body { padding: 18px 20px; }
+
+    .mode-intro {
+      display: flex; align-items: center; gap: 10px;
+      margin: 12px 22px 0; padding: 8px 12px;
+      background: var(--brand-bg); border: 1px solid var(--brand-br);
+      border-radius: var(--radius-sm);
+      font-size: 0.82rem; color: var(--text);
+    }
+    .mode-intro > span { flex: 1; }
+    .mode-intro[hidden] { display: none; }
+
+    /* Three-row dataset preview, expanded under its .os-ds-item. */
+    .ds-preview {
+      margin: -1px 0 5px; padding: 8px 10px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    }
+    .ds-preview .os-table { margin: 4px 0 0; }
+    .ds-preview .os-table td {
+      font-size: 0.7rem; vertical-align: top; padding: 4px 6px;
+      overflow-wrap: anywhere;
+    }
+    .ds-preview .os-table td:last-child { width: 22%; color: var(--muted); }
+
+    /* Only the selected auth scheme's fields are shown; the picker drives it. */
+    .tgt-auth-fields { display: none; }
+    #tgt-step[data-auth="api_key"] .tgt-auth-fields[data-auth="api_key"],
+    #tgt-step[data-auth="basic"]   .tgt-auth-fields[data-auth="basic"],
+    #tgt-step[data-auth="bearer"]  .tgt-auth-fields[data-auth="bearer"] { display: flex; }
+    .tgt-auth-fields input { flex: 1 1 120px; min-width: 0; }
+    /* Chrome paints its own background on autofilled fields, which lands as a white
+       slab on a dark console. Pin it back with an inset shadow (the background
+       property itself is not overridable here). */
+    .cfg-step input:-webkit-autofill,
+    .cfg-step input:-webkit-autofill:focus {
+      -webkit-text-fill-color: var(--text);
+      -webkit-box-shadow: 0 0 0 100px var(--bg) inset;
+      caret-color: var(--text);
+    }
+
+    /* ── Target Test: endpoint form + probe state ─────────────────────────── */
+    .tgt-hdr-row { display: flex; align-items: center; gap: 6px; }
+    .tgt-hdr-row input { flex: 1 1 0; min-width: 0; padding: 6px 9px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem; border-radius: var(--radius-sm); }
+    #tgt-raw-body {
+      margin-top: 8px; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+      padding: 9px 11px; background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--muted);
+    }
+    #tgt-raw-body mark { background: var(--pass-bg); color: var(--pass); }
+    /* The probe chip, on the header badge and in the rail. Semantics are the
+       existing tokens: green = usable, amber = fixable, red = broken, grey = unknown. */
+    .tgt-state { border-color: var(--skip-br); background: var(--skip-bg); color: var(--skip); }
+    .tgt-state.ok { border-color: var(--pass-br); background: var(--pass-bg); color: var(--pass); }
+    .tgt-state.warn { border-color: var(--redact-br); background: var(--redact-bg); color: var(--redact); }
+    .tgt-state.bad { border-color: var(--block-br); background: var(--block-bg); color: var(--block); }
+    .tgt-note {
+      font-size: 0.78rem; line-height: 1.5; color: var(--skip);
+      background: var(--skip-bg); border: 1px solid var(--skip-br);
+      border-radius: var(--radius-sm); padding: 9px 12px; margin-bottom: 14px;
+    }
+
     /* Responsive: stack inspector below chat on narrow screens */
     @media (max-width: 920px) {
       body { overflow: auto; height: auto; min-height: 100dvh; }
       .main { grid-template-columns: 1fr; overflow: visible; }
+      #mode-bench, #mode-target { grid-template-columns: 1fr; overflow: visible; }
+      .cfg-rail { border-right: none; border-bottom: 1px solid var(--border); overflow-y: visible; }
       .chat-panel { border-right: none; border-bottom: 1px solid var(--border); min-height: 60dvh; }
       .message { max-width: 86%; }
     }
@@ -1432,6 +1597,8 @@
       .header-controls > * { flex: 1 1 auto; }
       .ctl { padding: 6px 9px; font-size: 0.7rem; justify-content: center; }
       #lang-select { width: 100%; }
+      .mode-nav { width: 100%; }
+      .mode-nav .ctl { flex: 1; justify-content: center; min-height: 44px; }
       .doc-toggle { flex: 1; }
       .doc-toggle > span { display: none; }
       #sp-mode-badge, #doc-mode-btn, #custom-docs-btn { flex: 1; justify-content: center; }
@@ -1483,17 +1650,21 @@
 <header>
   <div class="brand">
     <span class="brand-mark" aria-label="Check Point">
-      <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" role="img">
-        <!-- pink disc -->
-        <circle cx="17" cy="23" r="14" fill="#E6007E"/>
-        <!-- white node mark -->
-        <g fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round">
-          <circle cx="13.5" cy="25.5" r="4.4"/>
-          <line x1="16.6" y1="22.4" x2="23" y2="16"/>
-        </g>
-        <circle cx="23.5" cy="15.5" r="2.6" fill="#fff"/>
-        <!-- black dot -->
-        <circle cx="30.5" cy="9.5" r="5" fill="#1A1A1A"/>
+      <svg viewBox="0 0 568 541" xmlns="http://www.w3.org/2000/svg" role="img">
+        <defs>
+          <!-- The disc is bitten, not overlapped: the gap around the detached dot
+               is part of the mark, so it has to survive on any background. -->
+          <mask id="brand-bite" maskUnits="userSpaceOnUse" x="-40" y="-40" width="680" height="640">
+            <rect x="-40" y="-40" width="680" height="640" fill="#fff"/>
+            <circle cx="462" cy="117" r="144" fill="#000"/>
+          </mask>
+        </defs>
+        <circle cx="224" cy="319" r="216" fill="#EC0A63" mask="url(#brand-bite)"/>
+        <!-- key mark: head, handle, node, and the link reaching for the dot -->
+        <path d="M134 290 L257 386 M257 386 L374 258" fill="none" stroke="#fff" stroke-width="32"/>
+        <rect x="93" y="249" width="82" height="82" fill="#fff" transform="rotate(-42 134 290)"/>
+        <circle cx="257" cy="386" r="49" fill="#fff"/>
+        <circle cx="481" cy="88" r="81" fill="#1F1B1B"/>
       </svg>
     </span>
     <span class="brand-text">
@@ -1502,6 +1673,17 @@
     </span>
   </div>
   <div class="header-controls">
+    <nav class="mode-nav" role="tablist" aria-label="Application mode">
+      <button class="ctl" role="tab" id="tab-chat" aria-selected="true" aria-controls="mode-chat" onclick="setMode('chat')" data-i18n-title="mode.chat.title" title="Walk one message through the four checkpoints">
+        <svg class="ic"><use href="#i-send"></use></svg><span data-i18n="mode.chat">Demo</span>
+      </button>
+      <button class="ctl" role="tab" id="tab-bench" aria-selected="false" aria-controls="mode-bench" onclick="setMode('bench')" data-i18n-title="mode.bench.title" title="Run a whole dataset through this app's guarded pipeline">
+        <svg class="ic"><use href="#i-play"></use></svg><span data-i18n="mode.bench">Benchmark</span>
+      </button>
+      <button class="ctl" role="tab" id="tab-target" aria-selected="false" aria-controls="mode-target" onclick="setMode('target')" data-i18n-title="mode.target.title" title="Run a dataset against your own API endpoint, scanned by Guard">
+        <svg class="ic"><use href="#i-plug"></use></svg><span data-i18n="mode.target">Target Test</span>
+      </button>
+    </nav>
     <label class="lang-switch" title="Language / 語言 / 语言 / 言語">
       <svg class="ic"><use href="#i-globe"></use></svg>
       <select id="lang-select" aria-label="Language" onchange="applyLanguage(this.value)">
@@ -1512,28 +1694,28 @@
         <option value="ko">한국어</option>
       </select>
     </label>
-    <button id="env-switch" class="ctl" onclick="Onboarding.toggleEnv()" title="Switch between Basic and Advanced views">
+    <button id="env-switch" class="ctl" data-only="chat" onclick="Onboarding.toggleEnv()" title="Switch between Basic and Advanced views">
       <svg class="ic"><use href="#i-sliders"></use></svg><span class="env-mode">Advanced</span>
     </button>
     <button id="setup-btn" class="ctl" data-adv onclick="Onboarding.restart()" title="Re-run the setup wizard">
       <svg class="ic"><use href="#i-activity"></use></svg><span>Setup</span>
     </button>
-    <button id="sp-mode-badge" class="ctl" data-adv onclick="toggleSpPanel()" data-i18n-title="sp.badgeTitle" title="Click to edit system prompt">
+    <button id="sp-mode-badge" class="ctl" data-adv data-only="chat" onclick="toggleSpPanel()" data-i18n-title="sp.badgeTitle" title="Click to edit system prompt">
       <svg class="ic"><use href="#i-sliders"></use></svg><span>Prompt: Default</span>
     </button>
-    <button id="llm-mode-badge" class="ctl" onclick="toggleLlmPanel()" data-i18n-title="llm.badgeTitle" title="Configure the LLM provider">
+    <button id="llm-mode-badge" class="ctl" data-only="chat bench" onclick="toggleLlmPanel()" data-i18n-title="llm.badgeTitle" title="Configure the LLM provider">
       <svg class="ic"><use href="#i-cpu"></use></svg><span>LLM: OpenRouter</span>
     </button>
-    <button id="guard-toggle" class="ctl guard-on" onclick="toggleGuard()" data-i18n-title="guard.toggleTitle" title="Turn Lakera Guard on/off for the chat">
+    <span id="target-badge" class="ctl tgt-state" data-only="target" aria-live="polite">
+      <svg class="ic"><use href="#i-plug"></use></svg><span id="target-badge-text" data-i18n="tgt.state.untested">Endpoint: untested</span>
+    </span>
+    <button id="guard-toggle" class="ctl guard-on" data-only="chat" onclick="toggleGuard()" data-i18n-title="guard.toggleTitle" title="Turn Lakera Guard on/off for the chat">
       <svg class="ic"><use href="#i-shield-check"></use></svg><span id="guard-toggle-label">Guard: ON</span>
     </button>
-    <button id="riskmap-btn" class="ctl" onclick="openRiskMap()" data-i18n-title="rm.btnTitle" title="See which OWASP risks this session has exercised">
+    <button id="riskmap-btn" class="ctl" data-only="chat" onclick="openRiskMap()" data-i18n-title="rm.btnTitle" title="See which OWASP risks this session has exercised">
       <svg class="ic"><use href="#i-shield"></use></svg><span data-i18n="rm.btn">Risk Map</span>
     </button>
-    <button id="oneshot-btn" class="ctl" data-adv onclick="openOneShot()" data-i18n-title="os.btnTitle" title="Run every scenario at once">
-      <svg class="ic"><use href="#i-play"></use></svg><span data-i18n="os.btn">One-Shot Test</span>
-    </button>
-    <div class="doc-toggle" data-adv>
+    <div class="doc-toggle" data-adv data-only="chat">
       <span data-i18n="header.knowledgeBase">Knowledge Base</span>
       <button id="doc-mode-btn" class="ctl" onclick="toggleDocMode()">
         <svg class="ic"><use href="#i-file-text"></use></svg><span>Clean Docs</span>
@@ -1545,15 +1727,22 @@
   </div>
 </header>
 
+<!-- One line per mode saying what this screen is for. Dismissible, and the
+     dismissal is remembered — an orientation aid, not a permanent banner. -->
+<div class="mode-intro" id="mode-intro" hidden>
+  <span id="mode-intro-text"></span>
+  <button class="os-ds-del" type="button" onclick="dismissModeIntro()" aria-label="Dismiss">×</button>
+</div>
+
 <!-- Basic-mode pipeline tutorial (req 4): globally accessible + collapsible.
      Shown only in Basic mode; body is filled by scenarios.js. -->
-<details id="pipeline-tutorial" class="pipeline-tut">
+<details id="pipeline-tutorial" class="pipeline-tut" data-only="chat">
   <summary><svg class="ic"><use href="#i-activity"></use></svg> <span>How a message flows through Lakera Guard</span></summary>
   <div id="pipeline-tut-body"></div>
 </details>
 
 <!-- System Prompt panel -->
-<div class="sp-panel" id="sp-panel">
+<div class="sp-panel" id="sp-panel" data-only="chat">
   <div class="sp-inner">
     <div class="sp-title-row">
       <span class="sp-title"><svg class="ic"><use href="#i-sliders"></use></svg><span data-i18n="sp.title">Custom System Prompt — CP0 Lakera Scan Before Activation</span></span>
@@ -1655,7 +1844,7 @@
 </div>
 
 <!-- Custom Docs panel -->
-<div class="cdocs-panel" id="cdocs-panel">
+<div class="cdocs-panel" id="cdocs-panel" data-only="chat">
   <div class="cdocs-inner">
     <div class="cdocs-title-row">
       <span class="cdocs-title"><svg class="ic"><use href="#i-folder"></use></svg><span data-i18n="cdocs.title">Custom RAG Docs — Scanned by Lakera on Retrieval</span></span>
@@ -1695,7 +1884,7 @@
   </div>
 </div>
 
-<div class="scenarios-bar">
+<div class="scenarios-bar" data-only="chat">
   <div class="categories-row">
     <label data-i18n="bar.categories">Categories</label>
     <div id="category-pills"></div>
@@ -1706,7 +1895,7 @@
   </div>
 </div>
 
-<div class="main">
+<div class="main mode" id="mode-chat" role="tabpanel" aria-labelledby="tab-chat">
   <!-- Chat panel -->
   <div class="chat-panel">
     <div class="guard-off-banner" id="guard-off-banner" style="display:none">
@@ -1809,7 +1998,313 @@
   </div>
 </div>
 
-<!-- One-Shot test modal -->
+<!-- ── Work modes: Benchmark (#/bench) and Target Test (#/target) ────────────
+     Both are the same primitive — a numbered config rail plus a results pane —
+     so the rail (#os-rail) and the pane (#os-pane) are ONE set of nodes that
+     setMode() re-parents into whichever section is active. That keeps every id,
+     every handler and the results renderer singular: the two modes differ only
+     in which steps `data-only` shows, and in whether runOneShot() sends a
+     `target`. Two copies would be two things to keep in step. -->
+<section id="mode-bench" class="mode" role="tabpanel" aria-labelledby="tab-bench">
+
+  <div class="cfg-rail" id="os-rail">
+
+    <!-- Endpoint — Target Test only. Everything below it is shared with Benchmark. -->
+    <section class="cfg-step todo" id="tgt-step" data-only="target">
+      <h3><span data-i18n="tgt.step.endpoint">Endpoint</span><span class="cfg-sum" id="tgt-sum"></span></h3>
+      <div class="os-ds-panel">
+        <div class="os-ds-row">
+          <span class="os-ds-label" data-i18n="tgt.url">URL</span>
+          <select id="tgt-method" onchange="onTargetInput()" aria-label="HTTP method">
+            <option>POST</option><option>PUT</option><option>PATCH</option><option>GET</option>
+          </select>
+        </div>
+        <div class="os-ds-row">
+          <input type="text" id="tgt-url" spellcheck="false" oninput="onTargetInput()"
+                 placeholder="https://api.example.com/v1/assistant" aria-label="Target URL" />
+        </div>
+        <div class="os-ds-row"><span class="os-ds-label" data-i18n="tgt.auth">Authentication</span></div>
+        <div class="os-ds-row">
+          <select id="tgt-auth-type" onchange="onTargetAuthChange()" aria-label="Authentication type">
+            <option value="none" data-i18n="tgt.auth.none">None</option>
+            <option value="api_key" data-i18n="tgt.auth.apiKey">API Key</option>
+            <option value="basic" data-i18n="tgt.auth.basic">Basic Auth</option>
+            <option value="bearer" data-i18n="tgt.auth.bearer">Bearer Token</option>
+          </select>
+        </div>
+        <div class="os-ds-row tgt-auth-fields" data-auth="api_key">
+          <input type="text" id="tgt-auth-header" value="X-API-Key" spellcheck="false" oninput="onTargetInput()"
+                 data-i18n-placeholder="tgt.auth.headerName" placeholder="Header name" aria-label="API key header name" />
+          <input type="password" id="tgt-auth-key" spellcheck="false" autocomplete="off" oninput="onTargetInput()"
+                 data-i18n-placeholder="tgt.auth.keyPlaceholder" placeholder="API key" aria-label="API key" />
+        </div>
+        <div class="os-ds-row tgt-auth-fields" data-auth="basic">
+          <input type="text" id="tgt-auth-user" spellcheck="false" autocomplete="off" oninput="onTargetInput()"
+                 data-i18n-placeholder="tgt.auth.username" placeholder="Username" aria-label="Username" />
+          <input type="password" id="tgt-auth-pass" spellcheck="false" autocomplete="off" oninput="onTargetInput()"
+                 data-i18n-placeholder="tgt.auth.password" placeholder="Password" aria-label="Password" />
+        </div>
+        <div class="os-ds-row tgt-auth-fields" data-auth="bearer">
+          <input type="password" id="tgt-auth-token" spellcheck="false" autocomplete="off" oninput="onTargetInput()"
+                 data-i18n-placeholder="tgt.auth.token" placeholder="Token" aria-label="Bearer token" />
+        </div>
+        <div class="os-ds-row"><span class="os-ds-label" data-i18n="tgt.headers">Extra headers</span></div>
+        <div class="os-ds-list" id="tgt-headers"></div>
+        <div class="os-ds-row">
+          <button class="sp-btn" onclick="addTargetHeader()" data-i18n="tgt.addHeader">+ Add header</button>
+        </div>
+        <div class="os-ds-allnote" data-i18n="tgt.headersNotSaved">Credentials are never saved — re-enter them after a reload.</div>
+        <div class="os-ds-row"><span class="os-ds-label" data-i18n="tgt.body">Request body</span></div>
+        <div class="os-ds-row">
+          <textarea id="tgt-body" rows="3" spellcheck="false" oninput="onTargetInput()" aria-label="Request body template"></textarea>
+        </div>
+        <div class="os-sp-hint" style="margin-bottom:10px" data-i18n="tgt.bodyHint">Use <code>{{prompt}}</code> where the user message goes. It is inserted JSON-encoded.</div>
+        <div class="os-ds-row"><span class="os-ds-label" data-i18n="tgt.extra">Additional fields</span></div>
+        <div class="os-ds-row">
+          <textarea id="tgt-extra" rows="3" spellcheck="false" oninput="onTargetInput()"
+                    placeholder='{"model": "acme-1", "temperature": 0}' aria-label="Additional request fields (JSON)"></textarea>
+        </div>
+        <div class="os-sp-hint" style="margin-bottom:10px" data-i18n="tgt.extraHint">A JSON object merged into every request. These win over the fields the body above sets.</div>
+        <div class="cp0-result" id="tgt-extra-status"></div>
+        <div class="os-ds-row"><span class="os-ds-label" data-i18n="tgt.path">Response path</span></div>
+        <div class="os-ds-row">
+          <input type="text" id="tgt-path" spellcheck="false" oninput="onTargetInput()"
+                 placeholder="data.answer" aria-label="Response path" />
+        </div>
+        <div class="os-ds-row">
+          <label class="os-ds-label" style="flex-basis:auto" for="tgt-timeout" data-i18n="tgt.timeout">Timeout (s)</label>
+          <input type="number" id="tgt-timeout" value="60" min="1" max="300" oninput="onTargetInput()" />
+        </div>
+        <div class="os-ds-row">
+          <button class="sp-btn primary" id="tgt-test-btn" onclick="testTarget()">
+            <svg class="ic"><use href="#i-plug"></use></svg> <span data-i18n="tgt.test">Test endpoint</span>
+          </button>
+        </div>
+        <div class="cp0-result" id="tgt-status"></div>
+        <details class="os-strats" id="tgt-raw" style="display:none">
+          <summary><span data-i18n="tgt.rawBody">Raw response body</span></summary>
+          <pre id="tgt-raw-body"></pre>
+        </details>
+      </div>
+    </section>
+
+    <!-- Scope: the built-in catalogue, or one or more imported/uploaded datasets. -->
+    <section class="cfg-step">
+      <h3><span data-i18n="bench.step.scope">Scope</span><span class="cfg-sum os-strats-count" id="os-ds-count"></span></h3>
+      <div class="os-ds-panel">
+        <div class="os-ds-row">
+          <span class="os-ds-label" data-i18n="os.scopeLabel">Built-in scenarios</span>
+          <select id="os-scope" onchange="updateRunRecipe()"></select>
+        </div>
+        <div class="os-ds-row">
+          <span class="os-ds-label" data-i18n="ds.hfLabel">HuggingFace dataset</span>
+          <input type="text" id="os-ds-id" spellcheck="false" placeholder="owner/name" />
+        </div>
+        <div class="os-ds-row">
+          <input type="number" id="os-ds-limit" value="25" min="1" max="100000" title="Rows" />
+          <input type="text" id="os-ds-col" spellcheck="false" data-i18n-placeholder="ds.colPlaceholder" placeholder="column (auto)" />
+          <button class="sp-btn primary" onclick="importHfDataset(false)" data-i18n="ds.import">Import</button>
+          <button class="sp-btn" onclick="importHfDataset(true)" data-i18n-title="ds.allTitle" title="Import every row (up to 100,000)" data-i18n="ds.importAll">All</button>
+        </div>
+        <div class="os-ds-examples">
+          <span data-i18n="ds.examples">Examples:</span>
+          <button class="sp-btn" onclick="fillHf('OpenSafetyLab/Salad-Data')">Salad-Data</button>
+          <button class="sp-btn" onclick="fillHf('Babelscape/ALERT')">ALERT</button>
+        </div>
+        <div class="os-ds-allnote" data-i18n="ds.allNote">⚠ “All” pulls the whole dataset (up to 100k) — it's paginated and can take a few minutes; HuggingFace may rate-limit, in which case a partial sample is kept.</div>
+        <div class="os-ds-row">
+          <span class="os-ds-label" data-i18n="ds.uploadLabel">Upload (.csv/.json/.jsonl/.txt)</span>
+          <label class="sp-btn" style="cursor:pointer;"><svg class="ic"><use href="#i-upload"></use></svg> <span data-i18n="ds.upload">Upload file</span>
+            <input type="file" id="os-ds-file" accept=".csv,.json,.jsonl,.txt" style="display:none" onchange="uploadDataset(event)" />
+          </label>
+        </div>
+        <div class="os-ds-list" id="os-ds-list"></div>
+        <div class="cp0-result" id="os-ds-status"></div>
+      </div>
+    </section>
+
+    <!-- Target model — Benchmark only. In Target Test the endpoint above IS the target. -->
+    <section class="cfg-step" data-only="bench">
+      <h3><span data-i18n="bench.step.target">Target</span><span class="cfg-sum" id="bench-sum-target"></span></h3>
+      <div class="os-ds-panel">
+        <div class="os-sp-hint" data-i18n="bench.targetHint">Scenarios run against the app's configured LLM provider.</div>
+        <div class="os-ds-row" style="margin-bottom:0">
+          <button class="sp-btn" onclick="toggleLlmPanel()"><svg class="ic"><use href="#i-cpu"></use></svg> <span data-i18n="bench.editTarget">Change model</span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Guard: which checkpoints run, under which Lakera project, and how results are graded. -->
+    <section class="cfg-step">
+      <h3><span data-i18n="bench.step.guard">Guard</span><span class="cfg-sum os-strats-count" id="os-cps-count"></span></h3>
+      <div class="os-ds-panel">
+        <div class="os-cps-merged">
+          <div class="os-cps-default">
+            <span class="os-ds-label" data-i18n="osproj.label">Default Project ID for this run</span>
+            <input type="text" id="os-proj-id" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.placeholder" placeholder="Default from Settings" />
+            <button class="sp-btn" onclick="resetOsProj()" data-i18n="osproj.reset">Default</button>
+          </div>
+          <div class="os-cp-row" id="os-cp1-row">
+            <label><input type="checkbox" id="os-cp1" checked onchange="onOsCpChange()"> <b>CP1</b> <span data-i18n="os.cpsInput">User input</span></label>
+            <input type="text" id="os-proj-cp1" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp1Placeholder" placeholder="CP1 — input" />
+          </div>
+          <!-- CP2 scans OUR knowledge base. A third-party endpoint owns its own,
+               and we never send ours, so the checkpoint has nothing to scan there. -->
+          <div class="os-cp-row" id="os-cp2-row" data-only="bench">
+            <label><input type="checkbox" id="os-cp2" checked onchange="onOsCpChange()"> <b>CP2</b> <span data-i18n="os.cpsRag">RAG documents</span></label>
+            <input type="text" id="os-proj-cp2" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp2Placeholder" placeholder="CP2 — RAG" />
+          </div>
+          <div class="os-cp-row" id="os-cp3-row">
+            <label><input type="checkbox" id="os-cp3" checked onchange="onOsCpChange()"> <b>CP3</b> <span data-i18n="os.cpsOutput">LLM output</span></label>
+            <input type="text" id="os-proj-cp3" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp3Placeholder" placeholder="CP3 — output" />
+          </div>
+          <div class="os-ds-allnote" data-i18n="osproj.hint">Optional — a checkpoint's box selects that project's Guard policy for this run; blank inherits the default Project ID above. The Project ID input appears only for enabled checkpoints.</div>
+        </div>
+        <div class="os-ds-row" style="margin:10px 0 0">
+          <label class="os-judge-toggle" data-i18n-title="os.judgeTitle" title="Grade each attack's model response with an LLM judge (extra LLM call per attack)">
+            <input type="checkbox" id="os-judge" checked onchange="updateRunRecipe()" />
+            <span data-i18n="os.judgeToggle">LLM judge</span>
+          </label>
+          <label class="os-judge-toggle" id="os-compare-label" data-i18n-title="os.compareTitle" title="Also run each attack with Lakera OFF to measure risk reduction (doubles model calls)">
+            <input type="checkbox" id="os-compare" onchange="onCompareToggle()" />
+            <span data-i18n="os.compareToggle">Guard ON vs OFF</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- Judge — Target Test only. Benchmark judges with the global settings in the
+         LLM panel; here the judge must be a DIFFERENT model from the endpoint under
+         test, so which one it is belongs to the run rather than to the process. -->
+    <section class="cfg-step" data-only="target">
+      <h3><span data-i18n="tgt.step.judge">Judge</span><span class="cfg-sum" id="tj-sum"></span></h3>
+      <div class="os-ds-panel">
+        <div class="os-sp-hint" data-i18n="tgt.judgeHint">Grades what the endpoint returns. It must be a different model — a target cannot grade its own answers.</div>
+        <div class="os-ds-row">
+          <span class="os-ds-label" data-i18n="llm.provider">Provider</span>
+          <select id="tj-provider" onchange="onRunJudgeProviderChange()"></select>
+        </div>
+        <div class="os-ds-row">
+          <span class="os-ds-label" data-i18n="llm.baseUrl">Base URL</span>
+          <input type="text" id="tj-base-url" spellcheck="false" oninput="onRunJudgeInput()" placeholder="https://…/v1" aria-label="Judge base URL" />
+        </div>
+        <div class="os-ds-row">
+          <span class="os-ds-label" data-i18n="llm.model">Model</span>
+          <input type="text" id="tj-model" spellcheck="false" list="tj-model-list" oninput="onRunJudgeInput()"
+                 data-i18n-placeholder="llm.modelPlaceholder" placeholder="Type a model id, or load & pick from the provider" aria-label="Judge model" />
+          <datalist id="tj-model-list"></datalist>
+        </div>
+        <div class="os-ds-row">
+          <span class="os-ds-label" data-i18n="tgt.judgeAuth">Authentication</span>
+          <select id="tj-auth-type" onchange="onRunJudgeAuthChange()" aria-label="Judge authentication type">
+            <option value="none" data-i18n="tgt.auth.none">None</option>
+            <option value="bearer" data-i18n="tgt.auth.apiKeyAuth">API key</option>
+          </select>
+          <input type="password" id="tj-api-key" spellcheck="false" autocomplete="off" oninput="onRunJudgeInput()"
+                 data-i18n-placeholder="tgt.judgeKey" placeholder="API key" aria-label="Judge API key" />
+        </div>
+        <div class="os-ds-row">
+          <button class="sp-btn" onclick="loadRunJudgeModels()" data-i18n="llm.loadModels">Load models</button>
+        </div>
+        <div class="cp0-result" id="tj-status"></div>
+      </div>
+    </section>
+
+    <!-- Attack: obfuscation variants of every prompt, to probe guard robustness. -->
+    <section class="cfg-step">
+      <h3><span data-i18n="bench.step.attack">Attack</span><span class="cfg-sum os-strats-count" id="os-strats-count"></span></h3>
+      <div class="os-strats-list" id="os-strats-list"></div>
+    </section>
+
+    <!-- Context — Benchmark only: a black box supplies its own prompt and RAG. -->
+    <section class="cfg-step" data-only="bench">
+      <h3><span data-i18n="bench.step.context">Context</span><span class="cfg-sum os-strats-count" id="os-sp-count"></span></h3>
+      <div class="os-sp-panel">
+        <div class="os-sp-hint" data-i18n="ossp.hint">Optional — overrides the active system prompt for this run only. Leave blank to use the current one.</div>
+        <label class="os-judge-toggle" style="align-self:flex-start">
+          <input type="checkbox" id="os-sp-none" onchange="onOsSpNone()" />
+          <span data-i18n="ossp.none">No system prompt at all</span>
+        </label>
+        <textarea id="os-sp-text" rows="4" oninput="onOsSpInput()" data-i18n-placeholder="ossp.placeholder" placeholder="Paste a system prompt to test scenarios against…"></textarea>
+        <button class="sp-btn" onclick="clearOsSp()" data-i18n="ossp.clear">Clear</button>
+      </div>
+      <div class="os-ds-panel">
+        <div class="os-ds-row">
+          <span class="os-ds-label" data-i18n="oskb.label">RAG knowledge base for this run</span>
+          <select id="os-kb-mode" onchange="onKbModeChange()">
+            <option value="" data-i18n="oskb.default">Default (per scenario)</option>
+            <option value="none" data-i18n="oskb.none">None (no RAG file)</option>
+            <option value="clean" data-i18n="oskb.clean">Clean</option>
+            <option value="poisoned" data-i18n="oskb.poisoned">Poisoned</option>
+            <option value="custom" data-i18n="oskb.custom">Custom (uploaded)</option>
+          </select>
+        </div>
+        <div class="os-ds-row">
+          <label class="sp-btn" style="cursor:pointer;"><svg class="ic"><use href="#i-upload"></use></svg> <span data-i18n="oskb.upload">Upload .txt</span>
+            <input type="file" id="os-kb-file" accept=".txt,.md,.csv,.json,.pdf,.docx" style="display:none" onchange="uploadOsKbDoc(event)" />
+          </label>
+          <span class="os-strats-count" id="os-kb-count"></span>
+        </div>
+        <div class="os-ds-list" id="os-kb-list"></div>
+        <div class="cp0-result" id="os-kb-status"></div>
+      </div>
+    </section>
+
+    <!-- Limits: what actually gets executed. -->
+    <section class="cfg-step">
+      <h3><span data-i18n="bench.step.limits">Limits</span><span class="cfg-sum" id="os-limits-sum"></span></h3>
+      <div class="os-ds-panel">
+        <div class="os-ds-row">
+          <span class="os-ds-label" data-i18n="os.maxScenarios">Max scenarios</span>
+          <input type="number" id="os-max" value="100" min="1" max="100000" oninput="updateRunRecipe()" data-i18n-title="os.maxScenariosTitle" title="Cap on base scenarios. Larger datasets are sampled down to this." />
+          <span class="os-ds-label" data-i18n="os.concurrency">Concurrency</span>
+          <input type="number" id="os-conc" value="4" min="1" max="100" oninput="updateRunRecipe()" data-i18n-title="os.concurrencyTitle" title="Parallel scenario workers (1–100)." />
+          <span class="os-ds-label" data-i18n="os.maxRounds">Adaptive rounds</span>
+          <input type="number" id="os-rounds" value="4" min="1" max="10" data-i18n-title="os.maxRoundsTitle" title="Round budget for dynamic (adaptive attacker) scenarios (1–10)." />
+        </div>
+        <div class="os-ds-allnote" data-i18n="os.limitsNote">Datasets bigger than “Max scenarios” are randomly sampled. A run may execute at most 100,000 rows including obfuscation variants.</div>
+      </div>
+    </section>
+
+    <!-- History: save a run, diff it against an earlier one (regression tracking). -->
+    <section class="cfg-step">
+      <h3><span data-i18n="hist.title">History</span><span class="cfg-sum os-strats-count" id="os-hist-count"></span></h3>
+      <div class="os-ds-panel">
+        <div class="os-ds-row">
+          <button class="sp-btn" onclick="diffLatestTwo()" data-i18n="hist.diffLatest">Diff latest two</button>
+        </div>
+        <div class="os-ds-allnote" data-i18n="hist.note">Save a run to compare detection / breaches across runs over time (regression tracking).</div>
+        <div class="os-ds-list" id="hist-list"></div>
+        <div id="hist-diff"></div>
+        <div class="cp0-result" id="hist-status"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="run-pane" id="os-pane">
+    <div class="run-bar">
+      <button class="sp-btn primary" id="os-run-btn" onclick="runOneShot()"><svg class="ic"><use href="#i-play"></use></svg> <span data-i18n="os.run">Run Test</span></button>
+      <span class="os-running" id="os-running" style="display:none" aria-live="polite"><svg class="ic" style="animation:spin 1s linear infinite"><use href="#i-loader"></use></svg><span id="os-progress"></span></span>
+      <span class="run-recipe" id="os-recipe"></span>
+      <span style="flex:1"></span>
+      <button class="sp-btn" id="hist-save-btn" onclick="saveCurrentRun()" disabled data-i18n="hist.save">Save current run</button>
+      <button class="sp-btn" id="os-export-html" onclick="exportReport('html')" disabled><svg class="ic"><use href="#i-download"></use></svg> <span data-i18n="os.exportHtml">HTML Report</span></button>
+      <button class="sp-btn" id="os-export-json" onclick="exportReport('json')" disabled><svg class="ic"><use href="#i-clipboard"></use></svg> <span data-i18n="os.exportJson">JSON</span></button>
+      <button class="sp-btn" id="os-export-csv" onclick="exportReport('csv')" disabled><svg class="ic"><use href="#i-clipboard"></use></svg> <span data-i18n="os.exportCsv">CSV</span></button>
+    </div>
+    <!-- CP0/CP2 are not applicable to a black box; saying so beats reporting zeroes.
+         It sits outside #os-body so rendering a report never wipes it. -->
+    <div class="tgt-note" data-only="target" style="margin:14px 20px 0" data-i18n="tgt.cpNote">CP0 and CP2 don't apply here: this endpoint owns its own system prompt and knowledge base.</div>
+    <div class="run-body" id="os-body">
+      <div class="os-empty" id="os-idle" data-i18n="os.idle">Pick a scope and run the test to see how Lakera Guard handles every scenario.</div>
+    </div>
+  </div>
+
+</section>
+
+<section id="mode-target" class="mode" role="tabpanel" aria-labelledby="tab-target"></section>
+
 <!-- Risk Map — what THIS session actually exercised, per OWASP category. -->
 <div class="modal-overlay" id="riskmap-overlay">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rm-title">
@@ -1831,147 +2326,6 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="oneshot-overlay">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="os-title">
-    <div class="modal-header">
-      <span class="modal-title" id="os-title"><svg class="ic"><use href="#i-play"></use></svg><span data-i18n="os.modalTitle">One-Shot Security Test</span></span>
-      <button class="modal-close" onclick="closeOneShot()" aria-label="Close"><svg class="ic"><use href="#i-x"></use></svg></button>
-    </div>
-    <div class="modal-toolbar">
-      <select id="os-scope"></select>
-      <label class="os-judge-toggle" title="Grade each attack's model response with an LLM judge (extra LLM call per attack)">
-        <input type="checkbox" id="os-judge" checked />
-        <span data-i18n="os.judgeToggle">LLM judge</span>
-      </label>
-      <label class="os-judge-toggle" id="os-compare-label" data-i18n-title="os.compareTitle" title="Also run each attack with Lakera OFF to measure risk reduction (doubles model calls)">
-        <input type="checkbox" id="os-compare" onchange="onCompareToggle()" />
-        <span data-i18n="os.compareToggle">Guard ON vs OFF</span>
-      </label>
-      <details class="os-strats" id="os-cps">
-        <summary data-i18n-title="os.cpsTitle" title="Enable or disable individual guard checkpoints for this run — and route each to a Lakera Project"><span data-i18n="os.cps">Checkpoints</span> · <span data-i18n="osproj.title">Project ID</span> <span class="os-strats-count" id="os-cps-count"></span></summary>
-        <div class="os-cps-merged">
-          <div class="os-cps-default">
-            <span class="os-ds-label" data-i18n="osproj.label">Default Project ID for this run</span>
-            <input type="text" id="os-proj-id" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.placeholder" placeholder="Default from Settings" />
-            <button class="sp-btn" onclick="resetOsProj()" data-i18n="osproj.reset">Default</button>
-          </div>
-          <div class="os-cp-row" id="os-cp1-row">
-            <label><input type="checkbox" id="os-cp1" checked onchange="onOsCpChange()"> <b>CP1</b> <span data-i18n="os.cpsInput">User input</span></label>
-            <input type="text" id="os-proj-cp1" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp1Placeholder" placeholder="CP1 — input" />
-          </div>
-          <div class="os-cp-row" id="os-cp2-row">
-            <label><input type="checkbox" id="os-cp2" checked onchange="onOsCpChange()"> <b>CP2</b> <span data-i18n="os.cpsRag">RAG documents</span></label>
-            <input type="text" id="os-proj-cp2" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp2Placeholder" placeholder="CP2 — RAG" />
-          </div>
-          <div class="os-cp-row" id="os-cp3-row">
-            <label><input type="checkbox" id="os-cp3" checked onchange="onOsCpChange()"> <b>CP3</b> <span data-i18n="os.cpsOutput">LLM output</span></label>
-            <input type="text" id="os-proj-cp3" class="os-proj-cp" spellcheck="false" oninput="onOsProjInput()" data-i18n-placeholder="osproj.cp3Placeholder" placeholder="CP3 — output" />
-          </div>
-          <div class="os-ds-allnote" data-i18n="osproj.hint">Optional — a checkpoint's box selects that project's Guard policy for this run; blank inherits the default Project ID above. The Project ID input appears only for enabled checkpoints.</div>
-        </div>
-      </details>
-      <details class="os-strats" id="os-strats">
-        <summary data-i18n-title="os.stratsTitle" title="Also test obfuscated variants of each attack to probe guard robustness"><span data-i18n="os.strategies">Strategies</span> <span id="os-strats-count"></span></summary>
-        <div class="os-strats-list" id="os-strats-list"></div>
-      </details>
-      <details class="os-strats" id="os-limits">
-        <summary data-i18n-title="os.limitsTitle" title="Bound the run: cap scenarios (large datasets are sampled down) and set parallelism"><span data-i18n="os.limits">Limits</span></summary>
-        <div class="os-ds-panel">
-          <div class="os-ds-row">
-            <span class="os-ds-label" data-i18n="os.maxScenarios">Max scenarios</span>
-            <input type="number" id="os-max" value="100" min="1" max="100000" data-i18n-title="os.maxScenariosTitle" title="Cap on base scenarios. Larger datasets are sampled down to this." />
-            <span class="os-ds-label" data-i18n="os.concurrency">Concurrency</span>
-            <input type="number" id="os-conc" value="4" min="1" max="100" data-i18n-title="os.concurrencyTitle" title="Parallel scenario workers (1–100)." />
-            <span class="os-ds-label" data-i18n="os.maxRounds">Adaptive rounds</span>
-            <input type="number" id="os-rounds" value="4" min="1" max="10" data-i18n-title="os.maxRoundsTitle" title="Round budget for dynamic (adaptive attacker) scenarios (1–10)." />
-          </div>
-          <div class="os-ds-allnote" data-i18n="os.limitsNote">Datasets bigger than “Max scenarios” are randomly sampled. A run may execute at most 100,000 rows including obfuscation variants.</div>
-        </div>
-      </details>
-      <details class="os-strats" id="os-history" ontoggle="if(this.open)loadHistory()">
-        <summary><span data-i18n="hist.title">History</span> <span class="os-strats-count" id="os-hist-count"></span></summary>
-        <div class="os-ds-panel">
-          <div class="os-ds-row">
-            <button class="sp-btn primary" id="hist-save-btn" onclick="saveCurrentRun()" disabled data-i18n="hist.save">Save current run</button>
-            <button class="sp-btn" onclick="diffLatestTwo()" data-i18n="hist.diffLatest">Diff latest two</button>
-          </div>
-          <div class="os-ds-allnote" data-i18n="hist.note">Save a run to compare detection / breaches across runs over time (regression tracking).</div>
-          <div class="os-ds-list" id="hist-list"></div>
-          <div id="hist-diff"></div>
-          <div class="cp0-result" id="hist-status"></div>
-        </div>
-      </details>
-      <details class="os-strats" id="os-ds">
-        <summary><span data-i18n="ds.title">Datasets</span> <span class="os-strats-count" id="os-ds-count"></span></summary>
-        <div class="os-ds-panel">
-          <div class="os-ds-row">
-            <span class="os-ds-label" data-i18n="ds.hfLabel">HuggingFace dataset</span>
-            <input type="text" id="os-ds-id" spellcheck="false" placeholder="owner/name" />
-            <input type="number" id="os-ds-limit" value="25" min="1" max="100000" title="Rows" />
-            <input type="text" id="os-ds-col" spellcheck="false" data-i18n-placeholder="ds.colPlaceholder" placeholder="column (auto)" />
-            <button class="sp-btn primary" onclick="importHfDataset(false)" data-i18n="ds.import">Import</button>
-            <button class="sp-btn" onclick="importHfDataset(true)" data-i18n-title="ds.allTitle" title="Import every row (up to 100,000)" data-i18n="ds.importAll">All</button>
-          </div>
-          <div class="os-ds-examples">
-            <span data-i18n="ds.examples">Examples:</span>
-            <button class="sp-btn" onclick="fillHf('OpenSafetyLab/Salad-Data')">Salad-Data</button>
-            <button class="sp-btn" onclick="fillHf('Babelscape/ALERT')">ALERT</button>
-          </div>
-          <div class="os-ds-allnote" data-i18n="ds.allNote">⚠ “All” pulls the whole dataset (up to 100k) — it's paginated and can take a few minutes; HuggingFace may rate-limit, in which case a partial sample is kept.</div>
-          <div class="os-ds-row">
-            <span class="os-ds-label" data-i18n="ds.uploadLabel">Upload (.csv/.json/.jsonl/.txt)</span>
-            <label class="sp-btn" style="cursor:pointer;"><svg class="ic"><use href="#i-upload"></use></svg> <span data-i18n="ds.upload">Upload file</span>
-              <input type="file" id="os-ds-file" accept=".csv,.json,.jsonl,.txt" style="display:none" onchange="uploadDataset(event)" />
-            </label>
-          </div>
-          <div class="os-ds-list" id="os-ds-list"></div>
-          <div class="cp0-result" id="os-ds-status"></div>
-        </div>
-      </details>
-      <details class="os-strats" id="os-sp">
-        <summary><span data-i18n="ossp.title">System prompt</span> <span class="os-strats-count" id="os-sp-count"></span></summary>
-        <div class="os-sp-panel">
-          <div class="os-sp-hint" data-i18n="ossp.hint">Optional — overrides the active system prompt for this run only. Leave blank to use the current one.</div>
-          <label class="os-judge-toggle" style="align-self:flex-start">
-            <input type="checkbox" id="os-sp-none" onchange="onOsSpNone()" />
-            <span data-i18n="ossp.none">No system prompt at all</span>
-          </label>
-          <textarea id="os-sp-text" rows="4" oninput="onOsSpInput()" data-i18n-placeholder="ossp.placeholder" placeholder="Paste a system prompt to test scenarios against…"></textarea>
-          <button class="sp-btn" onclick="clearOsSp()" data-i18n="ossp.clear">Clear</button>
-        </div>
-      </details>
-      <details class="os-strats" id="os-kb">
-        <summary><span data-i18n="oskb.title">Knowledge base</span> <span class="os-strats-count" id="os-kb-count"></span></summary>
-        <div class="os-ds-panel">
-          <div class="os-ds-row">
-            <span class="os-ds-label" data-i18n="oskb.label">RAG knowledge base for this run</span>
-            <select id="os-kb-mode" onchange="onKbModeChange()">
-              <option value="" data-i18n="oskb.default">Default (per scenario)</option>
-              <option value="none" data-i18n="oskb.none">None (no RAG file)</option>
-              <option value="clean" data-i18n="oskb.clean">Clean</option>
-              <option value="poisoned" data-i18n="oskb.poisoned">Poisoned</option>
-              <option value="custom" data-i18n="oskb.custom">Custom (uploaded)</option>
-            </select>
-            <label class="sp-btn" style="cursor:pointer;"><svg class="ic"><use href="#i-upload"></use></svg> <span data-i18n="oskb.upload">Upload .txt</span>
-              <input type="file" id="os-kb-file" accept=".txt,.md,.csv,.json,.pdf,.docx" style="display:none" onchange="uploadOsKbDoc(event)" />
-            </label>
-          </div>
-          <div class="os-ds-list" id="os-kb-list"></div>
-          <div class="cp0-result" id="os-kb-status"></div>
-        </div>
-      </details>
-      <button class="sp-btn primary" id="os-run-btn" onclick="runOneShot()"><svg class="ic"><use href="#i-play"></use></svg> <span data-i18n="os.run">Run Test</span></button>
-      <span class="os-running" id="os-running" style="display:none"><svg class="ic" style="animation:spin 1s linear infinite"><use href="#i-loader"></use></svg><span id="os-progress"></span></span>
-      <span style="flex:1"></span>
-      <button class="sp-btn" id="os-export-html" onclick="exportReport('html')" disabled><svg class="ic"><use href="#i-download"></use></svg> <span data-i18n="os.exportHtml">HTML Report</span></button>
-      <button class="sp-btn" id="os-export-json" onclick="exportReport('json')" disabled><svg class="ic"><use href="#i-clipboard"></use></svg> <span data-i18n="os.exportJson">JSON</span></button>
-      <button class="sp-btn" id="os-export-csv" onclick="exportReport('csv')" disabled><svg class="ic"><use href="#i-clipboard"></use></svg> <span data-i18n="os.exportCsv">CSV</span></button>
-    </div>
-    <div class="modal-body" id="os-body">
-      <div class="os-empty" data-i18n="os.idle">Pick a scope and run the test to see how Lakera Guard handles every scenario.</div>
-    </div>
-  </div>
-</div>
 
 <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 
@@ -2033,6 +2387,81 @@
   const I18N = {
     en: {
       ui: {
+        'tgt.auth': 'Authentication',
+        'tgt.auth.none': 'None',
+        'tgt.auth.apiKey': 'API Key',
+        'tgt.auth.basic': 'Basic Auth',
+        'tgt.auth.bearer': 'Bearer Token',
+        'tgt.auth.apiKeyAuth': 'API key',
+        'tgt.auth.headerName': 'Header name',
+        'tgt.auth.keyPlaceholder': 'API key',
+        'tgt.auth.username': 'Username',
+        'tgt.auth.password': 'Password',
+        'tgt.auth.token': 'Token',
+        'tgt.extra': 'Additional fields',
+        'tgt.extraHint': 'A JSON object merged into every request. These win over the fields the body above sets.',
+        'tgt.extraBadJson': 'Additional fields: not valid JSON ({err})',
+        'tgt.extraNotObject': 'Additional fields must be a JSON object, e.g. {"model": "acme-1"}.',
+        'tgt.extraFix': 'Fix the additional fields before running.',
+        'tgt.step.judge': 'Judge',
+        'tgt.judgeHint': 'Grades what the endpoint returns. It must be a different model — a target cannot grade its own answers.',
+        'tgt.judgeAuth': 'Authentication',
+        'tgt.judgeKey': 'API key',
+        'tgt.judgeNone': 'not set',
+        'ds.preview': 'Preview',
+        'ds.previewTitle': 'Show the first rows as they will actually be sent',
+        'ds.previewLoading': 'Loading preview…',
+        'ds.previewEmpty': 'This dataset has no rows to preview.',
+        'ds.previewCol': 'Prompt column: {col}',
+        // ── Three-mode shell (Demo / Benchmark / Target Test) ──
+        'mode.chat': 'Demo',
+        'mode.bench': 'Benchmark',
+        'mode.target': 'Target Test',
+        'mode.chat.title': 'Walk one message through the four checkpoints',
+        'mode.bench.title': 'Run a whole dataset through this app\'s guarded pipeline',
+        'mode.target.title': 'Run a dataset against your own API endpoint, scanned by Guard',
+        'mode.chat.intro': 'One message, four checkpoints — watch each one fire.',
+        'mode.bench.intro': 'Run a whole dataset through this app\'s guarded pipeline.',
+        'mode.target.intro': 'Run a dataset against your own API endpoint, scanned by Guard.',
+        'bench.step.scope': 'Scope',
+        'bench.step.target': 'Target',
+        'bench.step.guard': 'Guard',
+        'bench.step.attack': 'Attack',
+        'bench.step.context': 'Context',
+        'bench.step.limits': 'Limits',
+        'bench.targetHint': 'Scenarios run against the app\'s configured LLM provider.',
+        'bench.editTarget': 'Change model',
+        'os.scopeLabel': 'Built-in scenarios',
+        'os.judgeTitle': 'Grade each attack\'s model response with an LLM judge (extra LLM call per attack)',
+        'recipe.rows': '{rows} rows',
+        'recipe.sampled': '{base} sampled of {available}',
+        'recipe.variants': '+{count} obfuscation variants',
+        'recipe.limits': 'max {max} · conc {conc}',
+        'tgt.step.endpoint': 'Endpoint',
+        'tgt.url': 'URL',
+        'tgt.headers': 'Extra headers',
+        'tgt.addHeader': '+ Add header',
+        'tgt.headerName': 'Header',
+        'tgt.headerValue': 'Value',
+        'tgt.removeHeader': 'Remove header',
+        'tgt.body': 'Request body',
+        'tgt.path': 'Response path',
+        'tgt.timeout': 'Timeout (s)',
+        'tgt.test': 'Test endpoint',
+        'tgt.rawBody': 'Raw response body',
+        'tgt.bodyHint': 'Use {{prompt}} where the user message goes. It is inserted JSON-encoded.',
+        'tgt.headersNotSaved': 'Credentials are never saved — re-enter them after a reload.',
+        'tgt.cpNote': 'CP0 and CP2 don\'t apply here: this endpoint owns its own system prompt and knowledge base.',
+        'tgt.state.untested': 'Endpoint: untested',
+        'tgt.state.testing': 'Endpoint: testing…',
+        'tgt.state.ok': 'Endpoint: OK',
+        'tgt.state.nopath': 'Endpoint: path not found',
+        'tgt.state.failed': 'Endpoint: failed',
+        'tgt.needUrl': 'Enter the endpoint URL first.',
+        'tgt.probePrompt': 'Hello, can you help me?',
+        'tgt.extracted': 'Extracted: {text}',
+        'tgt.runBlocked': 'Test the endpoint first — the run starts once the check passes.',
+        'tgt.reportBanner': 'Tested against {url}',
         'brand.sub': 'AI Guardrails Powered by Lakera',
         'header.promptDefault': 'Prompt: Default',
         'header.promptCustom': 'Prompt: Custom',
@@ -2451,6 +2880,81 @@
 
     ko: {
       ui: {
+        'tgt.auth': '인증 방식',
+        'tgt.auth.none': '없음',
+        'tgt.auth.apiKey': 'API 키',
+        'tgt.auth.basic': 'Basic 인증',
+        'tgt.auth.bearer': 'Bearer 토큰',
+        'tgt.auth.apiKeyAuth': 'API 키',
+        'tgt.auth.headerName': '헤더 이름',
+        'tgt.auth.keyPlaceholder': 'API 키',
+        'tgt.auth.username': '사용자 이름',
+        'tgt.auth.password': '비밀번호',
+        'tgt.auth.token': '토큰',
+        'tgt.extra': '추가 필드',
+        'tgt.extraHint': '모든 요청에 병합되는 JSON 객체입니다. 위 요청 본문과 이름이 겹치면 이쪽이 우선합니다.',
+        'tgt.extraBadJson': '추가 필드: 올바른 JSON이 아닙니다 ({err})',
+        'tgt.extraNotObject': '추가 필드는 JSON 객체여야 합니다. 예: {"model": "acme-1"}',
+        'tgt.extraFix': '실행하기 전에 추가 필드를 수정하세요.',
+        'tgt.step.judge': '심사자',
+        'tgt.judgeHint': '엔드포인트의 응답을 채점합니다. 테스트 대상은 자기 답을 채점할 수 없으므로 다른 모델이어야 합니다.',
+        'tgt.judgeAuth': '인증 방식',
+        'tgt.judgeKey': 'API 키',
+        'tgt.judgeNone': '설정 안 됨',
+        'ds.preview': '미리보기',
+        'ds.previewTitle': '실제로 전송될 첫 몇 행을 표시합니다',
+        'ds.previewLoading': '미리보기 불러오는 중…',
+        'ds.previewEmpty': '이 데이터셋에는 미리 볼 행이 없습니다.',
+        'ds.previewCol': '프롬프트 열: {col}',
+        // ── Three-mode shell (Demo / Benchmark / Target Test) ──
+        'mode.chat': '데모',
+        'mode.bench': '벤치마크',
+        'mode.target': '타깃 테스트',
+        'mode.chat.title': '메시지 하나가 네 개의 체크포인트를 지나는 과정 보기',
+        'mode.bench.title': '데이터셋 전체를 이 앱의 보호 파이프라인에 통과시키기',
+        'mode.target.title': '직접 운영하는 API 엔드포인트에 데이터셋을 보내고 Guard로 검사하기',
+        'mode.chat.intro': '메시지 하나, 체크포인트 넷 — 각각이 동작하는 모습을 확인하세요.',
+        'mode.bench.intro': '데이터셋 전체를 이 앱의 보호 파이프라인에 통과시킵니다.',
+        'mode.target.intro': '직접 운영하는 API 엔드포인트에 데이터셋을 보내고 Guard로 검사합니다.',
+        'bench.step.scope': '범위',
+        'bench.step.target': '대상',
+        'bench.step.guard': '가드',
+        'bench.step.attack': '공격',
+        'bench.step.context': '컨텍스트',
+        'bench.step.limits': '한도',
+        'bench.targetHint': '시나리오는 앱에 설정된 LLM 제공자를 대상으로 실행됩니다.',
+        'bench.editTarget': '모델 변경',
+        'os.scopeLabel': '내장 시나리오',
+        'os.judgeTitle': '각 공격에 대한 모델 응답을 LLM 심사자가 채점합니다(공격마다 LLM 호출 1회 추가)',
+        'recipe.rows': '{rows} 행',
+        'recipe.sampled': '{available}개 중 {base}개 샘플링',
+        'recipe.variants': '+{count}개 난독화 변형',
+        'recipe.limits': '최대 {max} · 동시 {conc}',
+        'tgt.step.endpoint': '엔드포인트',
+        'tgt.url': 'URL',
+        'tgt.headers': '추가 헤더',
+        'tgt.addHeader': '+ 헤더 추가',
+        'tgt.headerName': '헤더 이름',
+        'tgt.headerValue': '값',
+        'tgt.removeHeader': '헤더 제거',
+        'tgt.body': '요청 본문',
+        'tgt.path': '응답 경로',
+        'tgt.timeout': '타임아웃(초)',
+        'tgt.test': '엔드포인트 테스트',
+        'tgt.rawBody': '원본 응답 본문',
+        'tgt.bodyHint': '사용자 메시지가 들어갈 자리에 {{prompt}}를 쓰세요. JSON 인코딩되어 삽입됩니다.',
+        'tgt.headersNotSaved': '자격 증명은 저장되지 않습니다 — 새로고침 후 다시 입력하세요.',
+        'tgt.cpNote': '여기서는 CP0과 CP2가 적용되지 않습니다. 이 엔드포인트는 자체 시스템 프롬프트와 지식 베이스를 사용합니다.',
+        'tgt.state.untested': '엔드포인트: 미테스트',
+        'tgt.state.testing': '엔드포인트: 테스트 중…',
+        'tgt.state.ok': '엔드포인트: 정상',
+        'tgt.state.nopath': '엔드포인트: 경로를 찾을 수 없음',
+        'tgt.state.failed': '엔드포인트: 실패',
+        'tgt.needUrl': '먼저 엔드포인트 URL을 입력하세요.',
+        'tgt.probePrompt': '안녕하세요, 도와주실 수 있나요?',
+        'tgt.extracted': '추출값: {text}',
+        'tgt.runBlocked': '먼저 엔드포인트를 테스트하세요 — 검사를 통과하면 실행할 수 있습니다.',
+        'tgt.reportBanner': '테스트 대상: {url}',
         'brand.sub': 'Lakera 기반 AI 가드레일',
         'header.promptDefault': '프롬프트: 기본',
         'header.promptCustom': '프롬프트: 사용자 지정',
@@ -2848,6 +3352,81 @@
     },
     'zh-TW': {
       ui: {
+        'tgt.auth': '驗證方式',
+        'tgt.auth.none': '無',
+        'tgt.auth.apiKey': 'API 金鑰',
+        'tgt.auth.basic': 'Basic 驗證',
+        'tgt.auth.bearer': 'Bearer 權杖',
+        'tgt.auth.apiKeyAuth': 'API 金鑰',
+        'tgt.auth.headerName': '標頭名稱',
+        'tgt.auth.keyPlaceholder': 'API 金鑰',
+        'tgt.auth.username': '使用者名稱',
+        'tgt.auth.password': '密碼',
+        'tgt.auth.token': '權杖',
+        'tgt.extra': '額外欄位',
+        'tgt.extraHint': '合併進每次請求的 JSON 物件；同名欄位會覆蓋上方請求內容的設定。',
+        'tgt.extraBadJson': '額外欄位：JSON 格式錯誤（{err}）',
+        'tgt.extraNotObject': '額外欄位必須是 JSON 物件，例如 {"model": "acme-1"}。',
+        'tgt.extraFix': '請先修正額外欄位再執行。',
+        'tgt.step.judge': '評審',
+        'tgt.judgeHint': '為端點的回應評分。必須使用不同的模型——受測目標不能為自己的答案評分。',
+        'tgt.judgeAuth': '驗證方式',
+        'tgt.judgeKey': 'API 金鑰',
+        'tgt.judgeNone': '未設定',
+        'ds.preview': '預覽',
+        'ds.previewTitle': '顯示前幾列實際送出的內容',
+        'ds.previewLoading': '載入預覽中…',
+        'ds.previewEmpty': '此資料集沒有可預覽的資料列。',
+        'ds.previewCol': '提示欄位：{col}',
+        // ── Three-mode shell (Demo / Benchmark / Target Test) ──
+        'mode.chat': '示範',
+        'mode.bench': '基準測試',
+        'mode.target': '端點測試',
+        'mode.chat.title': '追蹤一則訊息通過四個檢查點',
+        'mode.bench.title': '讓整份資料集通過本應用程式的防護管線',
+        'mode.target.title': '以資料集測試你自己的 API 端點，並由 Guard 掃描',
+        'mode.chat.intro': '一則訊息，四個檢查點——看著每一個啟動。',
+        'mode.bench.intro': '讓整份資料集通過本應用程式的防護管線。',
+        'mode.target.intro': '以資料集測試你自己的 API 端點，並由 Guard 掃描。',
+        'bench.step.scope': '範圍',
+        'bench.step.target': '目標',
+        'bench.step.guard': '防護',
+        'bench.step.attack': '攻擊',
+        'bench.step.context': '情境',
+        'bench.step.limits': '限制',
+        'bench.targetHint': '情境會對本應用程式已設定的 LLM 供應商執行。',
+        'bench.editTarget': '更換模型',
+        'os.scopeLabel': '內建情境',
+        'os.judgeTitle': '以 LLM 評審為每個攻擊的模型回應評分（每次攻擊多一次 LLM 呼叫）',
+        'recipe.rows': '{rows} 列',
+        'recipe.sampled': '自 {available} 抽樣 {base}',
+        'recipe.variants': '+{count} 種混淆變體',
+        'recipe.limits': '上限 {max} · 並行 {conc}',
+        'tgt.step.endpoint': '端點',
+        'tgt.url': '網址',
+        'tgt.headers': '其他標頭',
+        'tgt.addHeader': '+ 新增標頭',
+        'tgt.headerName': '標頭名稱',
+        'tgt.headerValue': '值',
+        'tgt.removeHeader': '移除標頭',
+        'tgt.body': '請求內容',
+        'tgt.path': '回應路徑',
+        'tgt.timeout': '逾時（秒）',
+        'tgt.test': '測試端點',
+        'tgt.rawBody': '原始回應內容',
+        'tgt.bodyHint': '在使用者訊息的位置使用 {{prompt}}，系統會以 JSON 編碼插入。',
+        'tgt.headersNotSaved': '憑證永不儲存——重新載入後請再次輸入。',
+        'tgt.cpNote': '此處不適用 CP0 與 CP2：該端點擁有自己的系統提示與知識庫。',
+        'tgt.state.untested': '端點：未測試',
+        'tgt.state.testing': '端點：測試中…',
+        'tgt.state.ok': '端點：正常',
+        'tgt.state.nopath': '端點：找不到路徑',
+        'tgt.state.failed': '端點：失敗',
+        'tgt.needUrl': '請先輸入端點網址。',
+        'tgt.probePrompt': '你好，可以幫我嗎？',
+        'tgt.extracted': '擷取結果：{text}',
+        'tgt.runBlocked': '請先測試端點——檢查通過後才能開始執行。',
+        'tgt.reportBanner': '測試對象：{url}',
         'brand.sub': 'AI 防護機制 · 由 Lakera 提供',
         'header.promptDefault': '提示詞：預設',
         'header.promptCustom': '提示詞：自訂',
@@ -3321,6 +3900,81 @@
 
     'zh-CN': {
       ui: {
+        'tgt.auth': '认证方式',
+        'tgt.auth.none': '无',
+        'tgt.auth.apiKey': 'API 密钥',
+        'tgt.auth.basic': 'Basic 认证',
+        'tgt.auth.bearer': 'Bearer 令牌',
+        'tgt.auth.apiKeyAuth': 'API 密钥',
+        'tgt.auth.headerName': '请求头名称',
+        'tgt.auth.keyPlaceholder': 'API 密钥',
+        'tgt.auth.username': '用户名',
+        'tgt.auth.password': '密码',
+        'tgt.auth.token': '令牌',
+        'tgt.extra': '附加字段',
+        'tgt.extraHint': '合并进每次请求的 JSON 对象；同名字段会覆盖上方请求体的设置。',
+        'tgt.extraBadJson': '附加字段：JSON 格式错误（{err}）',
+        'tgt.extraNotObject': '附加字段必须是 JSON 对象，例如 {"model": "acme-1"}。',
+        'tgt.extraFix': '请先修正附加字段再运行。',
+        'tgt.step.judge': '评审',
+        'tgt.judgeHint': '为端点的响应评分。必须使用不同的模型——被测目标不能给自己的答案打分。',
+        'tgt.judgeAuth': '认证方式',
+        'tgt.judgeKey': 'API 密钥',
+        'tgt.judgeNone': '未设置',
+        'ds.preview': '预览',
+        'ds.previewTitle': '显示前几行实际发送的内容',
+        'ds.previewLoading': '加载预览中…',
+        'ds.previewEmpty': '此数据集没有可预览的行。',
+        'ds.previewCol': '提示列：{col}',
+        // ── Three-mode shell (Demo / Benchmark / Target Test) ──
+        'mode.chat': '演示',
+        'mode.bench': '基准测试',
+        'mode.target': '端点测试',
+        'mode.chat.title': '追踪一条消息通过四个检查点',
+        'mode.bench.title': '让整个数据集通过本应用的防护管线',
+        'mode.target.title': '用数据集测试你自己的 API 端点，并由 Guard 扫描',
+        'mode.chat.intro': '一条消息，四个检查点——看着每一个触发。',
+        'mode.bench.intro': '让整个数据集通过本应用的防护管线。',
+        'mode.target.intro': '用数据集测试你自己的 API 端点，并由 Guard 扫描。',
+        'bench.step.scope': '范围',
+        'bench.step.target': '目标',
+        'bench.step.guard': '防护',
+        'bench.step.attack': '攻击',
+        'bench.step.context': '上下文',
+        'bench.step.limits': '限制',
+        'bench.targetHint': '场景将针对本应用已配置的 LLM 提供方执行。',
+        'bench.editTarget': '更换模型',
+        'os.scopeLabel': '内置场景',
+        'os.judgeTitle': '用 LLM 评审为每个攻击的模型响应评分（每次攻击多一次 LLM 调用）',
+        'recipe.rows': '{rows} 行',
+        'recipe.sampled': '自 {available} 抽样 {base}',
+        'recipe.variants': '+{count} 种混淆变体',
+        'recipe.limits': '上限 {max} · 并发 {conc}',
+        'tgt.step.endpoint': '端点',
+        'tgt.url': '网址',
+        'tgt.headers': '其他请求头',
+        'tgt.addHeader': '+ 添加请求头',
+        'tgt.headerName': '名称',
+        'tgt.headerValue': '值',
+        'tgt.removeHeader': '移除请求头',
+        'tgt.body': '请求体',
+        'tgt.path': '响应路径',
+        'tgt.timeout': '超时（秒）',
+        'tgt.test': '测试端点',
+        'tgt.rawBody': '原始响应体',
+        'tgt.bodyHint': '在用户消息的位置使用 {{prompt}}，系统会以 JSON 编码插入。',
+        'tgt.headersNotSaved': '凭证永不保存——重新加载后请再次输入。',
+        'tgt.cpNote': '此处不适用 CP0 与 CP2：该端点拥有自己的系统提示与知识库。',
+        'tgt.state.untested': '端点：未测试',
+        'tgt.state.testing': '端点：测试中…',
+        'tgt.state.ok': '端点：正常',
+        'tgt.state.nopath': '端点：未找到路径',
+        'tgt.state.failed': '端点：失败',
+        'tgt.needUrl': '请先输入端点网址。',
+        'tgt.probePrompt': '你好，可以帮我吗？',
+        'tgt.extracted': '提取结果：{text}',
+        'tgt.runBlocked': '请先测试端点——检查通过后才能开始运行。',
+        'tgt.reportBanner': '测试对象：{url}',
         'brand.sub': 'AI 防护机制 · 由 Lakera 提供',
         'header.promptDefault': '提示词：默认',
         'header.promptCustom': '提示词：自定义',
@@ -3794,6 +4448,81 @@
 
     ja: {
       ui: {
+        'tgt.auth': '認証方式',
+        'tgt.auth.none': 'なし',
+        'tgt.auth.apiKey': 'API キー',
+        'tgt.auth.basic': 'Basic 認証',
+        'tgt.auth.bearer': 'Bearer トークン',
+        'tgt.auth.apiKeyAuth': 'API キー',
+        'tgt.auth.headerName': 'ヘッダー名',
+        'tgt.auth.keyPlaceholder': 'API キー',
+        'tgt.auth.username': 'ユーザー名',
+        'tgt.auth.password': 'パスワード',
+        'tgt.auth.token': 'トークン',
+        'tgt.extra': '追加フィールド',
+        'tgt.extraHint': '各リクエストにマージされる JSON オブジェクト。上のリクエストボディと同名のフィールドは、こちらが優先されます。',
+        'tgt.extraBadJson': '追加フィールド: JSON として不正です（{err}）',
+        'tgt.extraNotObject': '追加フィールドは JSON オブジェクトである必要があります。例: {"model": "acme-1"}',
+        'tgt.extraFix': '実行前に追加フィールドを修正してください。',
+        'tgt.step.judge': 'ジャッジ',
+        'tgt.judgeHint': 'エンドポイントの応答を採点します。テスト対象は自分の答えを採点できないため、別のモデルを指定してください。',
+        'tgt.judgeAuth': '認証方式',
+        'tgt.judgeKey': 'API キー',
+        'tgt.judgeNone': '未設定',
+        'ds.preview': 'プレビュー',
+        'ds.previewTitle': '実際に送信される最初の数行を表示します',
+        'ds.previewLoading': 'プレビューを読み込み中…',
+        'ds.previewEmpty': 'このデータセットにプレビューできる行はありません。',
+        'ds.previewCol': 'プロンプト列: {col}',
+        // ── Three-mode shell (Demo / Benchmark / Target Test) ──
+        'mode.chat': 'デモ',
+        'mode.bench': 'ベンチマーク',
+        'mode.target': 'ターゲットテスト',
+        'mode.chat.title': '1 件のメッセージが 4 つのチェックポイントを通る流れを見る',
+        'mode.bench.title': 'データセット全体をこのアプリの防御パイプラインに通す',
+        'mode.target.title': '自分の API エンドポイントにデータセットを送り、Guard で検査する',
+        'mode.chat.intro': '1 件のメッセージ、4 つのチェックポイント — それぞれの動作を確認できます。',
+        'mode.bench.intro': 'データセット全体をこのアプリの防御パイプラインに通します。',
+        'mode.target.intro': '自分の API エンドポイントにデータセットを送り、Guard で検査します。',
+        'bench.step.scope': '範囲',
+        'bench.step.target': 'ターゲット',
+        'bench.step.guard': 'ガード',
+        'bench.step.attack': '攻撃',
+        'bench.step.context': 'コンテキスト',
+        'bench.step.limits': '上限',
+        'bench.targetHint': 'シナリオはアプリに設定された LLM プロバイダーに対して実行されます。',
+        'bench.editTarget': 'モデルを変更',
+        'os.scopeLabel': '組み込みシナリオ',
+        'os.judgeTitle': '各攻撃のモデル応答を LLM ジャッジで採点します（攻撃ごとに LLM 呼び出しが 1 回増えます）',
+        'recipe.rows': '{rows} 行',
+        'recipe.sampled': '{available} 件から {base} 件を抽出',
+        'recipe.variants': '+{count} 種類の難読化バリアント',
+        'recipe.limits': '上限 {max} · 並列 {conc}',
+        'tgt.step.endpoint': 'エンドポイント',
+        'tgt.url': 'URL',
+        'tgt.headers': '追加ヘッダー',
+        'tgt.addHeader': '+ ヘッダーを追加',
+        'tgt.headerName': 'ヘッダー名',
+        'tgt.headerValue': '値',
+        'tgt.removeHeader': 'ヘッダーを削除',
+        'tgt.body': 'リクエストボディ',
+        'tgt.path': 'レスポンスパス',
+        'tgt.timeout': 'タイムアウト（秒）',
+        'tgt.test': 'エンドポイントをテスト',
+        'tgt.rawBody': '生のレスポンスボディ',
+        'tgt.bodyHint': 'ユーザーメッセージが入る位置に {{prompt}} を書いてください。JSON エンコードされて挿入されます。',
+        'tgt.headersNotSaved': '認証情報は保存されません — 再読み込み後に入力し直してください。',
+        'tgt.cpNote': 'ここでは CP0 と CP2 は適用されません。このエンドポイントは独自のシステムプロンプトとナレッジベースを持ちます。',
+        'tgt.state.untested': 'エンドポイント: 未テスト',
+        'tgt.state.testing': 'エンドポイント: テスト中…',
+        'tgt.state.ok': 'エンドポイント: OK',
+        'tgt.state.nopath': 'エンドポイント: パスが見つかりません',
+        'tgt.state.failed': 'エンドポイント: 失敗',
+        'tgt.needUrl': '先にエンドポイントの URL を入力してください。',
+        'tgt.probePrompt': 'こんにちは、手伝ってもらえますか？',
+        'tgt.extracted': '抽出結果: {text}',
+        'tgt.runBlocked': '先にエンドポイントをテストしてください — チェックが通ると実行できます。',
+        'tgt.reportBanner': 'テスト対象: {url}',
         'brand.sub': 'AI ガードレール · Powered by Lakera',
         'header.promptDefault': 'プロンプト：既定',
         'header.promptCustom': 'プロンプト：カスタム',
@@ -4357,9 +5086,12 @@
     if (currentScenario && document.getElementById('scenario-info-card').style.display !== 'none') {
       showScenarioInfo(currentScenario);
     }
-    // Re-render the one-shot modal contents if it has results showing.
-    if (document.getElementById('oneshot-overlay').classList.contains('open')) {
+    renderModeIntro(document.body.dataset.mode || 'chat');
+    // Re-render the work-mode rail + results in the new language.
+    if (document.body.dataset.mode !== 'chat') {
       buildScopeOptions();
+      updateRunRecipe();
+      renderTargetHeaders();
       if (lastOneShot) renderOneShotResults(lastOneShot);
     }
     refreshInspector();
@@ -4414,6 +5146,9 @@
     const keep = allCategories.find(c => c.id === keepId);
     if (keep) selectCategory(keep);
     else if (allCategories.length > 0) selectCategory(allCategories[0]);
+    // The work modes' scope select and run recipe are built from this catalogue,
+    // which arrives after boot — refresh them once it lands.
+    if (document.body.dataset.mode !== 'chat') { buildScopeOptions(); updateRunRecipe(); }
   }
 
   function selectCategory(cat) {
@@ -5609,7 +6344,8 @@
     showHistStatus(t('hist.saving'));
     try {
       const body = { summary: lastOneShot.summary, results: lastOneShot.results,
-                     llm: lastOneShot.llm, label: (lastOneShot.category_id || 'all') };
+                     llm: lastOneShot.llm, judge: lastOneShot.judge,
+                     label: (lastOneShot.category_id || 'all') };
       const res = await fetch(API + '/api/history', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const d = await res.json();
@@ -5655,6 +6391,12 @@
     // Keep the "needs-key" warning if the (required) Lakera key isn't set yet.
     badge.className = (cfg.provider === 'openrouter' ? 'ctl' : 'ctl custom')
       + (lakeraKeySet ? '' : ' needs-key');
+    if (document.body.dataset.mode !== 'chat') {
+      // llmPresets only exists once this call has landed, and the run-judge
+      // provider picker is built from it — so build it here, not (only) at boot.
+      initRunJudge();
+      updateRunRecipe();
+    }
   }
 
   function showLlmStatus(type, text) {
@@ -5671,7 +6413,6 @@
   }
 
   // ── One-shot batch testing ──────────────────────────────────────────────
-  let _osLastFocus = null;
 
   // ── Knowledge-base scan stages ────────────────────────────────────────────
   // Ingest scanning and CP2 are different controls: ingest keeps a poisoned
@@ -5840,19 +6581,23 @@
     return (c && c.owaspId) || catId || '—';
   }
 
-  function openOneShot() {
-    _osLastFocus = document.activeElement;   // remember focus to restore on close
+  // Prepare the shared config rail the first time a work mode is entered. This
+  // used to run on opening the one-shot modal; the modal is a mode now, so the
+  // trigger moved to setMode() and the work is done once, not on every switch.
+  let _osPanelReady = false;
+  function initOneShotPanel() {
+    if (_osPanelReady) return;
+    _osPanelReady = true;
     loadDatasets();   // refresh imported datasets → also rebuilds scope options
     buildScopeOptions();
-    // Default the per-run Project ID to the current Settings value (fresh each
-    // open), unless the user has manually edited it this session.
+    loadHistory();    // used to be lazy-loaded by the History <details> ontoggle
+    // Default the per-run Project ID to the current Settings value, unless the
+    // user has already edited it this session.
     loadLakeraConfig().then(() => { if (!osProjDirty) resetOsProj(); });
     onOsCpChange();   // init per-checkpoint Project ID visibility + merged badge
-    const overlay = document.getElementById('oneshot-overlay');
-    overlay.classList.add('open');
-    // Move focus into the dialog for keyboard / screen-reader users.
-    const close = overlay.querySelector('.modal-close');
-    if (close) close.focus();
+    loadTargetLocal();
+    initRunJudge();
+    updateRunRecipe();
   }
 
   // Per-run Lakera Project ID override (defaults to the global Settings value),
@@ -5872,30 +6617,473 @@
     // dirty indicator shares that one badge.
     updateCpsBadge();
   }
-  function closeOneShot() {
-    document.getElementById('oneshot-overlay').classList.remove('open');
-    // Return focus to whatever opened the modal (typically the One-Shot button).
-    if (_osLastFocus && typeof _osLastFocus.focus === 'function') _osLastFocus.focus();
-    _osLastFocus = null;
-  }
   // Close any open header panel (system prompt / LLM settings / custom docs).
   function closeAllPanels() {
     if (spPanelOpen) toggleSpPanel();
     if (llmPanelOpen) toggleLlmPanel();
     if (cdocsPanelOpen) toggleCustomDocsPanel();
   }
-  document.getElementById('oneshot-overlay').addEventListener('click', e => {
-    if (e.target.id === 'oneshot-overlay') closeOneShot();
-  });
   document.addEventListener('keydown', e => {
-    if (e.key !== 'Escape') return;
-    // Escape closes the modal first if open, otherwise any open side panel.
-    if (document.getElementById('oneshot-overlay').classList.contains('open')) {
-      closeOneShot();
-    } else {
-      closeAllPanels();
-    }
+    if (e.key === 'Escape') closeAllPanels();
   });
+
+  // ── Mode shell: Demo / Benchmark / Target Test ───────────────────────────
+  // Three modes on one page. The alternative — three HTML files — needs three
+  // copies of the stylesheet, the sprite, the i18n table, the API helpers and
+  // the onboarding wizard, or a build step this project doesn't have. A
+  // `data-mode` attribute on <body> costs the CSS rules next to `.mode-nav`.
+  const MODES = ['chat', 'bench', 'target'];
+  const LS_MODE = 'ai-demo-mode';
+
+  function setMode(m) {
+    if (MODES.indexOf(m) < 0) m = 'chat';
+    document.body.dataset.mode = m;
+    MODES.forEach(x => {
+      const tab = document.getElementById('tab-' + x);
+      if (tab) tab.setAttribute('aria-selected', String(x === m));
+    });
+    if (m !== 'chat') {
+      // Benchmark and Target Test share ONE rail and ONE results pane, so every
+      // id, handler and renderer stays singular; switching just re-parents them.
+      const host = document.getElementById('mode-' + m);
+      const rail = document.getElementById('os-rail');
+      const pane = document.getElementById('os-pane');
+      if (host && rail && !host.contains(rail)) { host.appendChild(rail); host.appendChild(pane); }
+      initOneShotPanel();
+      updateRunRecipe();
+      updateRunGate();   // only Target Test gates Run, so this flips on every switch
+    }
+    renderModeIntro(m);
+    if (location.hash !== '#/' + m) location.hash = '#/' + m;
+    try { localStorage.setItem(LS_MODE, m); } catch (e) { /* private browsing */ }
+  }
+
+  function renderModeIntro(m) {
+    const box = document.getElementById('mode-intro');
+    const txt = document.getElementById('mode-intro-text');
+    if (!box || !txt) return;
+    let dismissed = '';
+    try { dismissed = localStorage.getItem('ai-demo-intro-dismissed') || ''; } catch (e) { /* private browsing */ }
+    box.hidden = dismissed.split(' ').indexOf(m) >= 0;
+    txt.textContent = t('mode.' + m + '.intro');
+  }
+
+  function dismissModeIntro() {
+    const m = document.body.dataset.mode || 'chat';
+    let dismissed = '';
+    try {
+      dismissed = localStorage.getItem('ai-demo-intro-dismissed') || '';
+      localStorage.setItem('ai-demo-intro-dismissed', (dismissed + ' ' + m).trim());
+    } catch (e) { /* private browsing */ }
+    document.getElementById('mode-intro').hidden = true;
+  }
+
+  window.addEventListener('hashchange', () => {
+    const m = location.hash.replace('#/', '');
+    if (m !== document.body.dataset.mode) setMode(m);
+  });
+
+  function bootMode() {
+    // Deep link wins (a demo script can jump straight to a mode), then the last
+    // mode used, then the chat.
+    const fromHash = location.hash.replace('#/', '');
+    let stored = '';
+    try { stored = localStorage.getItem(LS_MODE) || ''; } catch (e) { /* private browsing */ }
+    setMode(MODES.indexOf(fromHash) >= 0 ? fromHash : stored);
+  }
+
+  // ── The run recipe ──────────────────────────────────────────────────────
+  // Every rail group shows its current value, and the run bar shows the whole
+  // sentence, so what is about to execute is legible before a 10,000-row run —
+  // not discovered from the progress counter afterwards.
+  function updateRunRecipe() {
+    const ds = selectedDatasets();
+    const scope = document.getElementById('os-scope').value;
+    const available = ds.length
+      ? ds.reduce((n, slug) => { const d = importedDatasets.find(x => x.slug === slug); return n + (d ? d.count : 0); }, 0)
+      : scopeScenarioCount(scope);
+    const maxScen = parseInt(document.getElementById('os-max').value, 10);
+    const cap = (Number.isFinite(maxScen) && maxScen > 0) ? Math.min(maxScen, 100000) : 100;
+    const base = Math.min(available, cap);
+    const variants = selectedStrategies().length;
+    const rows = base * (1 + variants);
+    const conc = parseInt(document.getElementById('os-conc').value, 10);
+
+    const n = v => v.toLocaleString();
+    const parts = [t('recipe.rows', { rows: n(rows) })];
+    if (available > base) parts.push(t('recipe.sampled', { base: n(base), available: n(available) }));
+    if (variants) parts.push(t('recipe.variants', { count: variants }));
+    if (document.getElementById('os-compare').checked) parts.push(t('os.compareToggle'));
+    else if (document.getElementById('os-judge').checked) parts.push(t('os.judgeToggle'));
+    const recipe = parts.join(' · ');
+
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    set('os-recipe', recipe);
+    set('os-limits-sum', t('recipe.limits', { max: n(cap), conc: Number.isFinite(conc) ? conc : 4 }));
+    set('bench-sum-target', currentLlmCfg ? (currentLlmCfg.model || currentLlmCfg.provider || '') : '');
+    // Before the first run the empty state IS the recipe — the reader should be
+    // able to check what will happen without starting it.
+    const idle = document.getElementById('os-idle');
+    if (idle && !lastOneShot) idle.textContent = t('os.idle') + ' — ' + recipe;
+  }
+
+  // ── Target Test: the endpoint under test ────────────────────────────────
+  // Credentials live in `targetHeaders` and are deliberately NOT persisted; the
+  // rest of the spec is, because retyping a body template every reload is what
+  // makes people stop using a tool.
+  const LS_TARGET = 'ai-demo-target';
+  const TGT_DEFAULT_BODY = '{"prompt": {{prompt}}}';
+  let targetHeaders = [];
+  let targetProbe = 'untested';
+
+  const val = id => (document.getElementById(id) || {}).value || '';
+
+  function targetAuth() {
+    const type = val('tgt-auth-type') || 'none';
+    return {
+      type: type,
+      header: val('tgt-auth-header').trim() || 'X-API-Key',
+      key: val('tgt-auth-key'),
+      username: val('tgt-auth-user'),
+      password: val('tgt-auth-pass'),
+      token: val('tgt-auth-token'),
+    };
+  }
+
+  // The additional-fields box is free text, so it is parsed here and the result
+  // reported inline — a JSON typo must be visible while typing, not surface as
+  // 500 identical errored rows.
+  function targetExtraFields() {
+    const raw = val('tgt-extra').trim();
+    const el = document.getElementById('tgt-extra-status');
+    const clear = () => { if (el) { el.className = 'cp0-result'; el.textContent = ''; } };
+    if (!raw) { clear(); return null; }
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (err) { tgtFieldError(el, t('tgt.extraBadJson', { err: err.message })); return undefined; }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      tgtFieldError(el, t('tgt.extraNotObject')); return undefined;
+    }
+    clear();
+    return parsed;
+  }
+
+  function tgtFieldError(el, text) {
+    if (!el) return;
+    el.className = 'cp0-result blocked show';
+    el.innerHTML = icon('alert-triangle');
+    const s = document.createElement('span'); s.textContent = text; el.appendChild(s);
+  }
+
+  function targetSpec() {
+    const headers = {};
+    targetHeaders.forEach(h => { if (h.k.trim()) headers[h.k.trim()] = h.v; });
+    const timeout = parseInt(val('tgt-timeout'), 10);
+    const extra = targetExtraFields();
+    return {
+      url: val('tgt-url').trim(),
+      method: val('tgt-method'),
+      auth: targetAuth(),
+      headers: headers,
+      body: val('tgt-body') || TGT_DEFAULT_BODY,
+      // `undefined` means the box holds something that isn't a JSON object —
+      // testTarget()/runOneShot() refuse rather than silently dropping it.
+      extra_fields: extra === undefined ? undefined : extra,
+      response_path: val('tgt-path').trim(),
+      timeout: (Number.isFinite(timeout) && timeout > 0) ? Math.min(timeout, 300) : 60,
+    };
+  }
+
+  function onTargetAuthChange() {
+    const step = document.getElementById('tgt-step');
+    if (step) step.dataset.auth = val('tgt-auth-type') || 'none';
+    onTargetInput();
+  }
+
+  function renderTargetHeaders() {
+    const host = document.getElementById('tgt-headers');
+    if (!host) return;
+    host.innerHTML = '';
+    targetHeaders.forEach((h, i) => {
+      const row = document.createElement('div');
+      row.className = 'tgt-hdr-row';
+      // The value is a password field: these are bearer tokens, and this demo is
+      // usually on a projector.
+      row.innerHTML =
+        `<input class="tgt-hdr-k" type="text" spellcheck="false" value="${esc(h.k)}" placeholder="${esc(t('tgt.headerName'))}" aria-label="${esc(t('tgt.headerName'))}">`
+        + `<input class="tgt-hdr-v" type="password" spellcheck="false" value="${esc(h.v)}" placeholder="${esc(t('tgt.headerValue'))}" aria-label="${esc(t('tgt.headerValue'))}">`
+        + `<button class="os-ds-del" type="button" aria-label="${esc(t('tgt.removeHeader'))}">×</button>`;
+      row.querySelector('.tgt-hdr-k').oninput = e => { targetHeaders[i].k = e.target.value; onTargetInput(); };
+      row.querySelector('.tgt-hdr-v').oninput = e => { targetHeaders[i].v = e.target.value; onTargetInput(); };
+      row.querySelector('.os-ds-del').onclick = () => { targetHeaders.splice(i, 1); renderTargetHeaders(); onTargetInput(); };
+      host.appendChild(row);
+    });
+  }
+
+  function addTargetHeader() {
+    targetHeaders.push({ k: '', v: '' });
+    renderTargetHeaders();
+  }
+
+  // Any edit invalidates the probe: a green chip must describe the config that is
+  // actually about to run, not the one that was tested five edits ago.
+  function onTargetInput() {
+    if (targetProbe !== 'untested') setTargetState('untested');
+    saveTargetLocal();
+  }
+
+  function saveTargetLocal() {
+    try {
+      const s = targetSpec();
+      // Never persisted: extra headers, and every field of `auth` except which
+      // scheme was chosen and the (non-secret) header name it posts under.
+      localStorage.setItem(LS_TARGET, JSON.stringify({
+        url: s.url, method: s.method, body: s.body,
+        response_path: s.response_path, timeout: s.timeout,
+        extra_raw: val('tgt-extra'),
+        auth_type: s.auth.type, auth_header: s.auth.header,
+      }));
+    } catch (e) { /* private browsing / quota */ }
+  }
+
+  function loadTargetLocal() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(LS_TARGET) || 'null'); } catch (e) { saved = null; }
+    const body = document.getElementById('tgt-body');
+    if (body && !body.value) body.value = (saved && saved.body) || TGT_DEFAULT_BODY;
+    if (saved) {
+      const put = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== '') el.value = v; };
+      put('tgt-url', saved.url);
+      put('tgt-method', saved.method);
+      put('tgt-path', saved.response_path);
+      put('tgt-timeout', saved.timeout);
+      put('tgt-extra', saved.extra_raw);
+      put('tgt-auth-type', saved.auth_type);
+      put('tgt-auth-header', saved.auth_header);
+    }
+    onTargetAuthChange();
+    if (!targetHeaders.length) addTargetHeader();
+    setTargetState('untested');
+  }
+
+  // Probe states, on the header badge and in the rail. The Run button stays
+  // disabled until the chip is green — the single biggest saver of wasted runs.
+  const TGT_CHIP = { untested: '', testing: '', ok: 'ok', nopath: 'warn', failed: 'bad' };
+
+  function setTargetState(state, detail, latencyMs) {
+    targetProbe = state;
+    const chip = TGT_CHIP[state] || '';
+    const badge = document.getElementById('target-badge');
+    const badgeText = document.getElementById('target-badge-text');
+    const label = t('tgt.state.' + state) + (latencyMs != null ? ' · ' + latencyMs + ' ms' : '');
+    if (badge) badge.className = 'ctl tgt-state ' + chip;
+    if (badgeText) badgeText.textContent = label;
+
+    const sum = document.getElementById('tgt-sum');
+    if (sum) sum.textContent = label;
+    const step = document.getElementById('tgt-step');
+    if (step) {
+      step.classList.toggle('done', state === 'ok');
+      step.classList.toggle('todo', state !== 'ok');
+    }
+    tgtStatus(state, detail || (state === 'untested' ? '' : label));
+    if (state === 'untested') {
+      const raw = document.getElementById('tgt-raw');
+      if (raw) raw.style.display = 'none';
+    }
+    updateRunGate();
+  }
+
+  // The rail's status line, in the same skin as every other `.cp0-result` — but
+  // it never auto-clears, because it reports a state, not an event.
+  function tgtStatus(state, text) {
+    const el = document.getElementById('tgt-status');
+    if (!el) return;
+    if (!text) { el.className = 'cp0-result'; el.textContent = ''; return; }
+    const tone = state === 'ok' ? 'passed ' : (state === 'failed' || state === 'nopath' ? 'blocked ' : '');
+    el.className = 'cp0-result ' + tone + 'show';
+    el.innerHTML = icon(state === 'ok' ? 'check' : (state === 'testing' ? 'clock' : 'alert-triangle'));
+    const s = document.createElement('span');
+    s.textContent = text;
+    el.appendChild(s);
+  }
+
+  // Only Target Test gates the Run button — Benchmark has nothing to probe.
+  function updateRunGate() {
+    const btn = document.getElementById('os-run-btn');
+    if (!btn || btn.dataset.running === '1') return;
+    btn.disabled = document.body.dataset.mode === 'target' && targetProbe !== 'ok';
+    btn.title = btn.disabled ? t('tgt.runBlocked') : '';
+  }
+
+  async function testTarget() {
+    const spec = targetSpec();
+    if (!spec.url) { setTargetState('failed', t('tgt.needUrl')); return; }
+    if (spec.extra_fields === undefined) { setTargetState('failed', t('tgt.extraFix')); return; }
+    setTargetState('testing');
+    try {
+      const res = await fetch(API + '/api/target/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({}, spec, { prompt: t('tgt.probePrompt') })),
+      });
+      let d = {};
+      try { d = await res.json(); } catch (e) { /* non-JSON error page */ }
+      if (!res.ok) { setTargetState('failed', d.detail || ('HTTP ' + res.status)); return; }
+      showTargetRaw(d);
+      if (d.ok) setTargetState('ok', t('tgt.extracted', { text: String(d.extracted || '').slice(0, 160) }), d.latency_ms);
+      else if (d.path_error) setTargetState('nopath', d.error || '', d.latency_ms);
+      else setTargetState('failed', d.error || '', d.latency_ms);
+    } catch (err) {
+      setTargetState('failed', err.message);
+    }
+  }
+
+  // ── Target Test: the judge for this run ─────────────────────────────────
+  // Benchmark judges with the global settings in the LLM panel. Target Test needs
+  // its own, because the judge must be a different model from the endpoint under
+  // test — so it is chosen per run, and its key is no more persisted than the
+  // target's. Returning null means "use the global judge settings".
+  const LS_RUN_JUDGE = 'ai-demo-run-judge';
+
+  function runJudgeSpec() {
+    const provider = val('tj-provider');
+    const model = val('tj-model').trim();
+    if (!provider && !model) return null;
+    return {
+      provider: provider,
+      base_url: val('tj-base-url').trim(),
+      model: model,
+      api_key: val('tj-auth-type') === 'none' ? '' : val('tj-api-key'),
+    };
+  }
+
+  function initRunJudge() {
+    const sel = document.getElementById('tj-provider');
+    // The presets arrive with loadLlmConfig, which resolves after boot. Bail out
+    // until they exist rather than building an empty picker and then persisting
+    // the blanks as if the user had chosen them.
+    if (!sel || sel.options.length || !Object.keys(llmPresets).length) return;
+    Object.entries(llmPresets).forEach(([id, p]) => {
+      const opt = document.createElement('option');
+      opt.value = id; opt.textContent = p.label || id;
+      sel.appendChild(opt);
+    });
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(LS_RUN_JUDGE) || 'null'); } catch (e) { saved = null; }
+    sel.value = (saved && saved.provider) || currentLlmCfg?.provider || 'openrouter';
+    const put = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+    if (saved && (saved.model || saved.base_url)) {
+      put('tj-base-url', saved.base_url); put('tj-model', saved.model); put('tj-auth-type', saved.auth_type);
+    } else {
+      onRunJudgeProviderChange();     // seed from the provider's preset
+    }
+    onRunJudgeAuthChange();
+    updateRunJudgeSummary();
+  }
+
+  function onRunJudgeProviderChange() {
+    const p = llmPresets[val('tj-provider')] || {};
+    const base = document.getElementById('tj-base-url');
+    const model = document.getElementById('tj-model');
+    // Switching provider replaces a leftover preset value but never something typed.
+    if (base && (!base.value.trim() || isPresetUrl(base.value))) base.value = p.base_url || '';
+    if (model && (!model.value.trim() || isPresetModel(model.value))) model.value = p.default_model || '';
+    populateRunJudgeModels([]);      // the list belonged to the old endpoint
+    // A provider that needs a key shouldn't start on "None".
+    const auth = document.getElementById('tj-auth-type');
+    if (auth) auth.value = p.requires_key ? 'bearer' : auth.value;
+    onRunJudgeAuthChange();
+    onRunJudgeInput();
+  }
+
+  function onRunJudgeAuthChange() {
+    const key = document.getElementById('tj-api-key');
+    if (key) key.style.display = val('tj-auth-type') === 'none' ? 'none' : '';
+    onRunJudgeInput();
+  }
+
+  function onRunJudgeInput() {
+    updateRunJudgeSummary();
+    try {
+      // Same rule as the target: the shape is remembered, the credential is not.
+      localStorage.setItem(LS_RUN_JUDGE, JSON.stringify({
+        provider: val('tj-provider'), base_url: val('tj-base-url').trim(),
+        model: val('tj-model').trim(), auth_type: val('tj-auth-type'),
+      }));
+    } catch (e) { /* private browsing / quota */ }
+  }
+
+  function updateRunJudgeSummary() {
+    const el = document.getElementById('tj-sum');
+    if (el) el.textContent = val('tj-model').trim() || t('tgt.judgeNone');
+  }
+
+  function populateRunJudgeModels(models) {
+    const dl = document.getElementById('tj-model-list');
+    if (!dl) return;
+    dl.innerHTML = '';
+    (models || []).forEach(m => { const o = document.createElement('option'); o.value = m; dl.appendChild(o); });
+  }
+
+  async function loadRunJudgeModels() {
+    runJudgeStatus('loading', t('llm.loadingModels'));
+    try {
+      const spec = runJudgeSpec() || {};
+      const res = await fetch(API + '/api/llm-config/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: spec.provider || 'openrouter', base_url: spec.base_url || '',
+                               model: spec.model || '', api_key: spec.api_key || '' }),
+      });
+      const d = await res.json();
+      if (!res.ok) { runJudgeStatus('error', d.detail || ('HTTP ' + res.status)); return; }
+      if (!d.ok) { runJudgeStatus('error', t('llm.unreachable', { err: d.error || '' })); return; }
+      populateRunJudgeModels(d.models || []);
+      const model = document.getElementById('tj-model');
+      if (model && !model.value.trim() && (d.models || []).length) model.value = d.models[0];
+      runJudgeStatus((d.models || []).length ? 'success' : 'error',
+                     (d.models || []).length ? t('llm.modelsLoaded', { n: d.models.length }) : t('llm.noModels'));
+      onRunJudgeInput();
+    } catch (err) {
+      runJudgeStatus('error', err.message);
+    }
+  }
+
+  function runJudgeStatus(type, text) {
+    const el = document.getElementById('tj-status');
+    if (!el) return;
+    el.className = 'cp0-result ' + (type === 'success' ? 'passed ' : (type === 'error' ? 'blocked ' : '')) + 'show';
+    el.innerHTML = icon(type === 'success' ? 'check' : (type === 'error' ? 'x' : 'clock'));
+    const s2 = document.createElement('span'); s2.textContent = text; el.appendChild(s2);
+  }
+
+  // The raw body, truncated and already scrubbed of configured secrets by the
+  // server, with the extracted value highlighted — this is how a user picks a
+  // response path instead of guessing at one.
+  function showTargetRaw(d) {
+    const wrap = document.getElementById('tgt-raw');
+    const pre = document.getElementById('tgt-raw-body');
+    if (!wrap || !pre) return;
+    const body = d.raw_body_preview || '';
+    if (!body) { wrap.style.display = 'none'; return; }
+    let html = esc(body);
+    const value = d.extracted;
+    if (value) {
+      // The body holds the JSON-encoded form of the value, so try that first —
+      // and again with non-ASCII escaped, which is what a json.dumps() default
+      // (ensure_ascii=True) server emits for anything past a plain em dash.
+      const encoded = JSON.stringify(String(value)).slice(1, -1);
+      const ascii = encoded.replace(/[\u0080-\uffff]/g,
+        c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+      [encoded, ascii, String(value)].some(needle => {
+        const marked = esc(needle);
+        if (!marked || html.indexOf(marked) < 0) return false;
+        html = html.replace(marked, '<mark>' + marked + '</mark>');
+        return true;
+      });
+    }
+    pre.innerHTML = html;
+    wrap.style.display = '';
+  }
 
   function buildScopeOptions() {
     const sel = document.getElementById('os-scope');
@@ -5931,6 +7119,7 @@
       label.innerHTML = `<input type="checkbox" value="${esc(s.id)}" onchange="onStratChange()"> <span>${esc(s.label)}</span>`;
       list.appendChild(label);
     });
+    if (document.body.dataset.mode !== 'chat') updateRunRecipe();
   }
   function selectedStrategies() {
     return [...document.querySelectorAll('#os-strats-list input:checked')].map(i => i.value);
@@ -5938,6 +7127,7 @@
   function onStratChange() {
     const n = selectedStrategies().length;
     document.getElementById('os-strats-count').textContent = n ? `(${n})` : '';
+    updateRunRecipe();
   }
 
   // Checkpoint selection for the run — show a badge only when some are disabled.
@@ -5988,11 +7178,38 @@
         + `<input type="checkbox" class="os-ds-cb" value="${esc(d.slug)}" onchange="onDatasetPick()">`
         + `<span class="nm" title="${esc(d.name)}">${esc(d.name)}</span></label>`
         + `<span class="ct">${esc(d.count)} ${esc(t('ds.rows'))}</span>`
+        + `<button class="sp-btn ds-peek" title="${esc(t('ds.previewTitle'))}">${esc(t('ds.preview'))}</button>`
         + `<button class="os-ds-del">${esc(t('cdocs.del'))}</button>`;
       row.querySelector('.os-ds-del').onclick = () => deleteDataset(d.slug);
+      row.querySelector('.ds-peek').onclick = () => toggleDatasetPreview(d.slug, row);
       el.appendChild(row);
     });
     onDatasetPick();
+  }
+
+  // A wrong column mapping is invisible until a 10,000-row run comes back empty.
+  // Three rows, shown as they will actually be sent, make it obvious first.
+  async function toggleDatasetPreview(slug, row) {
+    const open = row.nextElementSibling;
+    if (open && open.classList.contains('ds-preview')) { open.remove(); return; }
+    const box = document.createElement('div');
+    box.className = 'ds-preview';
+    box.innerHTML = `<div class="os-detail-none">${esc(t('ds.previewLoading'))}</div>`;
+    row.insertAdjacentElement('afterend', box);
+    try {
+      const d = await (await fetch(API + '/api/datasets/' + encodeURIComponent(slug) + '/preview')).json();
+      if (!d.rows || !d.rows.length) {
+        box.innerHTML = `<div class="os-detail-none">${esc(t('ds.previewEmpty'))}</div>`;
+        return;
+      }
+      box.innerHTML = `<div class="os-detail-none">${esc(t('ds.previewCol', { col: d.column || '—' }))}</div>`
+        + '<table class="os-table"><tbody>'
+        + d.rows.map(r => `<tr><td class="mono">${esc(r.prompt)}</td>`
+            + `<td class="mono">${esc(r.category || '—')}</td></tr>`).join('')
+        + '</tbody></table>';
+    } catch (err) {
+      box.innerHTML = `<div class="os-detail-none">${esc(err.message)}</div>`;
+    }
   }
 
   // Datasets selected (checked) to run together in the one-shot test.
@@ -6003,6 +7220,7 @@
     const n = selectedDatasets().length, total = importedDatasets.length;
     document.getElementById('os-ds-count').textContent =
       n ? `(${n}✓/${total})` : (total ? `(${total})` : '');
+    updateRunRecipe();
   }
 
   function osDsStatus(type, text) {
@@ -6166,6 +7384,13 @@
     const runBtn = document.getElementById('os-run-btn');
     const running = document.getElementById('os-running');
     const body = document.getElementById('os-body');
+    const onTarget = document.body.dataset.mode === 'target';
+    // Belt and braces: the button is already disabled until the probe is green.
+    if (onTarget && targetProbe !== 'ok') { setTargetState(targetProbe); return; }
+    if (onTarget && targetSpec().extra_fields === undefined) {
+      setTargetState('failed', t('tgt.extraFix')); return;
+    }
+    runBtn.dataset.running = '1';
     runBtn.disabled = true;
     running.style.display = 'inline-flex';
 
@@ -6174,7 +7399,7 @@
     const setProg = (done, total) => {
       const txt = t('os.running', { done, total });
       document.getElementById('os-progress').textContent = txt;
-      body.innerHTML = '<div class="os-empty">' + esc(txt) + '</div>';
+      showRunMessage(txt);
     };
     const est = dsSel.length
       ? dsSel.reduce((n, slug) => { const d = importedDatasets.find(x => x.slug === slug); return n + (d ? d.count : 0); }, 0)
@@ -6205,9 +7430,17 @@
         max_rounds: (Number.isFinite(rounds) && rounds > 0) ? Math.min(rounds, 10) : 4,
         checkpoints: {
           cp1: document.getElementById('os-cp1').checked,
-          cp2: document.getElementById('os-cp2').checked,
+          // CP2 scans OUR knowledge base, which a third-party endpoint never
+          // receives. The server forces this too; the UI agrees so the recipe
+          // the reader sees is the run that actually happens.
+          cp2: !onTarget && document.getElementById('os-cp2').checked,
           cp3: document.getElementById('os-cp3').checked,
         },
+        // Target Test mode: this run goes to the operator's endpoint instead of
+        // the configured provider. The process-global config is never touched.
+        target: onTarget ? targetSpec() : null,
+        // …and it is graded by the model picked in the rail, never by the target.
+        judge_llm: onTarget ? runJudgeSpec() : null,
         lakera_project_id: document.getElementById('os-proj-id').value.trim(),
         checkpoint_projects: {
           // blank per-checkpoint box → null (inherit the run-level project id)
@@ -6223,7 +7456,7 @@
       if (!res.ok) {
         let detail = t('os.failed');
         try { detail = (await res.json()).detail || detail; } catch { /* non-JSON */ }
-        body.innerHTML = '<div class="os-empty">' + esc(detail) + '</div>';
+        showRunMessage(detail);
         return;
       }
 
@@ -6247,12 +7480,14 @@
         }
       }
 
-      if (streamErr) { body.innerHTML = '<div class="os-empty">' + esc(streamErr) + '</div>'; return; }
-      if (!finalMsg) { body.innerHTML = '<div class="os-empty">' + esc(t('os.failed')) + '</div>'; return; }
+      if (streamErr) { showRunMessage(streamErr); return; }
+      if (!finalMsg) { showRunMessage(t('os.failed')); return; }
 
       const d = {
         summary: finalMsg.summary, results: finalMsg.results,
-        llm: finalMsg.llm, category_id: finalMsg.category_id,
+        // `judge` names the model that graded this run — which is a per-run choice
+        // in Target Test, so a report that omits it is missing half the method.
+        llm: finalMsg.llm, judge: finalMsg.judge, category_id: finalMsg.category_id,
       };
       lastOneShot = { ...d, generated_at: new Date().toISOString(), scope };
       renderOneShotResults(d);
@@ -6262,11 +7497,22 @@
       const histBtn = document.getElementById('hist-save-btn');
       if (histBtn) histBtn.disabled = false;
     } catch (err) {
-      body.innerHTML = '<div class="os-empty">' + esc(t('os.failed') + ' — ' + err.message) + '</div>';
+      showRunMessage(t('os.failed') + ' — ' + err.message);
     } finally {
+      delete runBtn.dataset.running;
       runBtn.disabled = false;
+      updateRunGate();
       running.style.display = 'none';
     }
+  }
+
+  // One-line status inside the results pane. Replaces only the message, never the
+  // whole pane — the "CP0/CP2 don't apply" note belongs to the mode, not the run.
+  function showRunMessage(text) {
+    const idle = document.getElementById('os-idle');
+    const body = document.getElementById('os-body');
+    if (idle) { idle.textContent = text; return; }
+    if (body) body.innerHTML = '<div class="os-empty" id="os-idle">' + esc(text) + '</div>';
   }
 
   // Comparing guard ON/OFF requires the judge, so force it on and lock it.
@@ -6275,6 +7521,7 @@
     const judge = document.getElementById('os-judge');
     if (cmp) { judge.checked = true; judge.disabled = true; }
     else { judge.disabled = false; }
+    updateRunRecipe();
   }
 
   const OUTCOME_META = {
@@ -6754,6 +8001,15 @@
   }
 
   // Judge model info — shown only when the run actually judged (req 1).
+  // A report is an evidence artifact, so a run against someone else's endpoint has
+  // to say WHICH one — at the top, not buried in the meta line. Mirrored by
+  // backend/report_html.py for the CLI's exported report.
+  function targetBannerHtml(d) {
+    const l = d.llm || {};
+    if (l.provider !== 'http' || !l.base_url) return '';
+    return `<div class="tgt-note">${icon('plug')} ${esc(t('tgt.reportBanner', { url: l.base_url }))}</div>`;
+  }
+
   function judgeInfoHtml(d) {
     const j = d.judge;
     if (!j || !(d.summary && d.summary.judged)) return '';
@@ -6775,8 +8031,10 @@
       + `<div class="num">${esc(num)}</div><div class="lbl">${esc(t(key))}</div></button>`;
     const detection = s.detection_rate == null ? '—' : s.detection_rate + '%';
 
-    // Top strip: collapsed L1–L5 legend (req 3) + judge model info (req 1).
-    let html = lakeraLegendHtml();
+    // Top strip: the endpoint under test (Target Test only), the collapsed L1–L5
+    // legend (req 3), then judge model info (req 1).
+    let html = targetBannerHtml(d);
+    html += lakeraLegendHtml();
     html += judgeInfoHtml(d);
     // req 7: Detection rate as the prominent hero, then the instant
     // LLM-alone-vs-with-Lakera comparison, then the Lakera detections summary.
@@ -7131,6 +8389,7 @@
   }
 
   // ── Init ────────────────────────────────────────────────────────────────
+  bootMode();                    // #/chat | #/bench | #/target — everything below branches on it
   applyLanguage(detectLang());   // auto-detect from browser / saved preference
   loadCategoryScenarios();
   loadLlmConfig();
