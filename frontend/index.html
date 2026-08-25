@@ -1545,6 +1545,9 @@
     #tgt-step[data-auth="basic"]   .tgt-auth-fields[data-auth="basic"],
     #tgt-step[data-auth="bearer"]  .tgt-auth-fields[data-auth="bearer"] { display: flex; }
     .tgt-auth-fields input { flex: 1 1 120px; min-width: 0; }
+    /* ws:// and wss:// targets: no HTTP verb to pick, and the body is one frame. */
+    #tgt-step[data-ws="1"] .tgt-http-only,
+    #tgt-step:not([data-ws="1"]) .tgt-ws-only { display: none; }
     /* Chrome paints its own background on autofilled fields, which lands as a white
        slab on a dark console. Pin it back with an inset shadow (the background
        property itself is not overridable here). */
@@ -2015,13 +2018,16 @@
       <div class="os-ds-panel">
         <div class="os-ds-row">
           <span class="os-ds-label" data-i18n="tgt.url">URL</span>
-          <select id="tgt-method" onchange="onTargetInput()" aria-label="HTTP method">
+          <select id="tgt-method" class="tgt-http-only" onchange="onTargetInput()" aria-label="HTTP method">
             <option>POST</option><option>PUT</option><option>PATCH</option><option>GET</option>
           </select>
         </div>
         <div class="os-ds-row">
           <input type="text" id="tgt-url" spellcheck="false" oninput="onTargetInput()"
-                 placeholder="https://api.example.com/v1/assistant" aria-label="Target URL" />
+                 placeholder="https://api.example.com/v1/assistant — or wss://…" aria-label="Target URL" />
+        </div>
+        <div class="os-ds-row tgt-ws-only">
+          <span class="os-sp-hint" data-i18n="tgt.wsHint">WebSocket target: the body below is sent as one frame, and the response path is looked up in each frame that comes back until one matches. Authentication and extra headers are sent on the handshake.</span>
         </div>
         <div class="os-ds-row"><span class="os-ds-label" data-i18n="tgt.auth">Authentication</span></div>
         <div class="os-ds-row">
@@ -2456,6 +2462,7 @@
         'tgt.test': 'Test endpoint',
         'tgt.rawBody': 'Raw response body',
         'tgt.bodyHint': 'Use {{prompt}} where the user message goes. It is inserted JSON-encoded.',
+        'tgt.wsHint': 'WebSocket target: the body below is sent as one frame, and the response path is looked up in each frame that comes back until one matches. Authentication and extra headers are sent on the handshake.',
         'tgt.headersNotSaved': 'Credentials are never saved — re-enter them after a reload.',
         'tgt.cpNote': 'No guard runs in a Target Test: every prompt goes straight to the endpoint, and the judge grades the answers that come back.',
         'tgt.flow': 'Dataset → endpoint → judge',
@@ -2968,6 +2975,7 @@
         'tgt.test': '엔드포인트 테스트',
         'tgt.rawBody': '원본 응답 본문',
         'tgt.bodyHint': '사용자 메시지가 들어갈 자리에 {{prompt}}를 쓰세요. JSON 인코딩되어 삽입됩니다.',
+        'tgt.wsHint': 'WebSocket 대상: 아래 본문이 하나의 프레임으로 전송되며, 돌아오는 각 프레임에서 응답 경로를 찾아 일치하는 첫 프레임을 사용합니다. 인증과 추가 헤더는 핸드셰이크에 실려 전송됩니다.',
         'tgt.headersNotSaved': '자격 증명은 저장되지 않습니다 — 새로고침 후 다시 입력하세요.',
         'tgt.cpNote': 'Target Test에서는 가드가 실행되지 않습니다. 모든 프롬프트는 엔드포인트로 바로 전송되며, 반환된 응답을 심판 모델이 평가합니다.',
         'tgt.flow': '데이터셋 → 엔드포인트 → 심판 모델',
@@ -3459,6 +3467,7 @@
         'tgt.test': '測試端點',
         'tgt.rawBody': '原始回應內容',
         'tgt.bodyHint': '在使用者訊息的位置使用 {{prompt}}，系統會以 JSON 編碼插入。',
+        'tgt.wsHint': 'WebSocket 端點：下方的內容會以單一訊框送出，並在每個回傳的訊框中尋找回應路徑，取第一個符合的。驗證與額外標頭會隨交握一起送出。',
         'tgt.headersNotSaved': '憑證永不儲存——重新載入後請再次輸入。',
         'tgt.cpNote': 'Target Test 不經過任何防護：每則提示直接送到端點，回應再交由裁判模型評分。',
         'tgt.flow': '資料集 → 端點 → 裁判模型',
@@ -4026,6 +4035,7 @@
         'tgt.test': '测试端点',
         'tgt.rawBody': '原始响应体',
         'tgt.bodyHint': '在用户消息的位置使用 {{prompt}}，系统会以 JSON 编码插入。',
+        'tgt.wsHint': 'WebSocket 端点：下方的内容会作为单个帧发送，并在每个返回的帧中查找响应路径，取第一个匹配的。认证与额外请求头随握手一起发送。',
         'tgt.headersNotSaved': '凭证永不保存——重新加载后请再次输入。',
         'tgt.cpNote': 'Target Test 不经过任何防护：每条提示直接发送到端点，返回的响应再交由评判模型打分。',
         'tgt.flow': '数据集 → 端点 → 评判模型',
@@ -4593,6 +4603,7 @@
         'tgt.test': 'エンドポイントをテスト',
         'tgt.rawBody': '生のレスポンスボディ',
         'tgt.bodyHint': 'ユーザーメッセージが入る位置に {{prompt}} を書いてください。JSON エンコードされて挿入されます。',
+        'tgt.wsHint': 'WebSocket ターゲット: 下のボディは 1 フレームとして送信され、返ってくる各フレームからレスポンスパスを探し、最初に一致したものを使います。認証と追加ヘッダーはハンドシェイクで送られます。',
         'tgt.headersNotSaved': '認証情報は保存されません — 再読み込み後に入力し直してください。',
         'tgt.cpNote': 'Target Test ではガードは一切動作しません。プロンプトは直接エンドポイントへ送られ、返ってきた応答をジャッジモデルが評価します。',
         'tgt.flow': 'データセット → エンドポイント → ジャッジモデル',
@@ -6930,6 +6941,9 @@
   // Any edit invalidates the probe: a green chip must describe the config that is
   // actually about to run, not the one that was tested five edits ago.
   function onTargetInput() {
+    const step = document.getElementById('tgt-step');
+    // ws:// and wss:// have no HTTP verb; everything else about the spec is the same.
+    if (step) step.dataset.ws = /^wss?:\/\//i.test(val('tgt-url').trim()) ? '1' : '0';
     if (targetProbe !== 'untested') setTargetState('untested');
     saveTargetLocal();
   }

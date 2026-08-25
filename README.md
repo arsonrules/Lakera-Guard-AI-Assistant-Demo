@@ -911,7 +911,7 @@ Step ① of the rail describes the request:
 
 | Field | Meaning |
 |---|---|
-| **URL** + method | Where to POST (also PUT/PATCH/GET) |
+| **URL** + method | Where to POST (also PUT/PATCH/GET). A `ws://` or `wss://` URL switches to a **WebSocket target** — see below; the method picker disappears, because a frame has no HTTP verb |
 | **Authentication** | None · API Key · Basic Auth · Bearer Token — see below |
 | **Extra headers** | Anything else the endpoint needs (a tenant id, an API version) |
 | **Request body** | A JSON template with `{{prompt}}` where the user message goes |
@@ -934,6 +934,47 @@ schemes differ underneath:
 
 The picker wins over a hand-typed `Authorization` in **Extra headers**: it is the
 explicit, structured choice, so it is taken as what you meant.
+
+#### WebSocket targets (`ws://` · `wss://`)
+
+Plenty of assistants are sockets rather than request/response — a chat widget's
+backend, an internal gateway, anything that streams. Point the URL at one and the
+same spec runs over it:
+
+- The rendered **request body** is sent as **one text frame**, `{{prompt}}` JSON-encoded
+  exactly as over HTTP, with **Additional fields** merged in the same way.
+- **Authentication and extra headers ride on the handshake** — it is an HTTP request, so
+  API Key, Basic and Bearer all send the identical header they would over HTTPS. A
+  rejected handshake is reported as what it is: `WebSocket handshake rejected with
+  HTTP 401 — check the API key / token.`
+- **Response path** is looked up in *each* frame that comes back, and the first frame
+  that resolves it is the answer. Frames that don't (an `ack`, a `typing` event, a
+  status envelope) are skipped rather than graded as the assistant's reply. With no
+  path set, a plain-text frame is taken as the answer; a JSON frame says a path is
+  required instead of waiting.
+- If no frame matches, the error names what did arrive (`no frame matched response
+  path 'data.answer' within 30s (3 frame(s) received; last: …)`) and **Test endpoint**
+  shows those frames so you can pick the path from them. The probe gives up after 10s
+  regardless of the configured timeout — someone is waiting on it — while a run keeps
+  the full per-row timeout.
+- Streaming caveat: a socket that emits one **token per frame** reports the first
+  matching frame, not the concatenation. Endpoints that send the finished answer in a
+  frame (the common case) are unaffected.
+
+`wss://` uses the system trust store, and the same SSRF guard applies as to every
+other target URL.
+
+Same shape from a target file:
+
+```json
+{
+  "url": "wss://api.example.com/assistant",
+  "auth": { "type": "bearer", "token": "sk-…" },
+  "body": "{\"question\": {{prompt}}}",
+  "response_path": "data.answer",
+  "timeout": 30
+}
+```
 
 #### Additional fields
 
@@ -1021,7 +1062,8 @@ configuration that is actually about to run.
   against DNS rebinding — run the demo in a trusted network.
 
 Tool-calling scenarios are not runnable against a black box (there is no tool contract
-to offer), and streaming responses are out of scope — request/response only.
+to offer). Over HTTP the exchange is request/response; over a WebSocket it is one frame
+out and the first matching frame back (see above).
 
 ### The report names the endpoint
 

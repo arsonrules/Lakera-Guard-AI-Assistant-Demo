@@ -315,11 +315,15 @@ def _target_llm_config(t) -> dict:
     `.env` — a target endpoint is in-memory and per-run by design.
     """
     url = _clean(t.url)
-    if not re.match(r"^https?://", url):
-        raise HTTPException(400, "Target URL must start with http:// or https://")
+    if not re.match(r"^(https?|wss?)://", url):
+        raise HTTPException(
+            400, "Target URL must start with http://, https://, ws:// or wss://")
     _reject_metadata_url(url)                  # same SSRF guard as every other outbound URL
-    method = (_clean(t.method) or "POST").upper()
-    if method not in TARGET_METHODS:
+    # A socket has no HTTP verb: the body is sent as one frame. Everything else —
+    # headers, auth, the body template, the response path — is identical.
+    is_ws = llm.is_ws_target(url)
+    method = "WS" if is_ws else (_clean(t.method) or "POST").upper()
+    if not is_ws and method not in TARGET_METHODS:
         raise HTTPException(400, f"Unsupported method '{method}'. Use one of: "
                                  + ", ".join(TARGET_METHODS))
     headers: dict[str, str] = {}
@@ -340,7 +344,11 @@ def _target_llm_config(t) -> dict:
     return {
         # provider/base_url/model are what logs, reports and the UI badge print.
         # Keep them populated so every existing readout still says something true.
-        "provider": "http", "base_url": url, "api_key": "", "model": f"http:{host}",
+        # `provider: "http"` is the marker for "a custom target endpoint" (the
+        # renderers key Target Test mode off it) — the model string is what says
+        # whether that endpoint is a socket.
+        "provider": "http", "base_url": url, "api_key": "",
+        "model": f"{'ws' if is_ws else 'http'}:{host}",
         "target": {"url": url, "method": method, "headers": headers,
                    "body": t.body, "extra_fields": getattr(t, "extra_fields", None),
                    "response_path": _clean(t.response_path),

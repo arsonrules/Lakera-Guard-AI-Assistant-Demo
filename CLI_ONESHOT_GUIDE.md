@@ -279,6 +279,10 @@ Describe the endpoint in a JSON file:
   are accepted. `{{history}}` (a JSON array) is available for multi-turn scenarios.
 - `response_path` is a dotted path with numeric indices — `data.answer`,
   `choices.0.message.content`. Leave it out when the whole body is the answer.
+- A **`ws://` or `wss://` URL** makes it a WebSocket target: the body goes out as one
+  frame, `auth`/`headers` ride on the handshake, and `response_path` is looked up in
+  each frame until one resolves (acks and status envelopes are skipped). `method` is
+  ignored — the dry-run plan shows `WS <url>`.
 - The file holds credentials. **Keep it out of version control** and inject it from
   your CI secret store.
 
@@ -506,7 +510,7 @@ python -m backend.oneshot --suite suite.yaml \
 | | `--lakera-api-key KEY` | Guard API key — overrides `$LAKERA_GUARD_API_KEY`. |
 | | `--lakera-projects K=V,…` | Per-checkpoint Lakera Project IDs: `input=<id>` (CP1), `rag=<id>` (CP2), `output=<id>` (CP3). Unset checkpoints use the key's default policy. `cp1/cp2/cp3` accepted as aliases. |
 | **Provider** | `--provider` / `--base-url` / `--model` / `--api-key` | Target LLM (`openrouter`, `lmstudio`, `ollama`, `omlx`, `custom`); key overrides `$LLM_API_KEY`/`$OPENROUTER_API_KEY`. |
-| | `--target-file PATH` | **Target Test** — a JSON file describing a third-party HTTP endpoint (`url`/`method`/`auth`/`headers`/`body`/`extra_fields`/`response_path`/`timeout`) to fire the dataset at instead of an OpenAI-compatible provider. Replaces `--base-url`/`--model` for the run; `--provider`/`--model` then supply only the **judge**, which must be a different model. No guard runs at all (no checkpoint, no Lakera project, no `--compare` arm, no Guard key needed), and the run sends no system prompt and no RAG documents — `--system-prompt` / `--knowledge-base` are ignored. The dataset goes straight to the endpoint and the judge scores the answers afterwards. The file holds credentials — keep it out of version control. |
+| | `--target-file PATH` | **Target Test** — a JSON file describing a third-party HTTP or WebSocket endpoint (`url`/`method`/`auth`/`headers`/`body`/`extra_fields`/`response_path`/`timeout`) to fire the dataset at instead of an OpenAI-compatible provider. Replaces `--base-url`/`--model` for the run; `--provider`/`--model` then supply only the **judge**, which must be a different model. No guard runs at all (no checkpoint, no Lakera project, no `--compare` arm, no Guard key needed), and the run sends no system prompt and no RAG documents — `--system-prompt` / `--knowledge-base` are ignored. The dataset goes straight to the endpoint and the judge scores the answers afterwards. The file holds credentials — keep it out of version control. |
 | | `--preflight` / `--no-preflight` | Ping the target LLM once **before** the run and abort with a clear message if the host/port/model is wrong (default on). With `--target-file`, the probe sends one sample prompt at the endpoint instead. |
 | **Judge** | `--judge-provider` / `--judge-base-url` / `--judge-model` / `--judge-api-key` | Optional stronger judge model. **Each omitted flag falls back to the matching main-model value** (provider→`--provider`, base-url/model→`--base-url`/`--model` when the provider matches, key→`--judge-api-key` → `$JUDGE_API_KEY` → `--api-key`). Omit **all four** → judge with the target model. |
 | **Gate** | `--min-detection 0..1` · `--max-breaches` · `--max-evasions` · `--max-effective-evasions` · `--max-false-positives` | CI thresholds (a `null`/unset threshold isn't enforced). |

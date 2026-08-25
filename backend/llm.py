@@ -6,6 +6,8 @@ import time
 import urllib.parse
 
 import httpx
+import websockets
+import websockets.exceptions as ws_exc
 
 from backend import ratelimit, redact
 
@@ -116,6 +118,16 @@ def describe_error(exc: Exception) -> str:
         return f"timed out talking to {_error_target(exc)} — the server is slow or unreachable."
     if isinstance(exc, httpx.RequestError):
         return f"request to {_error_target(exc)} failed: {type(exc).__name__}."
+    if isinstance(exc, ws_exc.InvalidStatus):
+        # The handshake IS an HTTP request, so a rejected socket fails with a
+        # status code — and it is nearly always the credential.
+        code = getattr(getattr(exc, "response", None), "status_code", "?")
+        hint = " — check the API key / token." if code in (401, 403) else ""
+        return f"WebSocket handshake rejected with HTTP {code}{hint}"
+    if isinstance(exc, ws_exc.ConnectionClosed):
+        return f"the WebSocket closed before answering ({exc})."
+    if isinstance(exc, ws_exc.WebSocketException):
+        return f"WebSocket error: {type(exc).__name__}: {exc}"
     return f"{type(exc).__name__}: {exc}"
 
 # ── Custom HTTP targets ───────────────────────────────────────────────────────
@@ -245,6 +257,151 @@ async def _complete_http(messages: list[dict], spec: dict) -> str:
     return _extract_target(resp, spec.get("response_path") or "")
 
 
+# ── WebSocket targets ────────────────────────────────────────────────────────
+# Plenty of assistant APIs are sockets rather than request/response — a support
+# widget's backend, an internal gateway, anything that streams. The spec is the
+# same one an HTTP target uses (the URL just starts with ws:// or wss://): the
+# rendered body is sent as ONE text frame, and `response_path` is looked up in
+# each frame that comes back. Auth rides on the handshake, where every scheme the
+# picker offers is just a request header, exactly as over HTTP.
+
+WS_SCHEMES = ("ws://", "wss://")
+_WS_MAX_FRAMES = 50          # frames kept for the probe preview / error message
+_WS_MAX_FRAME_BYTES = 4 << 20
+# "No frame matched" can only be concluded by waiting, and the probe is something
+# a person is sitting in front of. A run keeps the full per-row timeout; the probe
+# gives up sooner and shows the frames it did get, which is the actionable part.
+WS_PROBE_TIMEOUT = 10.0
+
+
+class TargetFrameError(ValueError):
+    """
+    No frame carried the answer. Holds the frames that DID arrive: the probe's
+    whole job is showing them so a response path can be picked from what the
+    endpoint actually sends, and that is exactly when it fails.
+    """
+
+    def __init__(self, message: str, frames: list[str]):
+        super().__init__(message)
+        self.frames = frames
+
+
+def is_ws_target(url: str) -> bool:
+    return (url or "").strip().lower().startswith(WS_SCHEMES)
+
+
+def _ws_connect(spec: dict):
+    """
+    Open the socket. The single seam the transport goes through, so tests can
+    stub it without a real server.
+    """
+    return websockets.connect(
+        spec.get("url") or "",
+        # The handshake is an HTTP request, so Authorization / X-API-Key / any
+        # extra header the operator set is carried exactly as it is over HTTP.
+        additional_headers=(spec.get("headers") or {}),
+        open_timeout=float(spec.get("timeout") or DEFAULT_TARGET_TIMEOUT),
+        close_timeout=5,
+        max_size=_WS_MAX_FRAME_BYTES,
+    )
+
+
+def _extract_frame(text: str, path: str):
+    """
+    The value at `path` in one frame, or None when this frame simply isn't the
+    answer (an ack, a status/ping envelope, a stream event of another shape).
+    Distinguishing "not this frame" from "misconfigured" matters: the first is
+    normal on a socket, the second has to be reported rather than waited out.
+    """
+    try:
+        data = json.loads(text)
+    except ValueError:
+        if not path:
+            return text                      # a plain-text socket: the frame IS the answer
+        return None
+    if not path:
+        # Same rule as HTTP: a JSON body needs a path to point into it. Raised,
+        # not skipped, because no later frame can fix it.
+        raise ValueError(
+            "the endpoint returned a JSON frame, so a response path is required "
+            "(e.g. 'data.answer')")
+    try:
+        return _dig(data, path)
+    except ValueError:
+        return None                          # not this frame — keep listening
+
+
+async def _ws_exchange(spec: dict, messages: list[dict]) -> tuple[str, list[str]]:
+    """
+    Send one message and wait for the first frame that resolves `response_path`.
+    Returns (extracted, frames_seen).
+
+    Frames that don't resolve are skipped rather than treated as the answer, so
+    an ack or a status envelope doesn't get graded as the assistant's reply.
+    ponytail: first matching frame wins — a token-streaming socket that emits one
+    delta per frame reports the first delta; accumulating until a done-marker
+    needs a per-endpoint rule the spec doesn't carry yet.
+    """
+    body = render_target_body(spec.get("body") or DEFAULT_TARGET_BODY, messages,
+                              spec.get("extra_fields"))
+    path = spec.get("response_path") or ""
+    timeout = float(spec.get("timeout") or DEFAULT_TARGET_TIMEOUT)
+    await ratelimit.acquire()          # share the global outbound-request rate cap
+    frames: list[str] = []
+    deadline = time.monotonic() + timeout
+    async with _ws_connect(spec) as ws:
+        await ws.send(body)
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=left)
+            except asyncio.TimeoutError:
+                break
+            except ws_exc.ConnectionClosed:
+                break
+            text = msg.decode("utf-8", "replace") if isinstance(msg, bytes) else str(msg)
+            if len(frames) < _WS_MAX_FRAMES:
+                frames.append(text)
+            value = _extract_frame(text, path)
+            if value is not None:
+                return value, frames
+    raise TargetFrameError(
+        (f"no frame matched response path '{path}'" if path else "no frame arrived")
+        + f" within {timeout:g}s ({len(frames)} frame(s) received"
+        + (f"; last: {frames[-1][:200]}" if frames else "")
+        + ")", frames)
+
+
+async def _complete_target(messages: list[dict], spec: dict) -> str:
+    """One completion from a custom target — over a socket or over HTTP."""
+    if is_ws_target(spec.get("url") or ""):
+        value, _ = await _ws_exchange(spec, messages)
+        return value
+    return await _complete_http(messages, spec)
+
+
+async def _probe_ws(spec: dict, prompt: str, start: float) -> dict:
+    """The WebSocket half of probe_target (same result shape)."""
+    spec = {**spec, "timeout": min(float(spec.get("timeout") or DEFAULT_TARGET_TIMEOUT),
+                                   WS_PROBE_TIMEOUT)}
+    try:
+        value, frames = await _ws_exchange(spec, [{"role": "user", "content": prompt}])
+        return {"ok": True, "status": 101,
+                "latency_ms": int((time.monotonic() - start) * 1000),
+                "raw_body_preview": "\n".join(frames)[:4000],
+                "extracted": value, "path_error": False, "error": None}
+    except ValueError as exc:
+        # A reachable socket whose frames don't match the path — the same
+        # "fix your response_path" case HTTP reports, so it reads the same way,
+        # with the frames that did arrive to pick a path from.
+        return {"ok": False, "status": 101,
+                "latency_ms": int((time.monotonic() - start) * 1000),
+                "raw_body_preview": "\n".join(getattr(exc, "frames", []))[:4000],
+                "extracted": None, "path_error": True, "error": str(exc)}
+
+
 async def probe_target(spec: dict, prompt: str = "Hello, can you help me?") -> dict:
     """
     Send ONE sample prompt at a target and report what came back, so the user can
@@ -256,6 +413,8 @@ async def probe_target(spec: dict, prompt: str = "Hello, can you help me?") -> d
     """
     start = time.monotonic()
     try:
+        if is_ws_target(spec.get("url") or ""):
+            return redact.scrub_obj(await _probe_ws(spec, prompt, start))
         resp = await _request_target(spec, [{"role": "user", "content": prompt}])
         out = {
             "ok": 200 <= resp.status_code < 300,
@@ -394,8 +553,8 @@ async def complete_chat(
     target: dict | None = None,
 ) -> str:
     """Post a fully-assembled message list and return the assistant's text."""
-    if target:                          # a custom HTTP endpoint, not an OpenAI API
-        return await _complete_http(messages, target)
+    if target:                          # a custom endpoint (HTTP or WebSocket)
+        return await _complete_target(messages, target)
     endpoint = f"{_normalize_base_url(base_url)}/chat/completions"
     await ratelimit.acquire()          # share the global outbound-request rate cap
     client = await _get_client()

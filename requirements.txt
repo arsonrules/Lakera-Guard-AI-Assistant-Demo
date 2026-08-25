@@ -1,6 +1,10 @@
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
 httpx>=0.27.0
+# WebSocket client for Target Test endpoints that are sockets rather than
+# request/response (ws:// and wss://). Already pulled in by uvicorn[standard];
+# pinned here too because the app imports it directly.
+websockets>=12.0
 pydantic-settings>=2.3.0
 python-multipart>=0.0.9
 pyyaml>=6.0
