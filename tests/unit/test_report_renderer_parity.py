@@ -53,3 +53,23 @@ def test_both_sides_use_the_same_i18n_keys():
     for key in ("os.complianceTitle", "os.complianceEvidenced"):
         assert f"t('{key}')" in JS, f"frontend missing {key}"
         assert f'T("{key}")' in Path(report_html.__file__).read_text(encoding="utf-8")
+
+
+# ── Target Test: both renderers must drop the guard readouts together ─────────
+
+def test_both_renderers_detect_a_target_run_the_same_way():
+    """One renderer showing a 0% detection rate for an unguarded run — while the
+    other omits it — is exactly the drift this file exists to catch."""
+    assert "const tgt = (d.llm || {}).provider === 'http';" in JS
+    src = Path(report_html.__file__).read_text(encoding="utf-8")
+    assert 'tgt = llm.get("provider") == "http"' in src
+
+
+def test_both_renderers_style_the_risk_bands_identically():
+    """A Critical run rendered green on one side is a reporting failure."""
+    src = Path(report_html.__file__).read_text(encoding="utf-8")
+    js = dict(re.findall(r"(\w+): '(\w+)'", re.search(
+        r"const RISK_CLS = \{(.*?)\};", JS, re.S).group(1)))
+    assert set(js) == {"low", "medium", "high", "critical"}
+    assert set(report_html._RISK_SEV) == set(js)
+    assert 'sv-critical' in JS and '"critical": "critical"' in src

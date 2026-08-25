@@ -43,6 +43,8 @@ _LAKERA_LEVELS = [
 ]
 _STAT_INFO = {
     "os.statDetection": "Share of attack scenarios Lakera Guard correctly blocked. Higher is safer.",
+    "os.statAttackSuccess": "Share of attack objectives the endpoint complied with, scored by the judge. Banded the way Lakera Red bands a scan: Low \u226425%, Medium \u226450%, High \u226475%, Critical above.",
+    "os.statSucceeded": "Attack objectives the endpoint complied with, as scored by the judge.",
     "os.statTotal": "Total scenarios executed in this run (attacks + safe baselines).",
     "os.statBlocked": "Attack scenarios the guard blocked before any harm.",
     "os.statNotBlocked": "Attack scenarios that slipped past the guard and reached the model.",
@@ -77,7 +79,7 @@ def _app_assets() -> tuple[str, str, dict]:
     i18n: dict[str, str] = {}
     # `tgt` carries the Target Test report banner; without it the banner renders
     # as the raw key.
-    for k, v in re.findall(r"'((?:os|badge|cat|tgt)\.[A-Za-z0-9_]+)':\s*'((?:[^'\\]|\\.)*)'", txt):
+    for k, v in re.findall(r"'((?:os|badge|cat|tgt|red|risk)\.[A-Za-z0-9_]+)':\s*'((?:[^'\\]|\\.)*)'", txt):
         if k not in i18n:                      # English appears first in the file
             i18n[k] = v.replace("\\'", "'").replace('\\"', '"').replace("\\\\", "\\")
     return styles, sprite, i18n
@@ -159,6 +161,10 @@ def render(payload: dict) -> str:
         pass
 
     detection = _pct(s.get("detection_rate"))
+    # Target Test: no guard ran, so every guard-shaped readout is omitted instead
+    # of rendered as zeroes. Mirrors `tgt` in frontend/index.html buildReportBody.
+    tgt = llm.get("provider") == "http"
+    ev = s.get("evaluation") or {}
 
     def stat(cls, num, key):
         return (f'<button type="button" class="os-stat {cls}" data-info="{_e(key)}" '
@@ -177,10 +183,11 @@ def render(payload: dict) -> str:
                     + _e(T("tgt.reportBanner", url=llm["base_url"])) + '</div>')
 
     # ── Top strip: L1–L5 legend (collapsed) + judge model ─────────────────────
-    legend_rows = "".join(f'<div class="os-legend-row">{_lk_badge(lv)}<span>{_e(desc)}</span></div>'
-                          for lv, desc in _LAKERA_LEVELS)
-    body.append(f'<details class="os-legend"><summary>{_e(T("os.lakeraLegendTitle"))}</summary>'
-                f'<div class="os-legend-body">{legend_rows}</div></details>')
+    if not tgt:
+        legend_rows = "".join(f'<div class="os-legend-row">{_lk_badge(lv)}<span>{_e(desc)}</span></div>'
+                              for lv, desc in _LAKERA_LEVELS)
+        body.append(f'<details class="os-legend"><summary>{_e(T("os.lakeraLegendTitle"))}</summary>'
+                    f'<div class="os-legend-body">{legend_rows}</div></details>')
     if judge and judged:
         note = T("os.judgeDedicated") if judge.get("enabled") else T("os.judgeSameAsTarget")
         body.append(
@@ -190,11 +197,23 @@ def render(payload: dict) -> str:
             f'<span class="os-judge-note">{_e(note)}</span></div>')
 
     # ── Detection hero + compare + Lakera detections ──────────────────────────
-    body.append(
-        '<button type="button" class="os-hero" data-info="os.statDetection" '
-        f'title="{_e(_STAT_INFO["os.statDetection"])}" onclick="showStatInfo(\'os.statDetection\', event)">'
-        f'<div class="os-hero-num">{_e(detection)}</div>'
-        f'<div class="os-hero-lbl">{_e(T("os.statDetection"))}</div></button>')
+    if tgt:
+        body.append(f'<div class="tgt-note" style="font-size:0.82rem;padding:9px 12px;'
+                    f'margin-bottom:14px">{_e(T("tgt.flow"))}</div>')
+        rate = _pct(ev.get("success_rate"))
+        body.append(
+            '<button type="button" class="os-hero" data-info="os.statAttackSuccess" '
+            f'title="{_e(_STAT_INFO["os.statAttackSuccess"])}" '
+            'onclick="showStatInfo(\'os.statAttackSuccess\', event)">'
+            f'<div class="os-hero-num">{_e(rate)}</div>'
+            f'<div class="os-hero-lbl">{_e(T("os.statAttackSuccess"))} '
+            f'{_risk_chip(T, ev.get("risk_band"))}</div></button>')
+    else:
+        body.append(
+            '<button type="button" class="os-hero" data-info="os.statDetection" '
+            f'title="{_e(_STAT_INFO["os.statDetection"])}" onclick="showStatInfo(\'os.statDetection\', event)">'
+            f'<div class="os-hero-num">{_e(detection)}</div>'
+            f'<div class="os-hero-lbl">{_e(T("os.statDetection"))}</div></button>')
 
     if s.get("compared"):
         pct = _pct
@@ -213,7 +232,7 @@ def render(payload: dict) -> str:
     # Run-level Lakera detections (flagged count + detector categories).
     cat_counts: dict[str, int] = {}
     flagged = 0
-    for r in results:
+    for r in (() if tgt else results):
         tr = r.get("trace") or {}
         for cp in ("cp1", "cp2", "cp3"):
             for d in ((tr.get(cp) or {}).get("detectors") or []):
@@ -222,13 +241,14 @@ def render(payload: dict) -> str:
     cats_html = ("".join(f'<span class="lk-cat">{_e(c)} <b>{cat_counts[c]}</b></span>'
                          for c in sorted(cat_counts))
                  or '<span class="os-detail-none">No detectors fired.</span>')
-    body.append(
-        f'<div class="os-lakera-summary"><div class="os-runcfg-title">{_e(T("os.lakeraSummaryTitle"))}</div>'
-        '<div class="lk-summary-grid">'
-        f'<div class="lk-summary-cell"><div class="lk-summary-num">{flagged}</div>'
-        f'<div class="lk-summary-lbl">{_e(T("os.lakeraFlaggedCount"))}</div></div>'
-        f'<div class="lk-summary-cell wide"><div class="lk-summary-lbl">{_e(T("os.lakeraCategories"))}</div>'
-        f'<div class="lk-cats">{cats_html}</div></div></div></div>')
+    if not tgt:
+        body.append(
+            f'<div class="os-lakera-summary"><div class="os-runcfg-title">{_e(T("os.lakeraSummaryTitle"))}</div>'
+            '<div class="lk-summary-grid">'
+            f'<div class="lk-summary-cell"><div class="lk-summary-num">{flagged}</div>'
+            f'<div class="lk-summary-lbl">{_e(T("os.lakeraFlaggedCount"))}</div></div>'
+            f'<div class="lk-summary-cell wide"><div class="lk-summary-lbl">{_e(T("os.lakeraCategories"))}</div>'
+            f'<div class="lk-cats">{cats_html}</div></div></div></div>')
 
     scope = s.get("scope") or {}
     if scope.get("sampled"):
@@ -237,15 +257,21 @@ def render(payload: dict) -> str:
                           seed=scope.get("seed") if scope.get("seed") is not None else "—")) + '</div>')
 
     # ── Secondary stat tiles ──────────────────────────────────────────────────
-    sec_stats = [stat("", s.get("total", 0), "os.statTotal"),
-                 stat("good", s.get("blocked", 0), "os.statBlocked"),
-                 stat("bad", s.get("not_blocked", 0), "os.statNotBlocked"),
-                 stat("good", s.get("passed", 0), "os.statPassed"),
-                 stat("warn", s.get("false_positive", 0), "os.statFalsePos")]
+    sec_stats = [stat("", s.get("total", 0), "os.statTotal")]
+    if not tgt:
+        sec_stats += [stat("good", s.get("blocked", 0), "os.statBlocked"),
+                      stat("bad", s.get("not_blocked", 0), "os.statNotBlocked"),
+                      stat("good", s.get("passed", 0), "os.statPassed"),
+                      stat("warn", s.get("false_positive", 0), "os.statFalsePos")]
     if s.get("errors"):
         sec_stats.append(stat("bad", s["errors"], "os.statErrors"))
     body.append('<div class="os-summary os-summary-secondary">' + "".join(sec_stats) + '</div>')
-    if judged:
+    if judged and tgt:
+        body.append('<div class="os-summary os-summary-secondary">'
+                    + stat("bad", ev.get("succeeded", 0), "os.statSucceeded")
+                    + stat("good", ev.get("resisted", 0), "os.statResisted") + '</div>')
+        body.append(_red_categories(T, ev))
+    elif judged:
         body.append('<div class="os-summary os-summary-secondary">'
                     + stat("bad", s.get("breaches", 0), "os.statBreaches")
                     + stat("good", s.get("resisted", 0), "os.statResisted")
@@ -265,8 +291,9 @@ def render(payload: dict) -> str:
     body.append(_classification(T, sec, _fam_class))
     body.append(_run_config(T, s.get("run_config")))
     body.append(_security_section(T, sec, _sev_label, i18n))
-    body.append(_checkpoint_legend(T))
-    body.append(_results_table(T, s, results, judged, strat, i18n, _fam_class, _sev_label))
+    if not tgt:
+        body.append(_checkpoint_legend(T))
+    body.append(_results_table(T, s, results, judged, strat, i18n, _fam_class, _sev_label, tgt))
 
     inner = "".join(body)
     head = (f'<div class="os-report-head"><div><h1>{_e(T("os.modalTitle") if T("os.modalTitle") != "os.modalTitle" else "One-Shot Security Test")}</h1>'
@@ -278,6 +305,35 @@ def render(payload: dict) -> str:
 
 
 # ── Section renderers (mirror the web UI's helpers) ───────────────────────────
+
+_RISK_SEV = {"low": "good", "medium": "medium", "high": "high", "critical": "critical"}
+
+
+def _risk_chip(T, band: str | None) -> str:
+    """Lakera Red's risk band as a severity chip (mirrors riskChipHtml())."""
+    if not band:
+        return ""
+    return f'<span class="sev-chip sv-{_e(_RISK_SEV.get(band, "medium"))}">{_e(T("risk." + band))}</span>'
+
+
+def _red_categories(T, ev: dict) -> str:
+    """Attack objectives broken down by Lakera Red category."""
+    cats = ev.get("categories") or []
+    if not cats:
+        return ""
+    rows = []
+    for c in cats:
+        rate = _pct(c.get("success_rate"))
+        rows.append(f'<tr><td>{_e(T("red." + c["id"]))}<br>'
+                    f'<span class="os-detail-none">{_e(c.get("description") or "")}</span></td>'
+                    f'<td class="mono">{_e(c.get("attacks", 0))}</td>'
+                    f'<td class="mono">{_e(c.get("succeeded", 0))}</td>'
+                    f'<td class="mono">{_e(rate)} {_risk_chip(T, c.get("risk_band"))}</td></tr>')
+    return (f'<div class="os-runcfg"><div class="os-runcfg-title">{_e(T("red.title"))}</div>'
+            '<div class="os-table-wrap"><table class="os-table"><thead><tr>'
+            f'<th>{_e(T("os.colCategory"))}</th><th>{_e(T("red.colAttacks"))}</th>'
+            f'<th>{_e(T("red.colSucceeded"))}</th><th>{_e(T("red.colRate"))}</th>'
+            '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div></div>')
 
 def _cp_mini(T, trace) -> str:
     labels = ["os.cp1Title", "os.cp2Title", "os.cp3Title"]
@@ -524,7 +580,16 @@ def _checkpoint_legend(T) -> str:
             f'<div class="os-legend-status"><span>{_e(T("os.cpLegendStatus"))}</span>{key_html}</div></div>')
 
 
-def _cp_latency(T, r) -> str:
+def _cp_latency(T, r, tgt=False) -> str:
+    if tgt:
+        # No checkpoints ran: the endpoint's own round trip is the latency, plus
+        # the judge's time, which is spent after the answer is back.
+        ep = ("—" if r.get("total_latency_ms") is None
+              else T("os.latEndpoint", ms=r["total_latency_ms"]))
+        if r.get("judge_latency_ms"):
+            ep += " · " + T("os.latJudge", ms=r["judge_latency_ms"])
+        return (f'<div><h4>{_e(T("os.colEndpointLatency"))}</h4>'
+                f'<div class="os-detail-none mono">{_e(ep)}</div></div>')
     tr = r.get("trace") or {}
     def part(cp):
         c = tr.get(cp) or {}
@@ -551,13 +616,14 @@ def _lakera_cp_detail(r) -> str:
     return "".join(out)
 
 
-def _os_detail(T, r) -> str:
+def _os_detail(T, r, tgt=False) -> str:
     h = ['<div class="os-detail">']
     if r.get("error"):
         att = f' — {r.get("attempts")} attempts' if (r.get("attempts") or 0) > 1 else ""
         h.append(f'<div><h4>{_e(T("os.detailError"))}{_e(att)}</h4><pre>{_e(r["error"])}</pre></div>')
-    h.append(_cp_latency(T, r))
-    h.append(_os_acc(T("os.lakeraDetectors"), _lakera_cp_detail(r)))
+    h.append(_cp_latency(T, r, tgt))
+    if not tgt:      # no checkpoint ran, so there are no detector results
+        h.append(_os_acc(T("os.lakeraDetectors"), _lakera_cp_detail(r)))
     if not r.get("turns") and not r.get("dynamic"):
         h.append(f'<div><h4>{_e(T("os.detailPrompt"))}</h4><pre>{_e(r.get("prompt") or "")}</pre></div>')
     if r.get("simulate_output"):
@@ -590,13 +656,15 @@ def _os_detail(T, r) -> str:
     return "".join(h)
 
 
-def _filter_bar(T, judged) -> str:
+def _filter_bar(T, judged, tgt=False) -> str:
     """Two client-side dropdown filters shown directly above the results table:
     Guard verdict + Model (judge). Options are populated by inline JS from the
-    rendered rows (see _document); the Model filter is present only when judged."""
-    guard = (f'<label class="os-tf-item">{_e(T("os.colGuard"))} '
+    rendered rows (see _document); the Model filter is present only when judged.
+    A Target Test has no guard verdict to filter on, so only the judge filter."""
+    guard = ("" if tgt else
+             f'<label class="os-tf-item">{_e(T("os.colGuard"))} '
              f'<select id="os-f-guard"><option value="">{_e(T("os.filterAll"))}</option></select></label>')
-    model = (f'<label class="os-tf-item">{_e(T("os.colModel"))} '
+    model = (f'<label class="os-tf-item">{_e(T("os.colResult" if tgt else "os.colModel"))} '
              f'<select id="os-f-model"><option value="">{_e(T("os.filterAll"))}</option></select></label>'
              if judged else "")
     # Filled in by the report's inline script — without it an empty filtered
@@ -605,18 +673,19 @@ def _filter_bar(T, judged) -> str:
     return f'<div class="os-tfilter">{guard}{model}{count}</div>'
 
 
-def _results_table(T, s, results, judged, strat, i18n, fam_class, sev_label) -> str:
-    cols = 6 + (1 if judged else 0) + (1 if strat else 0)
-    head = (_filter_bar(T, judged)
+def _results_table(T, s, results, judged, strat, i18n, fam_class, sev_label, tgt=False) -> str:
+    cols = (4 if tgt else 6) + (1 if judged else 0) + (1 if strat else 0)
+    head = (_filter_bar(T, judged, tgt)
             # Contained horizontal scroll so a narrow viewport doesn't push the
             # whole page sideways (see .os-table-wrap in the app stylesheet).
             + '<div class="os-table-wrap"><table class="os-table"><thead><tr>'
             f'<th>{_e(T("os.colScenario"))}</th><th>{_e(T("os.colOwasp"))}</th>'
             + (f'<th>{_e(T("os.colVariant"))}</th>' if strat else "")
-            + f'<th>{_e(T("os.colExpected"))}</th><th>{_e(T("os.colCheckpoints"))}</th>'
-            + f'<th>{_e(T("os.colGuard"))}</th>'
-            + (f'<th>{_e(T("os.colModel"))}</th>' if judged else "")
-            + f'<th>{_e(T("os.colLatency"))}</th></tr></thead><tbody>')
+            + (f'<th>{_e(T("os.colCategory"))}</th>' if tgt else
+               f'<th>{_e(T("os.colExpected"))}</th><th>{_e(T("os.colCheckpoints"))}</th>'
+               + f'<th>{_e(T("os.colGuard"))}</th>')
+            + (f'<th>{_e(T(("os.colResult" if tgt else "os.colModel")))}</th>' if judged else "")
+            + f'<th>{_e(T("os.colEndpointLatency" if tgt else "os.colLatency"))}</th></tr></thead><tbody>')
     rows = []
     for i, r in enumerate(results):
         m_cls, m_ic, m_key = _OUTCOME_META.get(r.get("outcome"), _OUTCOME_META["error"])
@@ -640,12 +709,13 @@ def _results_table(T, s, results, judged, strat, i18n, fam_class, sev_label) -> 
             f'<td><span class="os-caret">▸</span> {_e(r.get("label"))}<br><span class="mono">{_e(r.get("id"))}</span></td>'
             f'<td>{owasp}</td>'
             + (f'<td>{variant}</td>' if strat else "")
-            + f'<td class="mono">{_e(exp)}</td>'
-            + f'<td>{_cp_mini(T, r.get("trace"))}</td>'
-            + f'<td><span class="os-outcome {m_cls}">{_ic(m_ic)}<span>{_e(T(m_key))}</span></span></td>'
+            + (f'<td>{_e(T("red." + (r.get("red_category") or "security")))}</td>' if tgt else
+               f'<td class="mono">{_e(exp)}</td>'
+               + f'<td>{_cp_mini(T, r.get("trace"))}</td>'
+               + f'<td><span class="os-outcome {m_cls}">{_ic(m_ic)}<span>{_e(T(m_key))}</span></span></td>')
             + (f'<td>{model_cell}</td>' if judged else "")
             + f'<td class="mono">{_e(lat)}</td></tr>'
-            + f'<tr class="os-detail-row" id="osd-{i}" style="display:none"><td colspan="{cols}">{_os_detail(T, r)}</td></tr>')
+            + f'<tr class="os-detail-row" id="osd-{i}" style="display:none"><td colspan="{cols}">{_os_detail(T, r, tgt)}</td></tr>')
     return head + "".join(rows) + '</tbody></table></div>'
 
 
@@ -695,9 +765,12 @@ def _document(styles: str, sprite: str, head: str, inner: str) -> str:
         "p.classList.remove('show');});"
         # Client-side results filtering: populate the Guard-verdict / Model-(judge)
         # dropdowns from the values actually rendered, then hide non-matching rows.
-        "(function(){var tb=document.querySelector('.os-table');if(!tb)return;"
+        # Rows are selected document-wide, not from the first .os-table: a Target
+        # Test renders the red-team category table above the results one.
+        "(function(){"
         "var g=document.getElementById('os-f-guard'),m=document.getElementById('os-f-model');"
-        "var rows=[].slice.call(tb.querySelectorAll('tbody tr.os-row'));"
+        "var rows=[].slice.call(document.querySelectorAll('table.os-table tbody tr.os-row'));"
+        "if(!rows.length)return;"
         "function txt(r,s){var e=r.querySelector(s);return e?e.textContent.trim():'';}"
         "function opts(sel,vals){if(!sel)return;vals.forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);});}"
         "var gv={},mv={};rows.forEach(function(r){var a=txt(r,'.os-outcome');if(a)gv[a]=1;var b=txt(r,'.os-model');if(b)mv[b]=1;});"

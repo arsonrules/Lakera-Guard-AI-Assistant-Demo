@@ -1680,7 +1680,7 @@
       <button class="ctl" role="tab" id="tab-bench" aria-selected="false" aria-controls="mode-bench" onclick="setMode('bench')" data-i18n-title="mode.bench.title" title="Run a whole dataset through this app's guarded pipeline">
         <svg class="ic"><use href="#i-play"></use></svg><span data-i18n="mode.bench">Benchmark</span>
       </button>
-      <button class="ctl" role="tab" id="tab-target" aria-selected="false" aria-controls="mode-target" onclick="setMode('target')" data-i18n-title="mode.target.title" title="Run a dataset against your own API endpoint, scanned by Guard">
+      <button class="ctl" role="tab" id="tab-target" aria-selected="false" aria-controls="mode-target" onclick="setMode('target')" data-i18n-title="mode.target.title" title="Run a dataset against your own API endpoint and have a judge model score the answers">
         <svg class="ic"><use href="#i-plug"></use></svg><span data-i18n="mode.target">Target Test</span>
       </button>
     </nav>
@@ -2134,8 +2134,10 @@
       </div>
     </section>
 
-    <!-- Guard: which checkpoints run, under which Lakera project, and how results are graded. -->
-    <section class="cfg-step">
+    <!-- Guard: which checkpoints run, under which Lakera project, and how results are
+         graded. Benchmark only — Target Test puts no guard in the path, so there is
+         nothing here to switch on or off (the judge grades what comes back instead). -->
+    <section class="cfg-step" data-only="bench">
       <h3><span data-i18n="bench.step.guard">Guard</span><span class="cfg-sum os-strats-count" id="os-cps-count"></span></h3>
       <div class="os-ds-panel">
         <div class="os-cps-merged">
@@ -2195,16 +2197,20 @@
           <datalist id="tj-model-list"></datalist>
         </div>
         <div class="os-ds-row">
+          <select id="tj-model-select" onchange="onRunJudgeModelSelect()" aria-label="Select judge model from provider">
+            <option value="" data-i18n="llm.fromProvider">From provider…</option>
+          </select>
+          <button class="sp-btn" onclick="loadRunJudgeModels()" data-i18n="llm.loadModels">Load models</button>
+        </div>
+        <div class="os-ds-row">
           <span class="os-ds-label" data-i18n="tgt.judgeAuth">Authentication</span>
           <select id="tj-auth-type" onchange="onRunJudgeAuthChange()" aria-label="Judge authentication type">
             <option value="none" data-i18n="tgt.auth.none">None</option>
             <option value="bearer" data-i18n="tgt.auth.apiKeyAuth">API key</option>
           </select>
           <input type="password" id="tj-api-key" spellcheck="false" autocomplete="off" oninput="onRunJudgeInput()"
+                 onchange="loadRunJudgeModels()"
                  data-i18n-placeholder="tgt.judgeKey" placeholder="API key" aria-label="Judge API key" />
-        </div>
-        <div class="os-ds-row">
-          <button class="sp-btn" onclick="loadRunJudgeModels()" data-i18n="llm.loadModels">Load models</button>
         </div>
         <div class="cp0-result" id="tj-status"></div>
       </div>
@@ -2419,10 +2425,10 @@
         'mode.target': 'Target Test',
         'mode.chat.title': 'Walk one message through the four checkpoints',
         'mode.bench.title': 'Run a whole dataset through this app\'s guarded pipeline',
-        'mode.target.title': 'Run a dataset against your own API endpoint, scanned by Guard',
+        'mode.target.title': 'Run a dataset against your own API endpoint and have a judge model score the answers',
         'mode.chat.intro': 'One message, four checkpoints — watch each one fire.',
         'mode.bench.intro': 'Run a whole dataset through this app\'s guarded pipeline.',
-        'mode.target.intro': 'Run a dataset against your own API endpoint, scanned by Guard.',
+        'mode.target.intro': 'Send a dataset straight to your own API endpoint, then let a judge model score the answers. No guard in the path.',
         'bench.step.scope': 'Scope',
         'bench.step.target': 'Target',
         'bench.step.guard': 'Guard',
@@ -2451,7 +2457,23 @@
         'tgt.rawBody': 'Raw response body',
         'tgt.bodyHint': 'Use {{prompt}} where the user message goes. It is inserted JSON-encoded.',
         'tgt.headersNotSaved': 'Credentials are never saved — re-enter them after a reload.',
-        'tgt.cpNote': 'CP0 and CP2 don\'t apply here: this endpoint owns its own system prompt and knowledge base.',
+        'tgt.cpNote': 'No guard runs in a Target Test: every prompt goes straight to the endpoint, and the judge grades the answers that come back.',
+        'tgt.flow': 'Dataset → endpoint → judge',
+        'os.statAttackSuccess': 'Attack success rate',
+        'os.statSucceeded': 'Attacks succeeded',
+        'risk.low': 'Low risk',
+        'risk.medium': 'Medium risk',
+        'risk.high': 'High risk',
+        'risk.critical': 'Critical risk',
+        'red.title': 'Attack objectives by category (Lakera Red Teaming)',
+        'red.security': 'Security',
+        'red.safety': 'Safety',
+        'red.responsible': 'Responsible',
+        'red.colAttacks': 'Attacks',
+        'red.colSucceeded': 'Succeeded',
+        'red.colRate': 'Success rate',
+        'os.colCategory': 'Category',
+        'os.colResult': 'Result',
         'tgt.state.untested': 'Endpoint: untested',
         'tgt.state.testing': 'Endpoint: testing…',
         'tgt.state.ok': 'Endpoint: OK',
@@ -2619,6 +2641,7 @@
         'os.exportJson': 'JSON',
         'os.exportCsv': 'CSV',
         'os.idle': 'Pick a scope and run the test to see how Lakera Guard handles every scenario.',
+        'os.idleTarget': 'Pick a scope and run the test to see how your endpoint answers every scenario.',
         'os.scopeAll': 'All categories',
         'os.scopeCategory': 'Category: {name}',
         'os.scopeDataset': 'Dataset: {name} ({count})',
@@ -2838,6 +2861,8 @@
         'os.detailJudge': 'Judge verdict',
         'os.judgeError': 'Judge error:',
         'os.colLatency': 'Guard latency',
+        'os.colEndpointLatency': 'Endpoint latency',
+        'os.latEndpoint': 'endpoint {ms} ms',
         'os.latCheckpoints': 'Checkpoint latency (Lakera)',
         'os.catDashTitle': 'Attack category dashboard',
         'os.clsTitle': 'OWASP tactic classification',
@@ -2912,10 +2937,10 @@
         'mode.target': '타깃 테스트',
         'mode.chat.title': '메시지 하나가 네 개의 체크포인트를 지나는 과정 보기',
         'mode.bench.title': '데이터셋 전체를 이 앱의 보호 파이프라인에 통과시키기',
-        'mode.target.title': '직접 운영하는 API 엔드포인트에 데이터셋을 보내고 Guard로 검사하기',
+        'mode.target.title': '직접 운영하는 API 엔드포인트에 데이터셋을 보내고 심판 모델로 응답을 평가하기',
         'mode.chat.intro': '메시지 하나, 체크포인트 넷 — 각각이 동작하는 모습을 확인하세요.',
         'mode.bench.intro': '데이터셋 전체를 이 앱의 보호 파이프라인에 통과시킵니다.',
-        'mode.target.intro': '직접 운영하는 API 엔드포인트에 데이터셋을 보내고 Guard로 검사합니다.',
+        'mode.target.intro': '데이터셋을 직접 운영하는 API 엔드포인트로 바로 보내고, 심판 모델이 응답을 평가합니다. 경로에 가드는 없습니다.',
         'bench.step.scope': '범위',
         'bench.step.target': '대상',
         'bench.step.guard': '가드',
@@ -2944,7 +2969,23 @@
         'tgt.rawBody': '원본 응답 본문',
         'tgt.bodyHint': '사용자 메시지가 들어갈 자리에 {{prompt}}를 쓰세요. JSON 인코딩되어 삽입됩니다.',
         'tgt.headersNotSaved': '자격 증명은 저장되지 않습니다 — 새로고침 후 다시 입력하세요.',
-        'tgt.cpNote': '여기서는 CP0과 CP2가 적용되지 않습니다. 이 엔드포인트는 자체 시스템 프롬프트와 지식 베이스를 사용합니다.',
+        'tgt.cpNote': 'Target Test에서는 가드가 실행되지 않습니다. 모든 프롬프트는 엔드포인트로 바로 전송되며, 반환된 응답을 심판 모델이 평가합니다.',
+        'tgt.flow': '데이터셋 → 엔드포인트 → 심판 모델',
+        'os.statAttackSuccess': '공격 성공률',
+        'os.statSucceeded': '성공한 공격',
+        'risk.low': '낮은 위험',
+        'risk.medium': '보통 위험',
+        'risk.high': '높은 위험',
+        'risk.critical': '치명적 위험',
+        'red.title': '카테고리별 공격 목표 (Lakera Red Teaming)',
+        'red.security': '보안',
+        'red.safety': '안전',
+        'red.responsible': '책임',
+        'red.colAttacks': '공격',
+        'red.colSucceeded': '성공',
+        'red.colRate': '성공률',
+        'os.colCategory': '카테고리',
+        'os.colResult': '결과',
         'tgt.state.untested': '엔드포인트: 미테스트',
         'tgt.state.testing': '엔드포인트: 테스트 중…',
         'tgt.state.ok': '엔드포인트: 정상',
@@ -3112,6 +3153,7 @@
         'os.exportJson': 'JSON',
         'os.exportCsv': 'CSV',
         'os.idle': '범위를 선택하고 테스트를 실행하여 Lakera Guard가 각 시나리오를 어떻게 처리하는지 확인하세요.',
+        'os.idleTarget': '범위를 선택하고 테스트를 실행하여 엔드포인트가 각 시나리오에 어떻게 답하는지 확인하세요.',
         'os.scopeAll': '모든 카테고리',
         'os.scopeCategory': '카테고리: {name}',
         'os.scopeDataset': '데이터셋: {name} ({count})',
@@ -3253,6 +3295,8 @@
         'os.moUnknown': '평가 불명확',
         'os.moNotJudged': '평가 안 함',
         'os.colLatency': '가드 지연',
+        'os.colEndpointLatency': '엔드포인트 지연',
+        'os.latEndpoint': '엔드포인트 {ms} ms',
         'os.expectBlock': '차단',
         'os.expectAllow': '허용',
         'os.outBlocked': '차단됨',
@@ -3384,10 +3428,10 @@
         'mode.target': '端點測試',
         'mode.chat.title': '追蹤一則訊息通過四個檢查點',
         'mode.bench.title': '讓整份資料集通過本應用程式的防護管線',
-        'mode.target.title': '以資料集測試你自己的 API 端點，並由 Guard 掃描',
+        'mode.target.title': '以資料集測試你自己的 API 端點，並由裁判模型為回應評分',
         'mode.chat.intro': '一則訊息，四個檢查點——看著每一個啟動。',
         'mode.bench.intro': '讓整份資料集通過本應用程式的防護管線。',
-        'mode.target.intro': '以資料集測試你自己的 API 端點，並由 Guard 掃描。',
+        'mode.target.intro': '將資料集直接送到你自己的 API 端點，再由裁判模型為回應評分。路徑中沒有任何防護。',
         'bench.step.scope': '範圍',
         'bench.step.target': '目標',
         'bench.step.guard': '防護',
@@ -3416,7 +3460,23 @@
         'tgt.rawBody': '原始回應內容',
         'tgt.bodyHint': '在使用者訊息的位置使用 {{prompt}}，系統會以 JSON 編碼插入。',
         'tgt.headersNotSaved': '憑證永不儲存——重新載入後請再次輸入。',
-        'tgt.cpNote': '此處不適用 CP0 與 CP2：該端點擁有自己的系統提示與知識庫。',
+        'tgt.cpNote': 'Target Test 不經過任何防護：每則提示直接送到端點，回應再交由裁判模型評分。',
+        'tgt.flow': '資料集 → 端點 → 裁判模型',
+        'os.statAttackSuccess': '攻擊成功率',
+        'os.statSucceeded': '成功的攻擊',
+        'risk.low': '低風險',
+        'risk.medium': '中風險',
+        'risk.high': '高風險',
+        'risk.critical': '極高風險',
+        'red.title': '各類別攻擊目標（Lakera Red Teaming）',
+        'red.security': '安全性',
+        'red.safety': '有害內容',
+        'red.responsible': '負責任',
+        'red.colAttacks': '攻擊數',
+        'red.colSucceeded': '成功數',
+        'red.colRate': '成功率',
+        'os.colCategory': '類別',
+        'os.colResult': '結果',
         'tgt.state.untested': '端點：未測試',
         'tgt.state.testing': '端點：測試中…',
         'tgt.state.ok': '端點：正常',
@@ -3584,6 +3644,7 @@
         'os.exportJson': 'JSON',
         'os.exportCsv': 'CSV',
         'os.idle': '選擇範圍並執行測試，檢視 Lakera Guard 如何處理每個情境。',
+        'os.idleTarget': '選擇範圍並執行測試，檢視你的端點如何回應每個情境。',
         'os.scopeAll': '所有類別',
         'os.scopeCategory': '類別：{name}',
         'os.scopeDataset': '資料集：{name}（{count}）',
@@ -3793,6 +3854,8 @@
         'os.detailJudge': '評審判定',
         'os.judgeError': '評審錯誤：',
         'os.colLatency': '防護延遲',
+        'os.colEndpointLatency': '端點延遲',
+        'os.latEndpoint': '端點 {ms} ms',
         'os.latCheckpoints': '檢查點延遲（Lakera）',
         'os.catDashTitle': '攻擊類別儀表板',
         'os.clsTitle': 'OWASP 戰術分類',
@@ -3932,10 +3995,10 @@
         'mode.target': '端点测试',
         'mode.chat.title': '追踪一条消息通过四个检查点',
         'mode.bench.title': '让整个数据集通过本应用的防护管线',
-        'mode.target.title': '用数据集测试你自己的 API 端点，并由 Guard 扫描',
+        'mode.target.title': '用数据集测试你自己的 API 端点，并由评判模型为响应打分',
         'mode.chat.intro': '一条消息，四个检查点——看着每一个触发。',
         'mode.bench.intro': '让整个数据集通过本应用的防护管线。',
-        'mode.target.intro': '用数据集测试你自己的 API 端点，并由 Guard 扫描。',
+        'mode.target.intro': '将数据集直接发送到你自己的 API 端点，再由评判模型为响应打分。路径中没有任何防护。',
         'bench.step.scope': '范围',
         'bench.step.target': '目标',
         'bench.step.guard': '防护',
@@ -3964,7 +4027,23 @@
         'tgt.rawBody': '原始响应体',
         'tgt.bodyHint': '在用户消息的位置使用 {{prompt}}，系统会以 JSON 编码插入。',
         'tgt.headersNotSaved': '凭证永不保存——重新加载后请再次输入。',
-        'tgt.cpNote': '此处不适用 CP0 与 CP2：该端点拥有自己的系统提示与知识库。',
+        'tgt.cpNote': 'Target Test 不经过任何防护：每条提示直接发送到端点，返回的响应再交由评判模型打分。',
+        'tgt.flow': '数据集 → 端点 → 评判模型',
+        'os.statAttackSuccess': '攻击成功率',
+        'os.statSucceeded': '成功的攻击',
+        'risk.low': '低风险',
+        'risk.medium': '中风险',
+        'risk.high': '高风险',
+        'risk.critical': '极高风险',
+        'red.title': '各类别攻击目标（Lakera Red Teaming）',
+        'red.security': '安全性',
+        'red.safety': '有害内容',
+        'red.responsible': '负责任',
+        'red.colAttacks': '攻击数',
+        'red.colSucceeded': '成功数',
+        'red.colRate': '成功率',
+        'os.colCategory': '类别',
+        'os.colResult': '结果',
         'tgt.state.untested': '端点：未测试',
         'tgt.state.testing': '端点：测试中…',
         'tgt.state.ok': '端点：正常',
@@ -4132,6 +4211,7 @@
         'os.exportJson': 'JSON',
         'os.exportCsv': 'CSV',
         'os.idle': '选择范围并运行测试，查看 Lakera Guard 如何处理每个场景。',
+        'os.idleTarget': '选择范围并运行测试，查看你的端点如何回应每个场景。',
         'os.scopeAll': '所有类别',
         'os.scopeCategory': '类别：{name}',
         'os.scopeDataset': '数据集：{name}（{count}）',
@@ -4341,6 +4421,8 @@
         'os.detailJudge': '评审判定',
         'os.judgeError': '评审错误：',
         'os.colLatency': '防护延迟',
+        'os.colEndpointLatency': '端点延迟',
+        'os.latEndpoint': '端点 {ms} ms',
         'os.latCheckpoints': '检查点延迟（Lakera）',
         'os.catDashTitle': '攻击类别仪表板',
         'os.clsTitle': 'OWASP 战术分类',
@@ -4480,10 +4562,10 @@
         'mode.target': 'ターゲットテスト',
         'mode.chat.title': '1 件のメッセージが 4 つのチェックポイントを通る流れを見る',
         'mode.bench.title': 'データセット全体をこのアプリの防御パイプラインに通す',
-        'mode.target.title': '自分の API エンドポイントにデータセットを送り、Guard で検査する',
+        'mode.target.title': '自分の API エンドポイントにデータセットを送り、ジャッジモデルが応答を採点する',
         'mode.chat.intro': '1 件のメッセージ、4 つのチェックポイント — それぞれの動作を確認できます。',
         'mode.bench.intro': 'データセット全体をこのアプリの防御パイプラインに通します。',
-        'mode.target.intro': '自分の API エンドポイントにデータセットを送り、Guard で検査します。',
+        'mode.target.intro': 'データセットを自分の API エンドポイントへ直接送り、ジャッジモデルが応答を採点します。経路にガードはありません。',
         'bench.step.scope': '範囲',
         'bench.step.target': 'ターゲット',
         'bench.step.guard': 'ガード',
@@ -4512,7 +4594,23 @@
         'tgt.rawBody': '生のレスポンスボディ',
         'tgt.bodyHint': 'ユーザーメッセージが入る位置に {{prompt}} を書いてください。JSON エンコードされて挿入されます。',
         'tgt.headersNotSaved': '認証情報は保存されません — 再読み込み後に入力し直してください。',
-        'tgt.cpNote': 'ここでは CP0 と CP2 は適用されません。このエンドポイントは独自のシステムプロンプトとナレッジベースを持ちます。',
+        'tgt.cpNote': 'Target Test ではガードは一切動作しません。プロンプトは直接エンドポイントへ送られ、返ってきた応答をジャッジモデルが評価します。',
+        'tgt.flow': 'データセット → エンドポイント → ジャッジモデル',
+        'os.statAttackSuccess': '攻撃成功率',
+        'os.statSucceeded': '成功した攻撃',
+        'risk.low': '低リスク',
+        'risk.medium': '中リスク',
+        'risk.high': '高リスク',
+        'risk.critical': '重大リスク',
+        'red.title': 'カテゴリ別の攻撃目標（Lakera Red Teaming）',
+        'red.security': 'セキュリティ',
+        'red.safety': 'セーフティ',
+        'red.responsible': '責任',
+        'red.colAttacks': '攻撃数',
+        'red.colSucceeded': '成功数',
+        'red.colRate': '成功率',
+        'os.colCategory': 'カテゴリ',
+        'os.colResult': '結果',
         'tgt.state.untested': 'エンドポイント: 未テスト',
         'tgt.state.testing': 'エンドポイント: テスト中…',
         'tgt.state.ok': 'エンドポイント: OK',
@@ -4680,6 +4778,7 @@
         'os.exportJson': 'JSON',
         'os.exportCsv': 'CSV',
         'os.idle': '範囲を選んでテストを実行し、Lakera Guard が各シナリオをどう処理するか確認します。',
+        'os.idleTarget': '範囲を選んでテストを実行し、エンドポイントが各シナリオにどう答えるか確認します。',
         'os.scopeAll': 'すべてのカテゴリ',
         'os.scopeCategory': 'カテゴリ：{name}',
         'os.scopeDataset': 'データセット：{name}（{count}）',
@@ -4889,6 +4988,8 @@
         'os.detailJudge': '判定結果',
         'os.judgeError': '判定エラー：',
         'os.colLatency': 'ガード遅延',
+        'os.colEndpointLatency': 'エンドポイント遅延',
+        'os.latEndpoint': 'エンドポイント {ms} ms',
         'os.latCheckpoints': 'チェックポイント遅延（Lakera）',
         'os.catDashTitle': '攻撃カテゴリ ダッシュボード',
         'os.clsTitle': 'OWASP 戦術分類',
@@ -6713,8 +6814,9 @@
     const parts = [t('recipe.rows', { rows: n(rows) })];
     if (available > base) parts.push(t('recipe.sampled', { base: n(base), available: n(available) }));
     if (variants) parts.push(t('recipe.variants', { count: variants }));
-    if (document.getElementById('os-compare').checked) parts.push(t('os.compareToggle'));
-    else if (document.getElementById('os-judge').checked) parts.push(t('os.judgeToggle'));
+    const onTgt = document.body.dataset.mode === 'target';
+    if (!onTgt && document.getElementById('os-compare').checked) parts.push(t('os.compareToggle'));
+    else if (onTgt || document.getElementById('os-judge').checked) parts.push(t('os.judgeToggle'));
     const recipe = parts.join(' · ');
 
     const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
@@ -6724,7 +6826,7 @@
     // Before the first run the empty state IS the recipe — the reader should be
     // able to check what will happen without starting it.
     const idle = document.getElementById('os-idle');
-    if (idle && !lastOneShot) idle.textContent = t('os.idle') + ' — ' + recipe;
+    if (idle && !lastOneShot) idle.textContent = t(onTgt ? 'os.idleTarget' : 'os.idle') + ' — ' + recipe;
   }
 
   // ── Target Test: the endpoint under test ────────────────────────────────
@@ -6974,8 +7076,9 @@
     const put = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
     if (saved && (saved.model || saved.base_url)) {
       put('tj-base-url', saved.base_url); put('tj-model', saved.model); put('tj-auth-type', saved.auth_type);
+      autoLoadRunJudgeModels();
     } else {
-      onRunJudgeProviderChange();     // seed from the provider's preset
+      onRunJudgeProviderChange();     // seed from the provider's preset (and list it)
     }
     onRunJudgeAuthChange();
     updateRunJudgeSummary();
@@ -6994,6 +7097,7 @@
     if (auth) auth.value = p.requires_key ? 'bearer' : auth.value;
     onRunJudgeAuthChange();
     onRunJudgeInput();
+    autoLoadRunJudgeModels();        // picking a provider offers its models
   }
 
   function onRunJudgeAuthChange() {
@@ -7018,11 +7122,43 @@
     if (el) el.textContent = val('tj-model').trim() || t('tgt.judgeNone');
   }
 
+  // Same pair as the LLM panel: a <datalist> for the typed field and an explicit
+  // <select> of what the provider actually serves, so a model can be picked
+  // instead of remembered.
   function populateRunJudgeModels(models) {
     const dl = document.getElementById('tj-model-list');
-    if (!dl) return;
-    dl.innerHTML = '';
-    (models || []).forEach(m => { const o = document.createElement('option'); o.value = m; dl.appendChild(o); });
+    const sel = document.getElementById('tj-model-select');
+    if (dl) {
+      dl.innerHTML = '';
+      (models || []).forEach(m => { const o = document.createElement('option'); o.value = m; dl.appendChild(o); });
+    }
+    if (!sel) return;
+    const cur = val('tj-model').trim();
+    sel.innerHTML = '';
+    const ph = document.createElement('option');
+    ph.value = ''; ph.textContent = t('llm.fromProvider');
+    sel.appendChild(ph);
+    (models || []).forEach(m => {
+      const o = document.createElement('option');
+      o.value = m; o.textContent = m;
+      if (m === cur) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+
+  function onRunJudgeModelSelect() {
+    const v = val('tj-model-select');
+    const model = document.getElementById('tj-model');
+    if (v && model) { model.value = v; onRunJudgeInput(); }
+  }
+
+  // List the provider's models whenever that can succeed unattended: a provider
+  // that needs a key can't be listed until one is typed (the key field re-runs
+  // this on commit), and firing anyway would only show an auth error.
+  function autoLoadRunJudgeModels() {
+    const p = llmPresets[val('tj-provider')] || {};
+    if (p.requires_key && !val('tj-api-key').trim()) { populateRunJudgeModels([]); return; }
+    loadRunJudgeModels();
   }
 
   async function loadRunJudgeModels() {
@@ -7037,9 +7173,9 @@
       const d = await res.json();
       if (!res.ok) { runJudgeStatus('error', d.detail || ('HTTP ' + res.status)); return; }
       if (!d.ok) { runJudgeStatus('error', t('llm.unreachable', { err: d.error || '' })); return; }
-      populateRunJudgeModels(d.models || []);
       const model = document.getElementById('tj-model');
       if (model && !model.value.trim() && (d.models || []).length) model.value = d.models[0];
+      populateRunJudgeModels(d.models || []);   // after the default, so it shows as selected
       runJudgeStatus((d.models || []).length ? 'success' : 'error',
                      (d.models || []).length ? t('llm.modelsLoaded', { n: d.models.length }) : t('llm.noModels'));
       onRunJudgeInput();
@@ -7407,8 +7543,10 @@
     setProg(0, est);
 
     try {
-      const compareOn = document.getElementById('os-compare').checked;
-      const judgeOn = document.getElementById('os-judge').checked || compareOn;
+      // Guard ON vs OFF needs a guard to turn off — it is Benchmark-only. And in
+      // Target Test the judge IS the evaluation step, so it is not optional.
+      const compareOn = !onTarget && document.getElementById('os-compare').checked;
+      const judgeOn = onTarget || document.getElementById('os-judge').checked || compareOn;
       const strats = selectedStrategies();
       const isDataset = dsSel.length > 0;
       const osSp = document.getElementById('os-sp-text').value.trim();
@@ -7422,32 +7560,37 @@
         category_id: isDataset ? null : (scope || null),
         dataset: null,
         datasets: dsSel,
-        system_prompt: noSp ? null : (osSp || null),
-        no_system_prompt: noSp,
-        doc_mode: kbMode,
+        // Target Test is a pure endpoint test: the dataset prompt goes out and
+        // nothing of ours — no system prompt, no RAG file. The server enforces
+        // this too; the UI agrees so the recipe matches the run that happens.
+        system_prompt: (onTarget || noSp) ? null : (osSp || null),
+        no_system_prompt: onTarget || noSp,
+        doc_mode: onTarget ? 'none' : kbMode,
         max_scenarios: (Number.isFinite(maxScen) && maxScen > 0) ? Math.min(maxScen, 100000) : 100,
         concurrency: (Number.isFinite(conc) && conc > 0) ? Math.min(conc, 100) : null,
         max_rounds: (Number.isFinite(rounds) && rounds > 0) ? Math.min(rounds, 10) : 4,
-        checkpoints: {
-          cp1: document.getElementById('os-cp1').checked,
-          // CP2 scans OUR knowledge base, which a third-party endpoint never
-          // receives. The server forces this too; the UI agrees so the recipe
-          // the reader sees is the run that actually happens.
-          cp2: !onTarget && document.getElementById('os-cp2').checked,
-          cp3: document.getElementById('os-cp3').checked,
-        },
+        // Guard configuration is Benchmark's. A Target Test sends none of it: the
+        // dataset goes straight to the endpoint, and the judge grades the answers
+        // afterwards. The server enforces the same rule.
+        ...(onTarget ? {} : {
+          checkpoints: {
+            cp1: document.getElementById('os-cp1').checked,
+            cp2: document.getElementById('os-cp2').checked,
+            cp3: document.getElementById('os-cp3').checked,
+          },
+          lakera_project_id: document.getElementById('os-proj-id').value.trim(),
+          checkpoint_projects: {
+            // blank per-checkpoint box → null (inherit the run-level project id)
+            cp1: cpProjVal('os-proj-cp1'),
+            cp2: cpProjVal('os-proj-cp2'),
+            cp3: cpProjVal('os-proj-cp3'),
+          },
+        }),
         // Target Test mode: this run goes to the operator's endpoint instead of
         // the configured provider. The process-global config is never touched.
         target: onTarget ? targetSpec() : null,
         // …and it is graded by the model picked in the rail, never by the target.
         judge_llm: onTarget ? runJudgeSpec() : null,
-        lakera_project_id: document.getElementById('os-proj-id').value.trim(),
-        checkpoint_projects: {
-          // blank per-checkpoint box → null (inherit the run-level project id)
-          cp1: cpProjVal('os-proj-cp1'),
-          cp2: cpProjVal('os-proj-cp2'),
-          cp3: cpProjVal('os-proj-cp3'),
-        },
       };
       const res = await fetch(API + '/api/oneshot/stream', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -7634,6 +7777,8 @@
   // req 8: textual explanations for each summary metric, shown in a popover.
   const STAT_INFO = {
     'os.statDetection': 'Share of attack scenarios Lakera Guard correctly blocked. Higher is safer.',
+    'os.statAttackSuccess': 'Share of attack objectives the endpoint complied with, scored by the judge. Banded the way Lakera Red bands a scan: Low ≤25%, Medium ≤50%, High ≤75%, Critical above.',
+    'os.statSucceeded': 'Attack objectives the endpoint complied with, as scored by the judge.',
     'os.statTotal': 'Total scenarios executed in this run (attacks + safe baselines).',
     'os.statBlocked': 'Attack scenarios the guard blocked before any harm.',
     'os.statNotBlocked': 'Attack scenarios that slipped past the guard and reached the model.',
@@ -8004,6 +8149,42 @@
   // A report is an evidence artifact, so a run against someone else's endpoint has
   // to say WHICH one — at the top, not buried in the meta line. Mirrored by
   // backend/report_html.py for the CLI's exported report.
+  // ── Target Test evaluation (Lakera Red Teaming) ──────────────────────────
+  // With no guard in the path there is no detection to report. What the run
+  // measured is how often an attack objective succeeded against the endpoint,
+  // scored by the judge and banded the way Lakera Red bands a scan.
+  const RISK_CLS = { low: 'good', medium: 'warn', high: 'bad', critical: 'bad' };
+
+  function riskChipHtml(band) {
+    if (!band) return '';
+    return `<span class="sev-chip sv-${band === 'low' ? 'good' : (band === 'medium' ? 'medium' : (band === 'high' ? 'high' : 'critical'))}">`
+      + `${esc(t('risk.' + band))}</span>`;
+  }
+
+  function evaluationHeroHtml(ev) {
+    const rate = (ev && ev.success_rate != null) ? ev.success_rate + '%' : '—';
+    return `<button type="button" class="os-hero" data-info="os.statAttackSuccess" title="${esc(STAT_INFO['os.statAttackSuccess'] || '')}" onclick="showStatInfo('os.statAttackSuccess', event)">`
+      + `<div class="os-hero-num">${esc(rate)}</div>`
+      + `<div class="os-hero-lbl">${esc(t('os.statAttackSuccess'))} ${riskChipHtml(ev && ev.risk_band)}</div></button>`;
+  }
+
+  function redCategoriesHtml(ev) {
+    const cats = (ev && ev.categories) || [];
+    if (!cats.length) return '';
+    let h = '<div class="os-runcfg"><div class="os-runcfg-title">' + esc(t('red.title')) + '</div>'
+      + '<div class="os-table-wrap"><table class="os-table"><thead><tr>'
+      + `<th>${esc(t('os.colCategory'))}</th><th>${esc(t('red.colAttacks'))}</th>`
+      + `<th>${esc(t('red.colSucceeded'))}</th><th>${esc(t('red.colRate'))}</th>`
+      + '</tr></thead><tbody>';
+    cats.forEach(c => {
+      const rate = c.success_rate == null ? '—' : c.success_rate + '%';
+      h += `<tr><td>${esc(t('red.' + c.id))}<br><span class="os-detail-none">${esc(c.description)}</span></td>`
+        + `<td class="mono">${esc(c.attacks)}</td><td class="mono">${esc(c.succeeded)}</td>`
+        + `<td class="mono">${esc(rate)} ${riskChipHtml(c.risk_band)}</td></tr>`;
+    });
+    return h + '</tbody></table></div></div>';
+  }
+
   function targetBannerHtml(d) {
     const l = d.llm || {};
     if (l.provider !== 'http' || !l.base_url) return '';
@@ -8025,6 +8206,9 @@
   // so the two are structurally identical (req 5, DRY).
   function buildReportBody(d) {
     const s = d.summary;
+    // A Target Test run: no guard ran, so every guard-shaped readout is omitted
+    // rather than rendered as zeroes.
+    const tgt = (d.llm || {}).provider === 'http';
     // Each stat is a button that opens a metric-explanation popover (req 8).
     const stat = (cls, num, key) =>
       `<button type="button" class="os-stat ${cls}" data-info="${esc(key)}" title="${esc(STAT_INFO[key] || '')}" onclick="showStatInfo('${esc(key)}', event)">`
@@ -8034,15 +8218,21 @@
     // Top strip: the endpoint under test (Target Test only), the collapsed L1–L5
     // legend (req 3), then judge model info (req 1).
     let html = targetBannerHtml(d);
-    html += lakeraLegendHtml();
+    if (!tgt) html += lakeraLegendHtml();
     html += judgeInfoHtml(d);
-    // req 7: Detection rate as the prominent hero, then the instant
-    // LLM-alone-vs-with-Lakera comparison, then the Lakera detections summary.
-    html += `<button type="button" class="os-hero" data-info="os.statDetection" title="${esc(STAT_INFO['os.statDetection'] || '')}" onclick="showStatInfo('os.statDetection', event)">`
-      + `<div class="os-hero-num">${esc(detection)}</div>`
-      + `<div class="os-hero-lbl">${esc(t('os.statDetection'))}</div></button>`;
-    html += compareBannerHtml(s);
-    html += lakeraSummaryHtml(d);        // req 4: detector categories + flagged count
+    if (tgt) {
+      // Dataset → endpoint → judge. Nothing here grades a guard, because none ran.
+      html += `<div class="tgt-note">${icon('activity')} ${esc(t('tgt.flow'))}</div>`;
+      html += evaluationHeroHtml(s.evaluation);
+    } else {
+      // req 7: Detection rate as the prominent hero, then the instant
+      // LLM-alone-vs-with-Lakera comparison, then the Lakera detections summary.
+      html += `<button type="button" class="os-hero" data-info="os.statDetection" title="${esc(STAT_INFO['os.statDetection'] || '')}" onclick="showStatInfo('os.statDetection', event)">`
+        + `<div class="os-hero-num">${esc(detection)}</div>`
+        + `<div class="os-hero-lbl">${esc(t('os.statDetection'))}</div></button>`;
+      html += compareBannerHtml(s);
+      html += lakeraSummaryHtml(d);      // req 4: detector categories + flagged count
+    }
     if (s.scope && s.scope.sampled) {
       html += `<div class="os-scope-note" style="font-size:0.78rem;opacity:0.75;margin:0 0 8px">`
         + esc(t('os.scopeSampled', {
@@ -8053,21 +8243,30 @@
     // Secondary details (Total, Attacks blocked, Model resisted, …) — smaller.
     html += '<div class="os-summary os-summary-secondary">';
     html += stat('', s.total, 'os.statTotal');
-    html += stat('good', s.blocked, 'os.statBlocked');
-    html += stat('bad', s.not_blocked, 'os.statNotBlocked');
-    html += stat('good', s.passed, 'os.statPassed');
-    html += stat('warn', s.false_positive, 'os.statFalsePos');
+    if (!tgt) {
+      html += stat('good', s.blocked, 'os.statBlocked');
+      html += stat('bad', s.not_blocked, 'os.statNotBlocked');
+      html += stat('good', s.passed, 'os.statPassed');
+      html += stat('warn', s.false_positive, 'os.statFalsePos');
+    }
     if (s.errors) html += stat('bad', s.errors, 'os.statErrors');
     html += '</div>';
 
     // Judge-derived risk summary (only when the LLM judge ran) — also secondary.
     if (s.judged) {
       html += '<div class="os-summary os-summary-secondary">';
-      html += stat('bad', s.breaches, 'os.statBreaches');
-      html += stat('good', s.resisted, 'os.statResisted');
-      html += stat('good', s.prevented, 'os.statPrevented');
+      if (tgt) {
+        const ev = s.evaluation || {};
+        html += stat('bad', ev.succeeded ?? 0, 'os.statSucceeded');
+        html += stat('good', ev.resisted ?? 0, 'os.statResisted');
+      } else {
+        html += stat('bad', s.breaches, 'os.statBreaches');
+        html += stat('good', s.resisted, 'os.statResisted');
+        html += stat('good', s.prevented, 'os.statPrevented');
+      }
       html += '</div>';
     }
+    if (tgt) html += redCategoriesHtml(s.evaluation);
 
     // Strategy/robustness summary (only when obfuscation variants ran).
     const strat = (s.strategies_used && s.strategies_used.length);
@@ -8089,13 +8288,15 @@
     html += runConfigHtml(s.run_config);
     html += securitySectionHtml(s.security);
 
-    html += checkpointLegendHtml();
-    let cols = 6 + (s.judged ? 1 : 0) + (strat ? 1 : 0);
+    if (!tgt) html += checkpointLegendHtml();
+    // Scenario, OWASP, [variant], [expected+checkpoints+guard | red category],
+    // [judge], latency.
+    let cols = (tgt ? 4 : 6) + (s.judged ? 1 : 0) + (strat ? 1 : 0);
 
     // Client-side filters (populated + wired by the report's inline script).
     html += '<div class="os-tfilter">'
-      + `<label class="os-tf-item">${esc(t('os.colGuard'))} <select id="os-f-guard"><option value="">${esc(t('os.filterAll'))}</option></select></label>`
-      + (s.judged ? `<label class="os-tf-item">${esc(t('os.colModel'))} <select id="os-f-model"><option value="">${esc(t('os.filterAll'))}</option></select></label>` : '')
+      + (tgt ? '' : `<label class="os-tf-item">${esc(t('os.colGuard'))} <select id="os-f-guard"><option value="">${esc(t('os.filterAll'))}</option></select></label>`)
+      + (s.judged ? `<label class="os-tf-item">${esc(t('os.colResult'))} <select id="os-f-model"><option value="">${esc(t('os.filterAll'))}</option></select></label>` : '')
       + '<span class="os-tfilter-count" id="os-f-count"></span>'
       + '</div>';
 
@@ -8103,11 +8304,12 @@
       + `<th>${esc(t('os.colScenario'))}</th>`
       + `<th>${esc(t('os.colOwasp'))}</th>`
       + (strat ? `<th>${esc(t('os.colVariant'))}</th>` : '')
-      + `<th>${esc(t('os.colExpected'))}</th>`
-      + `<th>${esc(t('os.colCheckpoints'))}</th>`
-      + `<th>${esc(t('os.colGuard'))}</th>`
-      + (s.judged ? `<th>${esc(t('os.colModel'))}</th>` : '')
-      + `<th>${esc(t('os.colLatency'))}</th>`
+      + (tgt ? `<th>${esc(t('os.colCategory'))}</th>`
+             : `<th>${esc(t('os.colExpected'))}</th>`
+               + `<th>${esc(t('os.colCheckpoints'))}</th>`
+               + `<th>${esc(t('os.colGuard'))}</th>`)
+      + (s.judged ? `<th>${esc(tgt ? t('os.colResult') : t('os.colModel'))}</th>` : '')
+      + `<th>${esc(t(tgt ? 'os.colEndpointLatency' : 'os.colLatency'))}</th>`
       + '</tr></thead><tbody>';
 
     d.results.forEach((r, i) => {
@@ -8129,13 +8331,14 @@
         + `<td><span class="os-caret">▸</span> ${esc(r.label)}<br><span class="mono">${esc(r.id)}</span></td>`
         + `<td>${owasp}</td>`
         + (strat ? `<td>${variantCell}</td>` : '')
-        + `<td class="mono">${esc(exp)}</td>`
-        + `<td>${cpMini(r.trace)}</td>`
-        + `<td><span class="os-outcome ${m.cls}">${icon(m.ic)}<span>${esc(t(m.key))}</span></span>${evadedFlag}</td>`
+        + (tgt ? `<td>${esc(t('red.' + (r.red_category || 'security')))}</td>`
+               : `<td class="mono">${esc(exp)}</td>`
+                 + `<td>${cpMini(r.trace)}</td>`
+                 + `<td><span class="os-outcome ${m.cls}">${icon(m.ic)}<span>${esc(t(m.key))}</span></span>${evadedFlag}</td>`)
         + (s.judged ? `<td>${modelChip(r)}</td>` : '')
         + `<td class="mono">${esc(lat)}</td>`
         + '</tr>'
-        + `<tr class="os-detail-row" id="osd-${i}" style="display:none"><td colspan="${cols}">${osDetailHtml(r)}</td></tr>`;
+        + `<tr class="os-detail-row" id="osd-${i}" style="display:none"><td colspan="${cols}">${osDetailHtml(r, tgt)}</td></tr>`;
     });
     html += '</tbody></table></div>';
     return html;
@@ -8148,7 +8351,15 @@
   // Click-to-reveal panel: the exact user prompt, any simulated output, and the
   // RAG documents the query retrieved (with what the pipeline did with each).
   // Per-checkpoint Lakera latency breakdown (cp1/cp2/cp3), + judge time if any.
-  function cpLatencyHtml(r) {
+  function cpLatencyHtml(r, tgt) {
+    if (tgt) {
+      // No checkpoints ran: the endpoint's own round trip is the latency, plus
+      // the judge's time, which happens after the answer is back.
+      const ep = r.total_latency_ms == null ? '—' : t('os.latEndpoint', { ms: r.total_latency_ms });
+      const jd = r.judge_latency_ms ? ' · ' + t('os.latJudge', { ms: r.judge_latency_ms }) : '';
+      return `<div><h4>${esc(t('os.colEndpointLatency'))}</h4>`
+        + `<div class="os-detail-none mono">${esc(ep + jd)}</div></div>`;
+    }
     const t3 = r.trace || {};
     const part = id => {
       const c = t3[id] || {};
@@ -8224,15 +8435,16 @@
       + `<div class="os-acc-body">${bodyHtml}</div></details>`;
   }
 
-  function osDetailHtml(r) {
+  function osDetailHtml(r, tgt) {
     let h = `<div class="os-detail">`;
     if (r.error) {
       const att = (r.attempts && r.attempts > 1) ? ' — ' + t('os.errAttempts', { n: r.attempts }) : '';
       h += `<div><h4>${esc(t('os.detailError'))}${esc(att)}</h4><pre>${esc(r.error)}</pre></div>`;
     }
-    h += cpLatencyHtml(r);
+    h += cpLatencyHtml(r, tgt);
     // req 4: this scenario's mapped Lakera detector results (collapsed by default).
-    h += osAcc(t('os.lakeraDetectors'), lakeraCpDetailHtml(r));
+    // A Target Test ran no checkpoint, so there are no detectors to show.
+    if (!tgt) h += osAcc(t('os.lakeraDetectors'), lakeraCpDetailHtml(r));
     if (r.strategy) {
       const ev = r.evaded ? ' — ' + t('os.evadedNote') : '';
       h += `<div class="os-detail-none">${esc(t('os.detailStrategy', { s: r.strategy_label }) + ev)}</div>`;
@@ -8370,7 +8582,7 @@
       + 'function osRowKey(e,i){if(e.key==="Enter"||e.key===" "){e.preventDefault();toggleOsDetail(i);}}'
       + 'function showStatInfo(k,ev){if(ev)ev.stopPropagation();var x=STAT_INFO[k];if(!x)return;var p=document.getElementById("os-popover");if(!p){p=document.createElement("div");p.id="os-popover";p.className="os-popover";document.body.appendChild(p);}var lbl=(ev&&ev.currentTarget&&ev.currentTarget.querySelector(".lbl,.os-hero-lbl,.cap"));p.innerHTML="<div class=\\"os-popover-title\\">"+(lbl?lbl.textContent:k)+"</div><div class=\\"os-popover-body\\">"+x+"</div>";p.classList.add("show");var tg=ev&&ev.currentTarget;if(tg){var rc=tg.getBoundingClientRect();p.style.top=(rc.bottom+window.scrollY+8)+"px";p.style.left=Math.min(rc.left+window.scrollX,window.scrollX+document.documentElement.clientWidth-p.offsetWidth-12)+"px";}}'
       + 'document.addEventListener("click",function(e){var p=document.getElementById("os-popover");if(p&&p.classList.contains("show")&&!p.contains(e.target)&&!(e.target.closest&&e.target.closest("[data-info]")))p.classList.remove("show");});'
-      + '(function(){var tb=document.querySelector(".os-table");if(!tb)return;var g=document.getElementById("os-f-guard"),m=document.getElementById("os-f-model");var rows=[].slice.call(tb.querySelectorAll("tbody tr.os-row"));function txt(r,s){var e=r.querySelector(s);return e?e.textContent.trim():"";}function opts(sel,vals){if(!sel)return;vals.forEach(function(v){var o=document.createElement("option");o.value=v;o.textContent=v;sel.appendChild(o);});}var gv={},mv={};rows.forEach(function(r){var a=txt(r,".os-outcome");if(a)gv[a]=1;var b=txt(r,".os-model");if(b)mv[b]=1;});opts(g,Object.keys(gv).sort());opts(m,Object.keys(mv).sort());var cnt=document.getElementById("os-f-count");function apply(){var gs=g?g.value:"",ms=m?m.value:"",shown=0;rows.forEach(function(r){var ok=(!gs||txt(r,".os-outcome")===gs)&&(!ms||txt(r,".os-model")===ms);if(ok)shown++;r.style.display=ok?"":"none";var d=document.getElementById(r.id.replace("osr-","osd-"));if(d)d.style.display="none";});if(cnt){var filtered=!!(gs||ms);cnt.textContent=filtered?("showing "+shown+" of "+rows.length):(rows.length+" scenarios");cnt.className="os-tfilter-count"+(filtered?" filtered":"");}}if(g)g.addEventListener("change",apply);if(m)m.addEventListener("change",apply);apply();})();'
+      + '(function(){var g=document.getElementById("os-f-guard"),m=document.getElementById("os-f-model");var rows=[].slice.call(document.querySelectorAll("table.os-table tbody tr.os-row"));if(!rows.length)return;function txt(r,s){var e=r.querySelector(s);return e?e.textContent.trim():"";}function opts(sel,vals){if(!sel)return;vals.forEach(function(v){var o=document.createElement("option");o.value=v;o.textContent=v;sel.appendChild(o);});}var gv={},mv={};rows.forEach(function(r){var a=txt(r,".os-outcome");if(a)gv[a]=1;var b=txt(r,".os-model");if(b)mv[b]=1;});opts(g,Object.keys(gv).sort());opts(m,Object.keys(mv).sort());var cnt=document.getElementById("os-f-count");function apply(){var gs=g?g.value:"",ms=m?m.value:"",shown=0;rows.forEach(function(r){var ok=(!gs||txt(r,".os-outcome")===gs)&&(!ms||txt(r,".os-model")===ms);if(ok)shown++;r.style.display=ok?"":"none";var d=document.getElementById(r.id.replace("osr-","osd-"));if(d)d.style.display="none";});if(cnt){var filtered=!!(gs||ms);cnt.textContent=filtered?("showing "+shown+" of "+rows.length):(rows.length+" scenarios");cnt.className="os-tfilter-count"+(filtered?" filtered":"");}}if(g)g.addEventListener("change",apply);if(m)m.addEventListener("change",apply);apply();})();'
       + '<' + '/script>';
     return '<!DOCTYPE html><html lang="' + esc(currentLang) + '"><head><meta charset="UTF-8">'
       + '<meta name="viewport" content="width=device-width,initial-scale=1">'

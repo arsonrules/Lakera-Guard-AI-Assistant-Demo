@@ -10,6 +10,7 @@ import random
 import re
 import secrets
 import sys
+import time
 import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -19,7 +20,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Any, Literal
 
 logger = logging.getLogger("lakera_demo")
@@ -414,11 +415,8 @@ def _oneshot_llm(req: "OneShotRequest") -> tuple[dict, dict, dict, dict]:
             "target can't grade itself. Pick a judge model for this run (or "
             "configure the LLM provider), or turn judging off.")
     cfg = _target_llm_config(req.target)
-    # CP2 has nothing to scan: our knowledge base is never sent to a black-box
-    # endpoint (llm.render_target_body drops system messages), and a third-party
-    # assistant owns its own RAG. Reporting "CP2: 0 blocked" would be a lie about
-    # coverage, so the checkpoint is forced off rather than reported empty.
-    req.checkpoints.cp2 = False
+    # The system prompt, the RAG knowledge base and CP2 were already stripped
+    # when the request was validated (OneShotRequest._target_runs_are_pure).
     return cfg, judge_cfg, _public_target_config(cfg), judge_public
 
 
@@ -880,6 +878,32 @@ class OneShotRequest(BaseModel):
     # Judge this run with a specific model, instead of the global judge settings.
     # Per-run and in-memory only, like `target`.
     judge_llm: JudgeLLMConfig | None = None
+
+    @model_validator(mode="after")
+    def _target_runs_are_pure(self):
+        """
+        Target Test is a black-box test of someone else's endpoint: it gets the
+        dataset prompt and nothing of ours. Our system prompt and RAG documents
+        never reach it anyway (llm.render_target_body keeps only the
+        conversation), so leaving them configured would retrieve files nobody
+        sends and make the report claim a prompt and a knowledge base the
+        endpoint never saw. CP2 goes with them — it scans OUR documents, and
+        reporting "0 blocked" would overstate coverage.
+        """
+        if self.target is not None:
+            self.system_prompt = None
+            self.no_system_prompt = True
+            self.doc_mode = "none"
+            # No guard in the path — not on, not off, not configurable. A Target
+            # Test measures the endpoint, so every dataset prompt goes straight to
+            # it and the answers are graded afterwards by the judge. That also
+            # rules out the Guard ON-vs-OFF arm: with no guard there is no second
+            # arm to compare against.
+            self.checkpoints = CheckpointConfig(cp1=False, cp2=False, cp3=False)
+            self.compare = False
+            self.lakera_project_id = ""
+            self.checkpoint_projects = CheckpointProjects()
+        return self
 
 
 class LakeraKeyRequest(BaseModel):
@@ -1932,6 +1956,9 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
             "owasp_name": row["owasp_name"], "color": row["color"],
             # OWASP tactic classification (imported-dataset rows only; None otherwise).
             "owasp_class": row.get("owasp_class"),
+            # Lakera Red Teaming category (security / safety / responsible) — the
+            # taxonomy a Target Test run is reported in. See backend/report.py.
+            "red_category": report.red_category(row["category_id"], row.get("owasp_class")),
             "expected": "block" if row["color"] == "attack" else "allow",
             "doc_mode": row["doc_mode"],
             # Per-scenario inputs surfaced in the report's click-to-reveal panel.
@@ -1947,6 +1974,7 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
             # Stable display order for streamed (out-of-order) completion.
             "order": row.get("order", 0),
         }
+        started = time.monotonic()
         try:
             if row.get("dynamic"):
                 return await _run_dynamic(
@@ -1990,6 +2018,11 @@ async def _run_one(row: dict, sem: asyncio.Semaphore, do_judge: bool, do_compare
                 (trace.get(cp, {}) or {}).get("latency_ms") or 0
                 for cp in ("cp1", "cp2", "cp3")
             )
+            if (llm_config or {}).get("target"):
+                # A Target Test runs no checkpoints, so guard latency is 0 by
+                # definition. The number worth reporting is the endpoint's own
+                # response time — measured here, before the judge is called.
+                guard_latency = int((time.monotonic() - started) * 1000)
             judge_latency = 0
             raw = result.get("raw_response")
 
@@ -2150,13 +2183,36 @@ async def _run_rows_bounded(rows: list[dict], worker_count: int, run_row) -> lis
     return results
 
 
+def _target_test_cases(rows: list[dict]) -> list[dict]:
+    """
+    Keep the rows that are a *test case sent to the endpoint*, which is all a
+    Target Test does: dataset prompt → endpoint → judge.
+
+    Adaptive rows are dropped — their prompts are written by an attacker model in
+    the loop, so the request reaching the endpoint would come from a model rather
+    than from the selected dataset. Agentic rows keep their prompt but lose their
+    mock tools: a black-box HTTP endpoint has no tool-calling contract to offer
+    them through, and erroring the row tells the user nothing about the endpoint.
+    """
+    kept = [r for r in rows if not r.get("dynamic")]
+    if not kept:
+        raise HTTPException(400,
+            "Adaptive scenarios write their own prompts with an attacker model, so "
+            "they aren't part of a Target Test — pick a dataset or another scope.")
+    for r in kept:
+        r["tools"] = None
+    return kept
+
+
 def _prepare_oneshot_rows(req: OneShotRequest) -> tuple[list[dict], dict]:
     """
     Flatten + (sample) + expand scenarios and stamp a stable display order.
     Returns (rows, scope) where scope records how the run was bounded so the
     summary can show e.g. "ran 100 of 5,000 scenarios (sampled)".
     """
-    if not _lakera_key:
+    # A Target Test never calls Guard, so a Guard key is not a precondition for
+    # one — every other run reaches a checkpoint and fails late without it.
+    if not _lakera_key and req.target is None:
         raise HTTPException(400, LAKERA_NOT_SET_MSG)
     if req.datasets:                      # several selected datasets, concatenated
         rows = []
@@ -2168,6 +2224,8 @@ def _prepare_oneshot_rows(req: OneShotRequest) -> tuple[list[dict], dict]:
         rows = _flatten_scenarios(req.category_id, req.include_safe)
     if not rows:
         raise HTTPException(400, "No scenarios match the requested selection.")
+    if req.target is not None:
+        rows = _target_test_cases(rows)
 
     # ── Scale guardrail: sample the base scenarios down to max_scenarios ───────
     available = len(rows)
@@ -2245,9 +2303,20 @@ def _oneshot_summary(results: list[dict], req: OneShotRequest, scope: dict | Non
     attack_rows = [r for r in results if r.get("color") == "attack"]
     base_rows = [r for r in attack_rows if not r.get("strategy")]
     variant_rows = [r for r in attack_rows if r.get("strategy")]
-    summary["detection_rate"] = _rate(attack_rows)
-    summary["base_detection_rate"] = _rate(base_rows)
-    summary["variant_block_rate"] = _rate(variant_rows) if variant_rows else None
+    # With no checkpoint enabled (Target Test) nothing was ever scanned, so a
+    # detection rate would read as "the guard caught 0%" instead of "there was no
+    # guard". Report it as absent, and let `evaluation` carry the headline.
+    summary["guarded"] = any(req.checkpoints.model_dump().values())
+    summary["detection_rate"] = _rate(attack_rows) if summary["guarded"] else None
+    summary["base_detection_rate"] = _rate(base_rows) if summary["guarded"] else None
+    summary["variant_block_rate"] = (
+        _rate(variant_rows) if (variant_rows and summary["guarded"]) else None)
+
+    # ── What the judge concluded (Lakera Red Teaming: attack success + risk band)
+    summary["evaluation"] = report.evaluation(results)
+    # Flat copy of the headline so run-to-run regression tracking can diff it
+    # (history.metrics reads top-level scalars).
+    summary["attack_success_rate"] = summary["evaluation"]["success_rate"]
 
     # ── Guard ON vs OFF: quantify risk reduction ─────────────────────────────
     summary["compared"] = req.compare
@@ -2296,7 +2365,12 @@ def _oneshot_summary(results: list[dict], req: OneShotRequest, scope: dict | Non
         summary["effective_evasions"] = effective
 
     # ── Security posture: dashboard + findings/recommendations ────────────────
-    summary["security"] = report.build(results, summary, req)
+    # Every part of it grades a guard — per-category detection, the compliance
+    # controls, the "keep CP1 on" recommendations. An unguarded run (Target Test)
+    # has no guard to grade, so it reports `evaluation` instead of a dashboard of
+    # zeroes that would read as a failing guard.
+    if summary["guarded"]:
+        summary["security"] = report.build(results, summary, req)
 
     # ── Run configuration: exactly which system prompt + RAG were used ────────
     summary["run_config"] = _run_config(req)
@@ -2338,6 +2412,11 @@ def _run_config(req: OneShotRequest) -> dict:
              "content": d["content"][:RAG_PREVIEW_CHARS] + ("…" if len(d["content"]) > RAG_PREVIEW_CHARS else "")}
             for d in docs
         ]}
+    if req.target is not None:
+        # Nothing guard-shaped to report: a Target Test has no checkpoints and no
+        # Lakera project, and printing them as "all off" would imply a guard that
+        # was configured out rather than one that was never in the picture.
+        return {"system_prompt": sysp, "knowledge_base": kb}
     # Which guard checkpoints were active for the run (so a report reflects a
     # deliberately-disabled layer).
     cps = req.checkpoints.model_dump()

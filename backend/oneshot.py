@@ -408,6 +408,11 @@ def build_effective_config(args: argparse.Namespace) -> dict:
         cfg["_knowledge_base"] = _load_knowledge_base_file(args.knowledge_base)
     else:
         cfg["_knowledge_base"] = None
+    if cfg["_target_file"]:
+        # A target endpoint gets the dataset prompt and nothing else, so our
+        # knowledge base is neither loaded nor reported (see build_request).
+        cfg["_knowledge_base"] = None
+        cfg["_knowledge_base_none"] = True
     return cfg
 
 
@@ -603,13 +608,12 @@ def build_request(cfg: dict) -> OneShotRequest:
     s, o = cfg["scope"], cfg["options"]
     cp_projects = resolve_lakera_projects(cfg.get("lakera", {}).get("projects"))
     checkpoints = _checkpoints_for(o.get("project_id"))
-    if cfg.get("_target_file"):
-        # A black-box endpoint owns its own knowledge base — ours is never sent to
-        # it (llm.render_target_body drops system messages), so CP2 has nothing to
-        # scan and reporting on it would overstate coverage. Same rule as the app.
-        checkpoints = {**checkpoints, "cp2": False}
     try:
         return OneShotRequest(
+            # --target-file → the endpoint rides on the request itself, so the
+            # one rule that strips a target run down to "prompts in, answers out"
+            # (OneShotRequest._target_runs_are_pure) applies to the CLI too.
+            target=cfg.get("_target_spec"),
             category_id=s["category"], include_safe=s["include_safe"], dataset=s["dataset"],
             datasets=s.get("datasets") or [],
             max_scenarios=s["max_scenarios"], seed=s["seed"],
@@ -863,7 +867,10 @@ def evaluate_gate(summary: dict, gate: dict) -> tuple[bool, list[str]]:
     """Return (passed, [failure messages]). Thresholds left as None aren't enforced."""
     fails: list[str] = []
     md = gate.get("min_detection")
-    if md is not None:
+    if md is not None and not summary.get("guarded", True):
+        fails.append("min detection: a Target Test runs no guard — "
+                     "gate on --max-breaches (attacks the endpoint complied with) instead")
+    elif md is not None:
         base = summary.get("base_detection_rate")
         if base is None:
             fails.append(f"min detection {md:.0%}: no attack scenarios were evaluated")
@@ -914,14 +921,20 @@ def render_plan(scope: dict, req: OneShotRequest, llm_config: dict,
                        f"  response path: {tgt['response_path'] or '(whole body)'}"]
                       if tgt else
                       [f"  provider     : {llm_config['provider']} · {llm_config['model']}"])
+    # A Target Test has no guard in the path, so there is no Guard endpoint and no
+    # checkpoint set to confirm — saying "CP1 CP3" or naming a region would imply
+    # scanning that will not happen.
+    guard_lines = ([f"  lakera guard : {lakera_endpoint or lakera.current_endpoint()}",
+                    f"  checkpoints  : {checkpoints_str}"]
+                   if not tgt else
+                   ["  guard        : none (Target Test — prompts go straight to the endpoint)"])
     lines = [
         "Run plan (dry-run — no API calls):",
         *provider_lines,
         f"  judge model  : {judge}",
-        f"  lakera guard : {lakera_endpoint or lakera.current_endpoint()}",
+        *guard_lines,
         f"  rate limit   : {rate_str}",
         f"  scope        : {scope_str}",
-        f"  checkpoints  : {checkpoints_str}",
         f"  scenarios    : {scope['base_executed']} of {scope['available']}"
         + (" (sampled)" if scope['sampled'] else ""),
         f"  strategies   : {', '.join(req.strategies) or 'none'}",
@@ -945,9 +958,40 @@ def render_plan(scope: dict, req: OneShotRequest, llm_config: dict,
     return "\n".join(lines)
 
 
+def _render_target_text(s: dict) -> str:
+    """
+    A Target Test's terminal summary. Nothing guard-shaped: no posture, no
+    detection rate, no blocked counts — those grade a guard, and none ran. The
+    headline is Lakera Red's: how often an attack objective succeeded.
+    """
+    ev = s.get("evaluation") or {}
+    band = (ev.get("risk_band") or "—").upper()
+    lines = [
+        f"Attack success: {_fmt_rate(ev.get('success_rate'))} ({band} risk) — "
+        f"{ev.get('succeeded', 0)} of {ev.get('attacks', 0)} objectives succeeded",
+        f"  scenarios    : {s['total']}  (errors {s['errors']})",
+    ]
+    if s.get("judged"):
+        lines.append(f"  judged       : succeeded {ev.get('succeeded', 0)} · "
+                     f"resisted {ev.get('resisted', 0)}")
+    if s.get("strategies_used"):
+        lines.append(f"  obfuscation  : variants {s.get('variants', 0)}")
+    for c in ev.get("categories", []):
+        lines.append(f"    {c['id']:<12} {_fmt_rate(c.get('success_rate')):>7} "
+                     f"({c.get('succeeded', 0)}/{c.get('attacks', 0)}) "
+                     f"{(c.get('risk_band') or '—')}")
+    scope = s.get("scope") or {}
+    if scope.get("sampled"):
+        lines.append(f"  sampled      : {scope.get('base_executed')} of {scope.get('available')} "
+                     f"(seed {scope.get('seed')})")
+    return "\n".join(lines)
+
+
 def render_text(out: dict) -> str:
     s = out["summary"]
-    sec = s.get("security", {})
+    sec = s.get("security") or {}
+    if not s.get("guarded", True):
+        return _render_target_text(s)
     lines = [
         f"Posture: {sec.get('posture', {}).get('level', '?').upper()} — "
         f"{sec.get('posture', {}).get('headline', '')}",
@@ -1212,6 +1256,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cfg = build_effective_config(args)
         target_config = load_target_file(cfg["_target_file"]) if cfg["_target_file"] else None
+        cfg["_target_spec"] = target_config["target"] if target_config else None
+        if target_config and (cfg["options"]["compare"] or cfg["options"].get("project_id")
+                              or any(resolve_lakera_projects(
+                                  cfg.get("lakera", {}).get("projects")).values())):
+            # Say it once, up front: these all configure a guard, and a Target Test
+            # has none. Silently ignoring them would look like they took effect.
+            _status("note: --compare / --project-id / --lakera-projects don't apply to "
+                    "--target-file — no guard runs in a Target Test.")
         if target_config is None:
             llm_config = resolve_llm_config(cfg["llm"], dry_run=args.dry_run)
             # Judge inherits any omitted field from the resolved main model (fallback rule).
@@ -1231,7 +1283,10 @@ def main(argv: list[str] | None = None) -> int:
                     f"grade its own answers ({exc}) Or pass --no-judge to skip judging.")
             judge_config = resolve_judge_config(cfg["judge_llm"], provider_cfg,
                                                 dry_run=args.dry_run) or provider_cfg
-        lakera_key = resolve_lakera_key(cfg["lakera"].get("api_key"), dry_run=args.dry_run)
+        # A Target Test runs no checkpoint, so it needs no Guard key — same as a
+        # dry-run, which also never calls Lakera.
+        lakera_key = resolve_lakera_key(cfg["lakera"].get("api_key"),
+                                        dry_run=args.dry_run or bool(target_config))
         lakera_endpoint = resolve_lakera_endpoint(cfg["lakera"])   # custom region URL (or None)
         # Offline dataset sources (files/dir); HuggingFace imports happen at run time.
         local_slugs = _local_scope_slugs(cfg)

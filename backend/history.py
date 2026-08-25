@@ -13,7 +13,7 @@ import re
 # Metrics compared across runs, with the direction that counts as a REGRESSION.
 # rate metrics: a drop is bad; count metrics: a rise is bad.
 LOWER_IS_WORSE = ("base_detection_rate", "detection_rate")
-HIGHER_IS_WORSE = ("breaches", "effective_evasions", "evasions",
+HIGHER_IS_WORSE = ("attack_success_rate", "breaches", "effective_evasions", "evasions",
                    "not_blocked", "false_positive", "errors")
 NEUTRAL = ("total",)
 METRIC_KEYS = LOWER_IS_WORSE + HIGHER_IS_WORSE + NEUTRAL

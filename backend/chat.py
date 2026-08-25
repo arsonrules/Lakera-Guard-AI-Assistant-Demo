@@ -148,11 +148,14 @@ async def process(
     checkpoint_projects: dict | None = None,
     extra_context: list[str] | None = None,
 ) -> dict:
-    if not lakera_key:
-        raise LakeraNotConfigured()
     # Per-checkpoint enablement (all on by default). A disabled checkpoint is
     # skipped so the demo can show what gets through without that protection.
     cp = _cp_flags(checkpoints)
+    # A key is only needed by a checkpoint that actually runs. With all three off
+    # nothing is scanned and the message goes straight to the model — which is
+    # exactly what Target Test does: no guard in the path at all.
+    if not lakera_key and any(cp.values()):
+        raise LakeraNotConfigured()
     proj = _cp_projects(lakera_project_id, checkpoint_projects)
     trace = _empty_trace()
 
@@ -291,9 +294,9 @@ async def process_agentic(
     checkpoints: dict | None = None,
     checkpoint_projects: dict | None = None,
 ) -> dict:
-    if not lakera_key:
-        raise LakeraNotConfigured()
     cp = _cp_flags(checkpoints)
+    if not lakera_key and any(cp.values()):
+        raise LakeraNotConfigured()
     proj = _cp_projects(lakera_project_id, checkpoint_projects)
     trace = _empty_trace()
 
@@ -383,9 +386,9 @@ async def process_multiturn(
 ) -> dict:
     """Run a multi-turn conversation through the full guard pipeline, turn by turn.
     A disabled checkpoint is skipped on every turn."""
-    if not lakera_key:
-        raise LakeraNotConfigured()
     cp = _cp_flags(checkpoints)
+    if not lakera_key and any(cp.values()):
+        raise LakeraNotConfigured()
     proj = _cp_projects(lakera_project_id, checkpoint_projects)
     trace = _empty_trace()
     turn_log: list[dict] = []

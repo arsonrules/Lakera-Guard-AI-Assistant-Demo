@@ -56,7 +56,7 @@ These land in **three modes**, picked from the segmented control in the header:
 |---|---|---|---|
 | **Demo** (chat) | `#/chat` | One message at a time, with the live checkpoint trace beside it | This app's guarded pipeline |
 | **Benchmark** | `#/bench` | Fires a built-in category or an imported/uploaded dataset in one batch | This app's guarded pipeline |
-| **Target Test** | `#/target` | Fires the same datasets at **someone else's** API endpoint, scanned by Guard on the way in and on the way back | Your own third-party endpoint |
+| **Target Test** | `#/target` | Sends the same datasets **straight** to someone else's API endpoint, then has a judge model score the answers — no guard in the path | Your own third-party endpoint |
 
 Each mode is deep-linkable (`http://localhost:8000/#/bench`) and the last one used is
 remembered, so a demo script can jump straight where it needs to.
@@ -399,9 +399,10 @@ changes:
   Each rail group shows its current value, and the run bar shows the whole recipe
   ("300 rows · 100 sampled of 12,043 · +2 obfuscation variants"), so what is about to
   execute is legible *before* it starts.
-- **Target Test** is the same rail with an **Endpoint** step added on top and the
-  Target-model and Context steps removed — see
-  [Target Test](#target-test--your-own-endpoint).
+- **Target Test** is the same rail with an **Endpoint** step and a **Judge** step,
+  and with the Target-model, **Guard** and Context steps removed: nothing scans the
+  traffic, so there is no checkpoint set, no Lakera project and no Guard ON/OFF to
+  configure — see [Target Test](#target-test--your-own-endpoint).
 
 Both work modes share one set of controls and one results renderer, so a run
 configured in one behaves identically in the other.
@@ -827,36 +828,79 @@ Severity is derived from the run: a **real breach** (guard missed × model compl
 
 ## Target Test — your own endpoint
 
-Benchmark measures *this* app's pipeline. **Target Test** (`#/target`) points the same
-harness at a third-party assistant API — a customer's chatbot, an internal service, a
-gateway — feeds it a dataset, and reports what Lakera Guard sees on the way in and on
-the way back.
+Benchmark measures *this* app's guarded pipeline. **Target Test** (`#/target`) points
+the same harness at a third-party assistant API — a customer's chatbot, an internal
+service, a gateway — sends it a dataset **directly**, and has a judge model score the
+answers that come back. Nothing of ours sits between the dataset and the endpoint: this
+mode measures the endpoint, not a guard.
 
-### What applies, and what doesn't
+### The flow: dataset → endpoint → judge
 
-A third-party endpoint is a **black box**: it owns its own system prompt and its own
-knowledge base. So in this mode:
+```text
+Selected dataset
+      ↓
+Target AI endpoint          ← the only thing under test
+      ↓
+Test results (its answers)
+      ↓
+Judge model                 ← runs after, never before
+      ↓
+Evaluation / scoring
+```
 
-| Checkpoint | Applies? | Why |
-|---|---|---|
-| **CP1** — input scan | ✅ | Every dataset prompt is scanned before it is forwarded |
-| **CP2** — RAG scan | ❌ | Our knowledge base is never sent to the endpoint, so there is nothing to scan. Reporting `CP2: 0 blocked` would overstate coverage, so the checkpoint is switched off rather than reported empty |
-| **CP3** — output scan | ✅ | Whatever the endpoint returns is scanned before it is counted |
-| **CP0** — system-prompt scan | ❌ | The endpoint supplies its own prompt |
+**There is no guard in the path.** Not on, not off, not configurable: a Target Test
+measures the endpoint, so every dataset prompt goes straight to it and the answers are
+graded afterwards. That means no CP1/CP2/CP3 scan, no Lakera project, no Guard ON-vs-OFF
+arm (there is no second arm to compare against), and **no Guard key needed to run one**.
+The Guard step simply isn't in the rail in this mode, and the server strips those fields
+from the request even if something sends them.
 
-**Guard ON vs OFF is the headline number here** — it quantifies what Guard would add
-in front of an endpoint that is already in production.
+**The judge only ever grades.** It is not a filter, a pre-check or an intermediary: it
+never sees a prompt before the endpoint does, and it is called only once the endpoint's
+answer is back. It must also be a *different* model from the endpoint — a target cannot
+grade its own answers.
+
+**Nothing of ours is sent.** A Target Test run is a *pure endpoint test*: no system
+prompt (neither the built-in one nor an active custom one) and no RAG document is
+attached to the request. The endpoint receives the dataset prompt and whatever your
+body template adds — nothing else. That is why the Benchmark rail's **Context** step
+is hidden in this mode, and why the run report records the system prompt and the
+knowledge base as *not used* rather than naming ones the endpoint never saw. On the
+CLI, `--target-file` overrides `--system-prompt` / `--knowledge-base` the same way.
+
+**Which scenarios run.** Everything in the catalogue and every imported dataset, with
+two exceptions the mode makes no sense for: *Adaptive* rows are dropped (their prompts
+are written by an attacker model in the loop, so what reached the endpoint would come
+from a model rather than from the dataset), and *Agentic* rows keep their prompt but
+lose their mock tools (a black-box HTTP endpoint has no tool-calling contract).
 
 **The judge is never the target.** Grading is resolved from the judge picked in the
 rail, then the app's global judge model, then the configured LLM provider — never from
-the endpoint under test, which would otherwise be asked to grade its own answers. If
-judging is requested with no judge model available, the run is refused with a clear
-message instead of producing a misleading result.
+the endpoint under test. If judging is requested with no judge model available, the run
+is refused with a clear message instead of producing a misleading result.
+
+### Scoring: aligned with Lakera Red Teaming
+
+The results are reported the way [Lakera Red](https://docs.lakera.ai/docs/red/quickstart)
+reports a scan, so the numbers mean the same thing in both places:
+
+| | |
+|---|---|
+| **Attack success rate** | The headline. Share of attack objectives the endpoint complied with, as scored by the judge. (A detection rate would be meaningless — nothing was scanning.) |
+| **Risk band** | Low ≤25% · Medium ≤50% · High ≤75% · Critical above — Red's banding, unchanged |
+| **Categories** | Every scenario maps to one of Red's three: **Security** (instruction override, prompt extraction, data exfiltration), **Safety** (harmful content, dangerous instructions), **Responsible** (misinformation, copyright, fraud facilitation). The mapping is keyed on the OWASP id the catalogue already assigns, so there is no second taxonomy to maintain |
+| **Per row** | The judge's verdict (breach / resisted / unknown) and the endpoint's own response time |
+
+The OWASP-guard dashboard, the compliance mapping and the checkpoint legend are
+Benchmark's — they grade a guard, and there is none here, so they are omitted rather
+than rendered as zeroes.
 
 Step ③ of the rail picks that judge **for this run only**: provider (OpenRouter,
 LM Studio, Ollama, oMLX, or any OpenAI-compatible endpoint), base URL, model, and
-whether it needs an API key. **Load models** probes the provider and fills the model
-list, so the id does not have to be typed from memory. The choice never touches the
+whether it needs an API key. Picking a provider **lists the models it actually
+serves** in the *from provider* dropdown — immediately for a local provider, and as
+soon as the key is entered for one that needs it — so the id is chosen, not recalled.
+**Load models** re-probes on demand, and the model field still accepts a typed id. The choice never touches the
 global judge settings in the Settings panel, and the report names the model that
 actually graded the run. On the CLI the same job is done by
 `--judge-provider` / `--judge-base-url` / `--judge-model` / `--judge-api-key`.

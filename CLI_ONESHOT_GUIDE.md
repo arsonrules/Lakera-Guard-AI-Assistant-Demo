@@ -238,12 +238,16 @@ python -m backend.oneshot \
 
 ## 7b. Test someone else's endpoint (`--target-file`)
 
-Everything above runs your dataset through *this* app's pipeline against a
-configured LLM provider. `--target-file` swaps the model for a **third-party HTTP
-endpoint** — a customer's assistant, an internal service, a gateway — while CP1 and
-CP3 still scan every prompt on the way in and every reply on the way back. This is
-the CLI half of the UI's **Target Test** mode, and it is where a CI gate against a
-production assistant lives.
+Everything above runs your dataset through *this* app's guarded pipeline against a
+configured LLM provider. `--target-file` replaces both: the dataset goes **straight**
+to a **third-party HTTP endpoint** — a customer's assistant, an internal service, a
+gateway — and the judge scores the answers that come back. No guard sits in between.
+This is the CLI half of the UI's **Target Test** mode, and it is where a CI gate
+against a production assistant lives.
+
+```text
+Selected dataset → target endpoint → its answers → judge model → evaluation
+```
 
 Describe the endpoint in a JSON file:
 
@@ -296,8 +300,21 @@ A few rules the runner enforces for you:
   overrides) supply the judge; the endpoint under test is never asked to grade its
   own answers. Asking for judging with no judge model resolvable is a config error
   (exit 2), not a misleading result.
-- **CP2 is switched off.** Your knowledge base is never sent to a black box, so
-  there is nothing for it to scan; the dry-run plan shows `checkpoints : CP1 CP3`.
+- **No guard, at all.** No checkpoint runs, so `--project-id`, `--lakera-projects`
+  and `--compare` have nothing to act on, and no Guard key is required. The dry-run
+  plan says so: `guard        : none (Target Test — prompts go straight to the
+  endpoint)`.
+- **No system prompt, no RAG documents.** A target run is a pure endpoint test: the
+  endpoint gets the dataset prompt and whatever your body template adds, and nothing
+  of ours. `--system-prompt` and `--knowledge-base` are ignored, and the dry-run plan
+  says so (`system prompt: clean mode (none)`, `knowledge base: none`).
+- **Adaptive scenarios are excluded**, and agentic ones run as plain prompts: an
+  attacker model writing the prompt would mean the endpoint was not tested with the
+  dataset, and a black box has no tool-calling contract to offer mock tools through.
+- **Results are scored the Lakera Red Teaming way** — attack success rate, Red's risk
+  banding (Low ≤25% / Medium ≤50% / High ≤75% / Critical above), and a breakdown by
+  Security / Safety / Responsible. See
+  <https://docs.lakera.ai/docs/red/quickstart>.
 - **The pre-flight probes the endpoint**, not `/models` — one sample prompt, so a
   wrong URL, a dead token or (the common one) a wrong `response_path` costs one
   request instead of a whole run of identical errors. `--no-preflight` skips it.
@@ -489,7 +506,7 @@ python -m backend.oneshot --suite suite.yaml \
 | | `--lakera-api-key KEY` | Guard API key — overrides `$LAKERA_GUARD_API_KEY`. |
 | | `--lakera-projects K=V,…` | Per-checkpoint Lakera Project IDs: `input=<id>` (CP1), `rag=<id>` (CP2), `output=<id>` (CP3). Unset checkpoints use the key's default policy. `cp1/cp2/cp3` accepted as aliases. |
 | **Provider** | `--provider` / `--base-url` / `--model` / `--api-key` | Target LLM (`openrouter`, `lmstudio`, `ollama`, `omlx`, `custom`); key overrides `$LLM_API_KEY`/`$OPENROUTER_API_KEY`. |
-| | `--target-file PATH` | **Target Test** — a JSON file describing a third-party HTTP endpoint (`url`/`method`/`auth`/`headers`/`body`/`extra_fields`/`response_path`/`timeout`) to fire the dataset at instead of an OpenAI-compatible provider. Replaces `--base-url`/`--model` for the run; `--provider`/`--model` then supply only the **judge**, which must be a different model. CP2 is switched off (a black box owns its own knowledge base). The file holds credentials — keep it out of version control. |
+| | `--target-file PATH` | **Target Test** — a JSON file describing a third-party HTTP endpoint (`url`/`method`/`auth`/`headers`/`body`/`extra_fields`/`response_path`/`timeout`) to fire the dataset at instead of an OpenAI-compatible provider. Replaces `--base-url`/`--model` for the run; `--provider`/`--model` then supply only the **judge**, which must be a different model. No guard runs at all (no checkpoint, no Lakera project, no `--compare` arm, no Guard key needed), and the run sends no system prompt and no RAG documents — `--system-prompt` / `--knowledge-base` are ignored. The dataset goes straight to the endpoint and the judge scores the answers afterwards. The file holds credentials — keep it out of version control. |
 | | `--preflight` / `--no-preflight` | Ping the target LLM once **before** the run and abort with a clear message if the host/port/model is wrong (default on). With `--target-file`, the probe sends one sample prompt at the endpoint instead. |
 | **Judge** | `--judge-provider` / `--judge-base-url` / `--judge-model` / `--judge-api-key` | Optional stronger judge model. **Each omitted flag falls back to the matching main-model value** (provider→`--provider`, base-url/model→`--base-url`/`--model` when the provider matches, key→`--judge-api-key` → `$JUDGE_API_KEY` → `--api-key`). Omit **all four** → judge with the target model. |
 | **Gate** | `--min-detection 0..1` · `--max-breaches` · `--max-evasions` · `--max-effective-evasions` · `--max-false-positives` | CI thresholds (a `null`/unset threshold isn't enforced). |
