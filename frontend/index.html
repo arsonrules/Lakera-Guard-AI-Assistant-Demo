@@ -1628,6 +1628,23 @@
       background: var(--brand-bg); border: 1px solid var(--brand-br); color: var(--brand);
       font-family: 'JetBrains Mono', monospace; font-size: 0.66rem; font-weight: 700;
     }
+    /* A step folds to its heading. .cfg-sum keeps the step's current value on
+       that line, so a collapsed rail still reads top to bottom as the run
+       recipe — which is the whole reason folding is safe here. */
+    .cfg-step > h3 { cursor: pointer; user-select: none; }
+    .cfg-step > h3:hover { color: var(--brand); }
+    .cfg-step > h3:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 6px; }
+    .cfg-step > h3::after {
+      content: ''; flex: none; width: 7px; height: 7px; margin: -3px 3px 0 2px;
+      border-right: 1.6px solid var(--dim); border-bottom: 1.6px solid var(--dim);
+      transform: rotate(45deg);
+      transition: transform 0.15s var(--ease), border-color 0.15s var(--ease);
+    }
+    .cfg-step > h3:hover::after { border-color: var(--brand); }
+    .cfg-step.collapsed > h3::after { transform: rotate(-45deg); margin-top: 0; }
+    .cfg-step.collapsed > h3 { margin-bottom: 0; }
+    .cfg-step.collapsed > *:not(h3) { display: none; }
+
     .cfg-step.done > h3::before { background: var(--pass-bg); border-color: var(--pass-br); color: var(--pass); }
     .cfg-step.todo > h3::before { background: var(--block-bg); border-color: var(--block-br); color: var(--block); }
     /* Always shows the group's current value, so a rail read top to bottom is a
@@ -1829,6 +1846,7 @@
       }
       /* WCAG 2.5.5: every control in the dense bars clears the 44px floor. */
       .ctl, .sp-btn, .cat-pill, .scenario-btn, #lang-select { min-height: 44px; }
+      .cfg-step > h3 { min-height: 44px; }
       .msg-row { max-width: 92%; }
       .composer { padding: 10px; }
       .composer #send-btn, .composer #clear-chat-btn { height: 44px; }
@@ -7120,8 +7138,56 @@
     onOsCpChange();   // init per-checkpoint Project ID visibility + merged badge
     loadTargetLocal();
     initRunJudge();
+    initCfgSteps();
     updateRunRecipe();
     renderTargetSummary();   // paints the pane's cards before any probe has run
+  }
+
+  // ── Config rail: steps fold to their summary ────────────────────────────
+  // Six expanded steps push Limits and History below the fold, which is what
+  // made the rail hard to read. Folding a configured step hides its fields, not
+  // its value — .cfg-sum still names what it is set to.
+  function initCfgSteps() {
+    document.querySelectorAll('.cfg-step > h3').forEach(h3 => {
+      if (h3.dataset.foldWired) return;
+      h3.dataset.foldWired = '1';
+      h3.setAttribute('role', 'button');
+      h3.setAttribute('tabindex', '0');
+      h3.setAttribute('aria-expanded', 'true');
+      h3.addEventListener('click', () => toggleCfgStep(h3.parentElement));
+      h3.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
+          ev.preventDefault();
+          toggleCfgStep(h3.parentElement);
+        }
+      });
+    });
+  }
+
+  function setCfgStepOpen(step, open) {
+    if (!step) return;
+    step.classList.toggle('collapsed', !open);
+    const h3 = step.querySelector('h3');
+    if (h3) h3.setAttribute('aria-expanded', String(!!open));
+  }
+
+  function toggleCfgStep(step) {
+    if (step) setCfgStepOpen(step, step.classList.contains('collapsed'));
+  }
+
+  // Laid out once per mode: the first step open, the rest folded — after that the
+  // reader's own toggles stand. A step still missing input (.todo) is always
+  // opened, because a blocking field must never sit behind a fold.
+  const _cfgLaidOut = Object.create(null);
+  function layoutCfgSteps(mode) {
+    const steps = [...document.querySelectorAll('.cfg-step')].filter(s => s.offsetParent !== null);
+    if (!steps.length) return;
+    if (_cfgLaidOut[mode]) {
+      steps.forEach(s => { if (s.classList.contains('todo')) setCfgStepOpen(s, true); });
+      return;
+    }
+    _cfgLaidOut[mode] = true;
+    steps.forEach((s, i) => setCfgStepOpen(s, i === 0 || s.classList.contains('todo')));
   }
 
   // Per-run Lakera Project ID override (defaults to the global Settings value),
@@ -7176,6 +7242,7 @@
       initOneShotPanel();
       updateRunRecipe();
       updateRunGate();   // only Target Test gates Run, so this flips on every switch
+      layoutCfgSteps(m); // after the rail is re-parented, so visibility is real
     }
     renderModeIntro(m);
     if (location.hash !== '#/' + m) location.hash = '#/' + m;
@@ -7414,6 +7481,7 @@
     if (step) {
       step.classList.toggle('done', state === 'ok');
       step.classList.toggle('todo', state !== 'ok');
+      if (state !== 'ok') setCfgStepOpen(step, true);
     }
     if (latencyMs != null) lastProbeMs = latencyMs;
     if (state === 'untested') { lastProbe = null; lastProbeMs = null; }
