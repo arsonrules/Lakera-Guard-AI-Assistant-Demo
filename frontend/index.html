@@ -13,41 +13,47 @@
 
     /* ── Dark security-console design system ── */
     :root {
-      --bg:          #0B1120;
-      --bg-soft:     #0E1627;
-      --dot:         rgba(129,140,248,0.06);
-      --panel:       #131C2E;
-      --panel-2:     #18223A;
-      --border:      #243049;
-      --border-soft: #1B2740;
-      --text:        #E6EDF7;
-      --muted:       #93A1B8;
-      --heading:     #F4F7FB;
+      --bg:          #090F1C;
+      --bg-soft:     #0C1322;
+      --dot:         rgba(129,140,248,0.05);
+      --panel:       #111A2B;
+      --panel-2:     #172136;
+      --panel-3:     #1D2842;
+      --border:      #222E47;
+      --border-soft: #1A2438;
+      --hair:        rgba(255,255,255,0.045);
+      --text:        #E8EEF9;
+      --muted:       #8FA0BA;
+      --dim:         #6B7C96;
+      --heading:     #F6F9FD;
 
       --brand:       #818CF8;
       --brand-strong:#6366F1;
       --brand-bg:    rgba(129,140,248,0.12);
-      --brand-br:    rgba(129,140,248,0.45);
+      --brand-br:    rgba(129,140,248,0.38);
+      --cp-pink:     #EC0A63;
 
       /* Semantic tokens — names referenced by JS, keep stable */
-      --pass:        #34D399;  --pass-bg:   rgba(52,211,153,0.12);  --pass-br:  rgba(52,211,153,0.40);
-      --block:       #F87171;  --block-bg:  rgba(248,113,113,0.12); --block-br: rgba(248,113,113,0.45);
-      --redact:      #FBBF24;  --redact-bg: rgba(251,191,36,0.12);  --redact-br:rgba(251,191,36,0.40);
-      --skip:        #94A3B8;  --skip-bg:   rgba(148,163,184,0.12); --skip-br:  rgba(148,163,184,0.35);
+      --pass:        #34D399;  --pass-bg:   rgba(52,211,153,0.11);  --pass-br:  rgba(52,211,153,0.34);
+      --block:       #F87171;  --block-bg:  rgba(248,113,113,0.11); --block-br: rgba(248,113,113,0.36);
+      --redact:      #FBBF24;  --redact-bg: rgba(251,191,36,0.11);  --redact-br:rgba(251,191,36,0.34);
+      --skip:        #94A3B8;  --skip-bg:   rgba(148,163,184,0.10); --skip-br:  rgba(148,163,184,0.30);
 
-      --user-bubble: #1E2A45;
-      --shadow-sm:   0 1px 2px rgba(0,0,0,0.40);
-      --shadow-md:   0 6px 20px rgba(0,0,0,0.45);
-      --shadow-lg:   0 12px 32px rgba(0,0,0,0.50);
+      --user-bubble: #232F52;
+      /* One elevation recipe: a 1px inner top highlight plus a soft, wide shadow. */
+      --shadow-sm:   0 1px 0 var(--hair) inset, 0 4px 14px rgba(0,0,0,0.24);
+      --shadow-md:   0 1px 0 var(--hair) inset, 0 10px 26px rgba(0,0,0,0.28);
+      --shadow-lg:   0 1px 0 var(--hair) inset, 0 24px 60px rgba(0,0,0,0.45);
       --radius:      12px;
       --radius-sm:   8px;
+      --radius-lg:   16px;
       --ease:        cubic-bezier(0.22, 1, 0.36, 1);
     }
 
     body {
       background-color: var(--bg);
-      background-image: radial-gradient(circle at 1px 1px, var(--dot) 1px, transparent 0);
-      background-size: 22px 22px;
+      background-image: radial-gradient(1100px 460px at 18% -8%, rgba(99,102,241,0.09), transparent 62%);
+      background-repeat: no-repeat;
       color: var(--text);
       font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif;
       font-size: 15px;
@@ -90,67 +96,92 @@
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
-      padding: 12px 24px;
-      background: linear-gradient(180deg, #101A2E 0%, #0D1525 100%);
+      min-height: 64px;
+      padding: 12px 28px;
+      background: linear-gradient(180deg, #0F1728 0%, #0B1220 100%);
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
-      gap: 12px 16px;
+      gap: 12px 20px;
     }
     .brand { display: flex; align-items: center; gap: 11px; flex-shrink: 0; }
     /* White chip so the Check Point logo (pink + black on white) reads correctly
        against the dark console header. */
     .brand-mark {
       display: grid; place-items: center;
-      width: 38px; height: 38px;
+      width: 36px; height: 36px;
       border-radius: 10px;
       background: #fff;
       box-shadow: 0 0 0 1px rgba(0,0,0,0.10), 0 4px 14px rgba(0,0,0,0.35);
       flex-shrink: 0;
     }
-    .brand-mark svg { width: 28px; height: 28px; display: block; }
+    .brand-mark svg { width: 26px; height: 26px; display: block; }
     .brand-text { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
     .brand-text h1 {
       font-family: 'Lexend', sans-serif;
-      font-size: 1.02rem;
-      font-weight: 700;
-      letter-spacing: 0.06em;
+      font-size: 0.88rem;
+      font-weight: 600;
+      letter-spacing: 0.11em;
       color: var(--heading);
       white-space: nowrap;
     }
     .brand-text h1 .tm { font-size: 0.6em; vertical-align: super; font-weight: 600; color: var(--muted); }
     .brand-text .sub {
       font-size: 0.72rem;
-      color: var(--muted);
+      color: var(--dim);
       font-weight: 500;
       letter-spacing: 0.02em;
       white-space: nowrap;
     }
 
     .header-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+
+    /* ── Context bar ──
+       The header used to carry ten controls at once: navigation, actions and
+       session state competing at the same weight. State moved down here and
+       reads as quiet pills, so the header keeps only identity, modes and the
+       things you press. Every element kept its id, handlers and data-only /
+       data-adv gating, so mode and Basic/Advanced hiding still drive it. */
+    .context-bar {
+      display: flex; align-items: center; flex-wrap: wrap;
+      gap: 8px 10px;
+      padding: 9px 28px;
+      flex-shrink: 0;
+      background: #0C1322;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .context-bar .ctl {
+      height: 30px; padding: 0 12px;
+      font-size: 0.78rem;
+      border-radius: 999px;
+      color: var(--muted);
+    }
+    .context-bar .ctl:hover { color: var(--text); }
+    /* The Basic/Advanced switch is a preference, not run state — it sits apart. */
+    .context-bar #env-switch { margin-left: auto; }
     .doc-toggle { display: flex; align-items: center; gap: 8px; }
     .doc-toggle > span {
       font-family: 'Lexend', sans-serif;
       font-size: 0.66rem; font-weight: 600;
-      letter-spacing: 0.10em; text-transform: uppercase;
-      color: var(--muted);
+      letter-spacing: 0.11em; text-transform: uppercase;
+      color: var(--dim);
     }
 
     /* Shared control button base */
     .ctl {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 6px 12px;
+      display: inline-flex; align-items: center; gap: 7px;
+      height: 34px; padding: 0 14px;
       border: 1px solid var(--border);
       background: var(--panel-2);
       color: var(--text);
       font-family: 'Lexend', sans-serif;
-      font-size: 0.74rem; font-weight: 600;
-      letter-spacing: 0.04em; text-transform: uppercase;
+      font-size: 0.81rem; font-weight: 500;
+      letter-spacing: 0; text-transform: none;
       white-space: nowrap;
       cursor: pointer;
       border-radius: var(--radius-sm);
       transition: background 0.15s var(--ease), border-color 0.15s var(--ease), color 0.15s var(--ease), transform 0.08s var(--ease);
     }
-    .ctl:hover { border-color: var(--brand-br); background: #1E2A45; }
+    .ctl:hover { border-color: var(--brand-br); background: var(--panel-3); }
     .ctl:active { transform: translateY(1px); }
 
     /* Language switcher */
@@ -158,15 +189,16 @@
     .lang-switch > .ic { color: var(--muted); width: 15px; height: 15px; }
     #lang-select {
       appearance: none; -webkit-appearance: none;
-      padding: 6px 28px 6px 12px;
+      height: 34px;
+      padding: 0 28px 0 12px;
       border: 1px solid var(--border);
       background: var(--panel-2)
         url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2393A1B8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>")
         no-repeat right 9px center;
       color: var(--text);
       font-family: 'Lexend', sans-serif;
-      font-size: 0.74rem; font-weight: 600;
-      letter-spacing: 0.02em;
+      font-size: 0.81rem; font-weight: 500;
+      letter-spacing: 0;
       cursor: pointer;
       border-radius: var(--radius-sm);
       transition: border-color 0.15s var(--ease), background-color 0.15s var(--ease);
@@ -195,11 +227,11 @@
     .cdocs-panel.open { max-height: 380px; }
     .sp-inner, .cdocs-inner {
       background: var(--panel);
-      margin: 14px 24px;
+      margin: 16px 28px;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       box-shadow: var(--shadow-md);
-      padding: 16px 18px;
+      padding: 18px 20px;
       display: flex;
       flex-direction: column;
       gap: 12px;
@@ -212,8 +244,8 @@
     .sp-title, .cdocs-title {
       display: inline-flex; align-items: center; gap: 7px;
       font-family: 'Lexend', sans-serif;
-      font-size: 0.78rem; font-weight: 600;
-      letter-spacing: 0.05em; text-transform: uppercase;
+      font-size: 0.94rem; font-weight: 600;
+      letter-spacing: -0.005em; text-transform: none;
       color: var(--heading);
     }
     .sp-title .ic, .cdocs-title .ic { color: var(--brand); }
@@ -244,24 +276,24 @@
 
     /* Buttons inside panels */
     .sp-btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 7px 14px;
+      display: inline-flex; align-items: center; gap: 7px;
+      min-height: 32px; padding: 0 13px;
       border: 1px solid var(--border);
       background: var(--panel-2);
       color: var(--text);
       font-family: 'Lexend', sans-serif;
-      font-size: 0.74rem; font-weight: 600;
-      letter-spacing: 0.04em; text-transform: uppercase;
+      font-size: 0.79rem; font-weight: 500;
+      letter-spacing: 0; text-transform: none;
       cursor: pointer; white-space: nowrap;
       border-radius: var(--radius-sm);
       transition: background 0.15s var(--ease), border-color 0.15s var(--ease), transform 0.08s var(--ease);
     }
-    .sp-btn:hover  { border-color: var(--brand-br); background: #1E2A45; }
+    .sp-btn:hover  { border-color: var(--brand-br); background: var(--panel-3); }
     .sp-btn:active { transform: translateY(1px); }
     .sp-btn.primary {
-      background: linear-gradient(180deg, var(--brand), var(--brand-strong));
-      color: #fff; border-color: transparent;
-      box-shadow: 0 4px 14px rgba(99,102,241,0.35);
+      background: linear-gradient(180deg, #8A94F9, var(--brand-strong));
+      color: #fff; border-color: transparent; font-weight: 600;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.22) inset, 0 6px 18px rgba(99,102,241,0.32);
     }
     .sp-btn.primary:hover { filter: brightness(1.07); }
     .sp-btn.safe   { background: var(--pass-bg);  color: var(--pass);  border-color: var(--pass-br); }
@@ -328,11 +360,11 @@
 
     /* ── Scenarios bar ── */
     .scenarios-bar {
-      padding: 9px 24px;
-      background: var(--bg-soft);
+      padding: 14px 28px 15px;
+      background: #0B1220;
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
-      display: flex; flex-direction: column; gap: 7px;
+      display: flex; flex-direction: column; gap: 9px;
     }
     .categories-row, .scenarios-row {
       display: flex; align-items: center; gap: 8px;
@@ -342,21 +374,22 @@
     .scenarios-row::-webkit-scrollbar { display: none; }
     .scenarios-bar > div > label {
       font-family: 'Lexend', sans-serif;
-      font-size: 0.64rem; font-weight: 600;
-      letter-spacing: 0.10em; text-transform: uppercase;
-      color: var(--muted);
+      font-size: 0.66rem; font-weight: 600;
+      letter-spacing: 0.11em; text-transform: uppercase;
+      color: var(--dim);
       white-space: nowrap; flex-shrink: 0;
       min-width: 76px;
     }
 
     /* Category pills */
     .cat-pill {
-      padding: 5px 13px;
+      display: inline-flex; align-items: center;
+      height: 30px; padding: 0 14px;
       border: 1px solid var(--border);
       background: var(--panel-2);
       color: var(--muted);
       font-family: 'Lexend', sans-serif;
-      font-size: 0.74rem; font-weight: 600; letter-spacing: 0.02em;
+      font-size: 0.79rem; font-weight: 500; letter-spacing: 0;
       cursor: pointer; white-space: nowrap;
       border-radius: 999px;
       transition: background 0.15s var(--ease), border-color 0.15s var(--ease), color 0.15s var(--ease), transform 0.08s var(--ease);
@@ -375,12 +408,13 @@
        transcript, so the control is disabled while a message is being scanned. */
     body.busy #clear-chat-btn { opacity: 0.55; pointer-events: none; }
     .scenario-btn {
-      padding: 5px 12px;
-      border: 1px solid var(--border);
+      display: inline-flex; align-items: center;
+      height: 30px; padding: 0 13px;
+      border: 1px solid var(--border-soft);
       background: var(--panel-2);
       color: var(--text);
-      font-family: 'Lexend', sans-serif;
-      font-size: 0.73rem; font-weight: 500; letter-spacing: 0.01em;
+      font-family: 'Source Sans 3', sans-serif;
+      font-size: 0.82rem; font-weight: 400; letter-spacing: 0;
       cursor: pointer; white-space: nowrap;
       border-radius: var(--radius-sm);
       transition: background 0.15s var(--ease), border-color 0.15s var(--ease), transform 0.08s var(--ease);
@@ -394,7 +428,7 @@
     /* ── Main layout ── */
     .main {
       display: grid;
-      grid-template-columns: 1fr 384px;
+      grid-template-columns: minmax(0, 1fr) 404px;
       flex: 1;
       overflow: hidden;
     }
@@ -404,21 +438,20 @@
       display: flex; flex-direction: column;
       border-right: 1px solid var(--border);
       overflow: hidden;
-      background:
-        radial-gradient(1200px 500px at 20% -10%, rgba(99,102,241,0.07), transparent 60%),
-        var(--bg);
+      background: transparent;
     }
     .messages {
       flex: 1; overflow-y: auto;
-      padding: 22px 24px;
-      display: flex; flex-direction: column; gap: 16px;
+      padding: 26px 32px;
+      display: flex; flex-direction: column; gap: 20px;
     }
 
     /* ── Chat bubbles ── */
     .message {
-      max-width: 74%;
-      padding: 11px 15px;
-      font-size: 0.92rem; line-height: 1.55;
+      max-width: 78%;
+      padding: 14px 18px;
+      font-size: 0.95rem; line-height: 1.62;
+      text-wrap: pretty;
       word-break: break-word;
       white-space: pre-wrap;
       position: relative;
@@ -437,18 +470,19 @@
       color: #EAF0FF;
       align-self: flex-end;
       border-color: var(--brand-br);
-      border-radius: 14px 14px 4px 14px;
-      box-shadow: var(--shadow-sm);
+      border-radius: 16px 16px 4px 16px;
+      background: linear-gradient(180deg, #232F52, #1C2645);
+      box-shadow: 0 8px 22px rgba(0,0,0,0.30);
     }
     .message.assistant {
       background: var(--panel);
       color: var(--text);
       align-self: flex-start;
-      border-radius: 14px 14px 14px 4px;
-      box-shadow: var(--shadow-sm);
+      border-radius: 4px 16px 16px 16px;
+      box-shadow: var(--shadow-md);
     }
     .message.assistant.blocked {
-      background: var(--block-bg);
+      background: linear-gradient(180deg, rgba(248,113,113,0.10), rgba(248,113,113,0.05));
       border-color: var(--block-br);
     }
 
@@ -492,39 +526,60 @@
     .thinking .dots i:nth-child(3) { animation-delay: 0.30s; }
     @keyframes bounce { 0%,60%,100%{ transform: translateY(0); opacity: 0.5; } 30%{ transform: translateY(-5px); opacity: 1; } }
 
+    /* Speaker + time above each bubble: colour is never the only cue for who
+       said what, and a long transcript stays scannable. */
+    .msg-row { display: flex; flex-direction: column; gap: 6px; max-width: 78%; min-width: 0; }
+    .msg-row.assistant { align-self: flex-start; align-items: flex-start; }
+    .msg-row.user      { align-self: flex-end;   align-items: flex-end; }
+    .msg-row .message  { max-width: 100%; }
+    .msg-meta {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: 'Lexend', sans-serif;
+      font-size: 0.66rem; font-weight: 600;
+      letter-spacing: 0.11em; text-transform: uppercase;
+      color: var(--dim);
+    }
+    .msg-meta time {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.66rem; letter-spacing: 0; text-transform: none;
+      font-variant-numeric: tabular-nums; opacity: 0.8;
+    }
+
     /* Chat input row */
     .chat-input-row {
-      display: flex; gap: 10px;
-      padding: 14px 20px;
-      border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 10px; align-items: stretch;
+      padding: 16px 32px 22px;
+      border-top: 1px solid var(--border-soft);
       background: var(--bg-soft);
     }
     #chat-input {
       flex: 1;
-      padding: 11px 14px;
+      padding: 13px 16px;
       border: 1px solid var(--border);
-      background: var(--bg);
+      background: var(--panel);
       color: var(--text);
       font-family: 'Source Sans 3', sans-serif;
-      font-size: 0.92rem; line-height: 1.4;
+      font-size: 0.95rem; line-height: 1.5;
       resize: none; outline: none;
-      border-radius: var(--radius-sm);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 1px 0 var(--hair) inset;
       transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
     }
     #chat-input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-bg); }
     #chat-input::placeholder { color: var(--muted); }
     #send-btn {
       display: inline-flex; align-items: center; gap: 7px;
+      align-self: flex-end; height: 46px;
       padding: 0 20px;
-      background: linear-gradient(180deg, var(--brand), var(--brand-strong));
+      background: linear-gradient(180deg, #8A94F9, var(--brand-strong));
       color: #fff;
       border: none;
-      border-radius: var(--radius-sm);
+      border-radius: 13px;
       font-family: 'Lexend', sans-serif;
-      font-size: 0.84rem; font-weight: 600; letter-spacing: 0.04em;
-      text-transform: uppercase;
+      font-size: 0.88rem; font-weight: 600; letter-spacing: 0;
+      text-transform: none;
       cursor: pointer;
-      box-shadow: 0 4px 14px rgba(99,102,241,0.35);
+      box-shadow: 0 1px 0 rgba(255,255,255,0.22) inset, 0 6px 18px rgba(99,102,241,0.32);
       transition: filter 0.15s var(--ease), transform 0.08s var(--ease);
     }
     #send-btn:hover  { filter: brightness(1.08); }
@@ -534,53 +589,117 @@
     /* Sits next to Send but stays visually subordinate to it (reuses the app's
        secondary .sp-btn look) so the primary CTA still reads as the main action
        and the destructive one isn't mistaken for it. */
-    #clear-chat-btn { flex: 0 0 auto; padding-left: 14px; padding-right: 14px; }
+    #clear-chat-btn { flex: 0 0 auto; align-self: flex-end; height: 38px; border-radius: 10px; padding-left: 14px; padding-right: 14px; }
+
+    /* One surface holds the field and its actions, so the composer reads as a
+       single control instead of three boxes that happen to sit in a row. */
+    .composer {
+      display: flex; align-items: flex-end; gap: 10px;
+      padding: 10px 10px 10px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--panel);
+      box-shadow: 0 1px 0 var(--hair) inset, 0 10px 28px rgba(0,0,0,0.30);
+      transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+    }
+    .composer:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-bg); }
+    .composer #chat-input {
+      border: none; background: transparent; box-shadow: none;
+      padding: 8px 0; border-radius: 0;
+    }
+    .composer #chat-input:focus { border-color: transparent; box-shadow: none; }
+    .composer #send-btn { height: 38px; border-radius: 10px; }
+    .composer-hint {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.72rem; color: var(--dim);
+    }
+    .composer-hint .sep { opacity: 0.5; }
+    .mono-cps { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--muted); }
+    .mono-cps.off { color: var(--block); text-decoration: line-through; }
     #clear-chat-btn .ic { width: 14px; height: 14px; }
 
     /* ── Inspector panel ── */
     .inspector-panel {
       display: flex; flex-direction: column;
       overflow-y: auto;
-      padding: 18px 16px;
-      gap: 12px;
-      background: var(--bg-soft);
+      padding: 18px 20px 20px;
+      gap: 10px;
+      background: #0A1120;
     }
     .inspector-title {
-      display: flex; align-items: center; justify-content: center; gap: 8px;
+      display: flex; align-items: center; gap: 9px;
       font-family: 'Lexend', sans-serif;
-      font-size: 0.82rem; font-weight: 600;
-      letter-spacing: 0.12em; text-transform: uppercase;
+      font-size: 0.94rem; font-weight: 600;
+      letter-spacing: -0.005em; text-transform: none;
       color: var(--heading);
-      padding: 2px 0 12px;
-      border-bottom: 1px solid var(--border);
+      padding: 0 0 12px;
+      border-bottom: 1px solid var(--border-soft);
     }
-    .inspector-title .ic { color: var(--brand); width: 16px; height: 16px; }
+    .inspector-title .ic { color: var(--brand); width: 17px; height: 17px; }
+    .trace-count {
+      margin-left: auto;
+      font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+      font-variant-numeric: tabular-nums; color: var(--dim);
+    }
+
+    /* Where the message actually stopped, in one line under the rail. */
+    .pf-summary {
+      margin-top: 12px; padding-top: 11px;
+      border-top: 1px dashed var(--border-soft);
+      font-size: 0.8rem; line-height: 1.5; color: var(--muted);
+    }
+    .pf-summary[hidden] { display: none; }
+    .pf-summary b { font-family: 'Lexend', sans-serif; font-weight: 600; }
+    .pf-summary.s-blocked b  { color: var(--block); }
+    .pf-summary.s-redacted b { color: var(--redact); }
+    .pf-summary.s-passed b   { color: var(--pass); }
+
+    /* A status dot repeats the badge's verdict at the start of the row, so the
+       card reads left to right without hunting for the pill on the far side. */
+    .cp-card .cp-label::before, .cp0-inspector-card .cp-label::before {
+      content: ''; display: inline-block; vertical-align: 0.08em;
+      width: 6px; height: 6px; border-radius: 50%; margin-right: 9px;
+      background: var(--skip);
+    }
+    .cp-card:has(.badge-passed) .cp-label::before,
+    .cp0-inspector-card:has(.badge-passed) .cp-label::before   { background: var(--pass); }
+    .cp-card:has(.badge-blocked) .cp-label::before,
+    .cp0-inspector-card:has(.badge-blocked) .cp-label::before  { background: var(--block); }
+    .cp-card:has(.badge-redacted) .cp-label::before            { background: var(--redact); }
+    .cp-card:has(.badge-default) .cp-label::before,
+    .cp0-inspector-card:has(.badge-default) .cp-label::before  { background: var(--brand); }
 
     /* Guard pipeline overview strip — the mental model, always visible */
     .pipeline-flow {
-      display: flex; flex-direction: column; gap: 8px;
-      padding: 4px 2px 12px; border-bottom: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 9px;
+      padding: 14px 14px 12px; border: 1px solid var(--border-soft);
+      border-radius: var(--radius);
+      background: linear-gradient(180deg, #0E1626, #0B1220);
     }
     .pipeline-flow .pf-cap {
-      font-family: 'Lexend', sans-serif; font-size: 0.6rem; font-weight: 600;
-      letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); text-align: center;
+      font-family: 'Lexend', sans-serif; font-size: 0.66rem; font-weight: 600;
+      letter-spacing: 0.11em; text-transform: uppercase; color: var(--dim); text-align: center;
     }
     .pf-track { display: flex; align-items: flex-start; justify-content: space-between; gap: 1px; }
     .pf-node {
       display: inline-flex; flex-direction: column; align-items: center; gap: 4px;
-      font-family: 'Lexend', sans-serif; font-size: 0.56rem; font-weight: 600;
-      letter-spacing: 0.02em; color: var(--muted); text-align: center; min-width: 30px;
+      font-family: 'Lexend', sans-serif; font-size: 0.62rem; font-weight: 600;
+      letter-spacing: 0.04em; color: var(--dim); text-align: center; min-width: 34px;
       /* reset for the <button> CP nodes */
       background: none; border: none; padding: 0; margin: 0;
     }
     .pf-node .pf-ico {
-      width: 28px; height: 28px; display: grid; place-items: center;
-      border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2);
+      width: 36px; height: 36px; display: grid; place-items: center;
+      border: 1px solid var(--border); border-radius: 11px; background: var(--panel-2);
       transition: border-color 0.15s var(--ease), background 0.15s var(--ease), color 0.15s var(--ease);
     }
-    .pf-node .pf-ico .ic { width: 14px; height: 14px; }
+    .pf-node .pf-ico .ic { width: 16px; height: 16px; }
     .pf-node.io .pf-ico { color: var(--muted); }
-    .pf-arrow { color: var(--muted); font-size: 1rem; line-height: 28px; flex-shrink: 0; opacity: 0.6; }
+    /* The arrow glyphs read as a connective rail, not as six repeated characters. */
+    .pf-arrow {
+      flex: 1 1 auto; min-width: 8px; height: 1px; margin: 18px 2px 0;
+      background: var(--border); font-size: 0; line-height: 0; overflow: hidden;
+    }
 
     /* CP toggle nodes: enabled (brand) vs disabled (muted, dashed). */
     button.pf-node.cp { cursor: pointer; }
@@ -624,9 +743,9 @@
     .cp-card {
       background: var(--panel);
       border: 1px solid var(--border);
-      border-left: 3px solid var(--border);
+      border-left: 2px solid var(--border);
       border-radius: var(--radius);
-      padding: 13px 15px;
+      padding: 14px 16px;
       box-shadow: var(--shadow-sm);
       transition: border-color 0.2s var(--ease), background 0.2s var(--ease);
     }
@@ -637,7 +756,7 @@
     .cp-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
     .cp-label {
       font-family: 'Lexend', sans-serif;
-      font-size: 0.78rem; font-weight: 600; letter-spacing: 0.03em;
+      font-size: 0.86rem; font-weight: 600; letter-spacing: -0.005em;
       color: var(--heading);
     }
 
@@ -645,9 +764,9 @@
     .cp-badge {
       display: inline-flex; align-items: center; gap: 5px;
       font-family: 'Lexend', sans-serif;
-      font-size: 0.66rem; font-weight: 600; letter-spacing: 0.04em;
-      text-transform: uppercase;
-      padding: 3px 9px;
+      font-size: 0.72rem; font-weight: 600; letter-spacing: 0;
+      text-transform: none;
+      height: 22px; padding: 0 9px;
       border: 1px solid;
       border-radius: 999px;
       white-space: nowrap;
@@ -677,8 +796,8 @@
     .category-tag, .redact-tag, .doc-tag {
       display: inline-flex; align-items: center; gap: 4px;
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.66rem; font-weight: 500; letter-spacing: 0.02em;
-      padding: 3px 8px;
+      font-size: 0.7rem; font-weight: 500; letter-spacing: 0.02em;
+      padding: 3px 9px;
       border: 1px solid;
       border-radius: 6px;
     }
@@ -691,9 +810,9 @@
     .cat-info-card {
       background: var(--panel);
       border: 1px solid var(--border);
-      border-left: 3px solid var(--brand);
+      border-left: 2px solid var(--brand);
       border-radius: var(--radius);
-      padding: 13px 15px;
+      padding: 14px 16px;
       box-shadow: var(--shadow-sm);
       display: none;
     }
@@ -737,9 +856,9 @@
     .cp0-inspector-card {
       background: var(--panel);
       border: 1px solid var(--border);
-      border-left: 3px solid var(--border);
+      border-left: 2px solid var(--border);
       border-radius: var(--radius);
-      padding: 13px 15px;
+      padding: 14px 16px;
       box-shadow: var(--shadow-sm);
       display: none;
     }
@@ -962,10 +1081,10 @@
       background: linear-gradient(90deg, var(--block-bg), var(--brand-bg) 55%, var(--pass-bg));
       margin-bottom: 14px; overflow: hidden;
     }
-    .os-compare .cell { flex: 1; min-width: 150px; padding: 14px 18px; text-align: center; }
+    .os-compare .cell { flex: 1; min-width: 150px; padding: 18px; text-align: center; display: flex; flex-direction: column; justify-content: center; }
     .os-compare .cell + .cell { border-left: 1px solid var(--border); }
-    .os-compare .big { font-family: 'Lexend', sans-serif; font-size: 1.9rem; font-weight: 700; line-height: 1.1; }
-    .os-compare .cap { font-family: 'JetBrains Mono', monospace; font-size: 0.64rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin-top: 3px; }
+    .os-compare .big { font-family: 'Lexend', sans-serif; font-size: 1.75rem; font-weight: 600; line-height: 1.15; letter-spacing: -0.01em; }
+    .os-compare .cap { font-family: 'Lexend', sans-serif; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.11em; text-transform: uppercase; color: var(--dim); margin-top: 4px; }
     .os-compare .alone .big   { color: var(--block); }
     .os-compare .guarded .big { color: var(--pass); }
     .os-compare .reduction { background: rgba(129,140,248,0.10); }
@@ -1033,17 +1152,18 @@
     .os-stat {
       flex: 1; min-width: 110px;
       border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      background: var(--panel-2);
-      padding: 10px 13px;
-      font: inherit; text-align: center; cursor: pointer; position: relative;
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: 0 1px 0 var(--hair) inset;
+      padding: 14px 16px;
+      font: inherit; text-align: left; cursor: pointer; position: relative;
       transition: border-color 0.15s var(--ease), transform 0.1s var(--ease);
     }
     .os-stat:hover { border-color: var(--brand-br); }
     .os-stat:active { transform: translateY(1px); }
     .os-stat::after { content: '?'; position: absolute; top: 5px; right: 7px; font-size: 0.56rem; font-weight: 700; color: var(--muted); opacity: 0.5; }
-    .os-stat .num { font-family: 'Lexend', sans-serif; font-size: 1.4rem; font-weight: 700; color: var(--heading); }
-    .os-stat .lbl { font-family: 'JetBrains Mono', monospace; font-size: 0.64rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+    .os-stat .num { font-family: 'Lexend', sans-serif; font-size: 1.45rem; font-weight: 600; line-height: 1.15; color: var(--heading); }
+    .os-stat .lbl { font-family: 'Source Sans 3', sans-serif; font-size: 0.76rem; letter-spacing: 0; text-transform: none; color: var(--dim); }
     .os-stat.good .num   { color: var(--pass); }
     .os-stat.bad .num    { color: var(--block); }
     .os-stat.warn .num   { color: var(--redact); }
@@ -1051,14 +1171,15 @@
     /* req 7: Detection-rate hero + shrunken secondary stats */
     .os-hero {
       display: block; width: 100%; text-align: center; cursor: pointer; font: inherit;
-      border: 1px solid var(--brand-br); border-radius: var(--radius);
-      background: linear-gradient(135deg, rgba(230,0,126,0.10), rgba(129,140,248,0.07));
-      padding: 20px; margin-bottom: 12px; position: relative; transition: border-color 0.15s var(--ease);
+      border: 1px solid var(--brand-br); border-radius: var(--radius-lg);
+      background: linear-gradient(135deg, rgba(236,10,99,0.10), rgba(129,140,248,0.08) 55%, rgba(129,140,248,0.03));
+      box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset;
+      padding: 24px; margin-bottom: 14px; position: relative; transition: border-color 0.15s var(--ease);
     }
     .os-hero:hover { border-color: var(--brand); }
     .os-hero::after { content: '?'; position: absolute; top: 10px; right: 12px; font-size: 0.7rem; font-weight: 700; color: var(--muted); opacity: 0.55; }
-    .os-hero-num { font-family: 'Lexend', sans-serif; font-size: 3rem; font-weight: 800; line-height: 1; color: var(--heading); }
-    .os-hero-lbl { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-top: 8px; }
+    .os-hero-num { font-family: 'Lexend', sans-serif; font-size: 3.2rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1; color: var(--heading); }
+    .os-hero-lbl { font-family: 'Lexend', sans-serif; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.11em; text-transform: uppercase; color: var(--dim); margin-top: 8px; }
     .os-summary-secondary { gap: 8px; }
     .os-summary-secondary .os-stat { min-width: 92px; padding: 7px 10px; }
     .os-summary-secondary .os-stat .num { font-size: 1.05rem; }
@@ -1139,6 +1260,12 @@
       .os-dash-collapsible > summary::before, .os-popover { transition: none !important; animation: none !important; }
     }
 
+    /* Detection hero + guard on/off comparison: one headline, two panels. */
+    .os-headline { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; margin-bottom: 14px; }
+    .os-headline > .os-hero { margin-bottom: 0; }
+    .os-headline > .os-compare { margin-bottom: 0; }
+    @media (max-width: 1100px) { .os-headline { grid-template-columns: 1fr; gap: 12px; } }
+
     /* Results table */
     /* The results table carries up to 8 columns. On narrow viewports let IT
        scroll horizontally inside its own region rather than pushing the whole
@@ -1153,22 +1280,22 @@
     .os-tfilter-count { margin-left: auto; font-size: 0.78rem; color: var(--muted); }
     .os-tfilter-count.filtered { color: var(--brand); }
     .os-table th, .os-table td {
-      text-align: left; padding: 8px 10px;
+      text-align: left; padding: 11px 12px;
       border-bottom: 1px solid var(--border-soft);
       vertical-align: middle;
     }
     .os-table th {
       font-family: 'Lexend', sans-serif;
-      font-size: 0.64rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
-      color: var(--muted); position: sticky; top: 0; background: var(--panel);
+      font-size: 0.66rem; font-weight: 600; letter-spacing: 0.11em; text-transform: uppercase;
+      color: var(--dim); position: sticky; top: 0; background: var(--panel);
     }
     .os-table td.mono { font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; color: var(--muted); }
     .os-owasp { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--brand); }
     .os-outcome {
       display: inline-flex; align-items: center; gap: 5px;
-      font-family: 'Lexend', sans-serif; font-size: 0.64rem; font-weight: 600;
-      letter-spacing: 0.03em; text-transform: uppercase;
-      padding: 2px 8px; border: 1px solid; border-radius: 999px; white-space: nowrap;
+      font-family: 'Lexend', sans-serif; font-size: 0.72rem; font-weight: 600;
+      letter-spacing: 0; text-transform: none;
+      height: 22px; padding: 0 9px; border: 1px solid; border-radius: 999px; white-space: nowrap;
     }
     .os-outcome .ic { width: 11px; height: 11px; }
     .oc-blocked        { background: var(--pass-bg);  color: var(--pass);  border-color: var(--pass-br); }
@@ -1196,7 +1323,18 @@
     .os-cp-mini-key.s-blocked { color: var(--block); border-color: var(--block-br); }
     .os-cp-mini-key.s-redacted { color: var(--redact); border-color: var(--redact-br); }
     .os-cp-mini-key.s-skipped { color: var(--skip); border-color: var(--skip-br); }
-    .os-empty { text-align: center; color: var(--muted); padding: 40px 0; font-size: 0.9rem; }
+    /* Idle isn't an error — it's the state you spend the most time looking at,
+       so it gets a real panel rather than a line of grey text. */
+    .os-empty {
+      display: flex; align-items: center; justify-content: center;
+      text-align: center; color: var(--muted);
+      min-height: 260px; padding: 40px 32px;
+      font-size: 0.92rem; line-height: 1.6;
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-lg);
+      background: rgba(17, 26, 43, 0.4);
+      max-width: 560px; margin: 8px auto;
+    }
     /* Expandable per-scenario detail (click-to-reveal) */
     .os-table tr.os-row { cursor: pointer; }
     .os-table tr.os-row:hover td { background: var(--panel-2); }
@@ -1419,12 +1557,20 @@
     /* ── Mode shell: one page, three modes ───────────────────────────────── */
 
     /* Segmented control — the same skin as .ctl, joined into one pill. */
-    .mode-nav { display: inline-flex; }
-    .mode-nav .ctl { border-radius: 0; margin-left: -1px; }
-    .mode-nav .ctl:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); margin-left: 0; }
-    .mode-nav .ctl:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+    .mode-nav {
+      display: inline-flex; gap: 2px; padding: 3px;
+      border: 1px solid var(--border); border-radius: 10px;
+      background: rgba(9, 15, 28, 0.7);
+    }
+    .mode-nav .ctl {
+      border-color: transparent; background: none; color: var(--muted);
+      border-radius: 7px;
+    }
+    .mode-nav .ctl:hover { background: rgba(255,255,255,0.035); border-color: transparent; color: var(--text); }
     .mode-nav .ctl[aria-selected="true"] {
-      color: var(--brand); border-color: var(--brand-br); background: var(--brand-bg); z-index: 1;
+      color: var(--heading); border-color: transparent;
+      background: linear-gradient(180deg, #222E4E, #1B2540);
+      box-shadow: 0 1px 0 rgba(255,255,255,0.09) inset, 0 2px 8px rgba(0,0,0,0.35);
     }
 
     /* `data-only` lists the modes an element belongs to. These rules only ever
@@ -1442,14 +1588,14 @@
 
     /* Both work modes share one primitive: a fixed config rail plus a fluid
        results pane, mirroring the chat's own 1fr/384px split. */
-    #mode-bench, #mode-target { grid-template-columns: 340px 1fr; }
+    #mode-bench, #mode-target { grid-template-columns: 360px minmax(0, 1fr); }
     .cfg-rail {
-      display: flex; flex-direction: column; gap: 14px;
+      display: flex; flex-direction: column; gap: 12px;
       /* A grid item's default `min-width: auto` makes its min-content width the
          column's floor, which is how a 340px rail ends up 442px wide on a phone. */
       min-width: 0;
-      overflow-y: auto; padding: 18px 16px;
-      background: var(--bg-soft); border-right: 1px solid var(--border);
+      overflow-y: auto; padding: 20px 18px;
+      background: #0A1120; border-right: 1px solid var(--border);
       counter-reset: cfg-step;                       /* see .cfg-step > h3::before */
     }
     .run-pane { display: flex; flex-direction: column; min-width: 0; overflow-y: auto; }
@@ -1459,15 +1605,15 @@
        hides (display:none) does not increment it, so Benchmark reads 1,2,3… and
        Target Test reads 1,2,3… without either owning a hardcoded set. */
     .cfg-step > h3 {
-      display: flex; align-items: center; gap: 8px;
-      font-family: 'Lexend', sans-serif; font-size: 0.72rem; font-weight: 600;
-      letter-spacing: 0.08em; text-transform: uppercase;
-      color: var(--heading); margin-bottom: 8px;
+      display: flex; align-items: center; gap: 9px;
+      font-family: 'Lexend', sans-serif; font-size: 0.88rem; font-weight: 600;
+      letter-spacing: -0.005em; text-transform: none;
+      color: var(--heading); margin-bottom: 9px;
     }
     .cfg-step > h3::before {
       counter-increment: cfg-step; content: counter(cfg-step);
       display: grid; place-items: center; flex: none;
-      width: 20px; height: 20px; border-radius: 50%;
+      width: 22px; height: 22px; border-radius: 50%;
       background: var(--brand-bg); border: 1px solid var(--brand-br); color: var(--brand);
       font-family: 'JetBrains Mono', monospace; font-size: 0.66rem; font-weight: 700;
     }
@@ -1477,8 +1623,8 @@
        run recipe ("42 scenarios", "CP1+CP3", "100 x 3 strategies"). */
     .cfg-sum {
       margin-left: auto; text-align: right; max-width: 55%;
-      font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
-      font-variant-numeric: tabular-nums; color: var(--muted);
+      font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+      font-variant-numeric: tabular-nums; color: var(--dim);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     /* The panels were built for a 20px-padded modal toolbar; in a 340px rail
@@ -1507,18 +1653,18 @@
     .run-bar {
       position: sticky; top: 0; z-index: 2;
       display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
-      padding: 12px 20px; background: var(--bg);
+      padding: 13px 26px; background: #0B1220;
       border-bottom: 1px solid var(--border);
     }
     .run-recipe {
       font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
       font-variant-numeric: tabular-nums; color: var(--muted);
     }
-    .run-body { padding: 18px 20px; }
+    .run-body { padding: 24px 26px; }
 
     .mode-intro {
       display: flex; align-items: center; gap: 10px;
-      margin: 12px 22px 0; padding: 8px 12px;
+      margin: 14px 28px 0; padding: 10px 14px;
       background: var(--brand-bg); border: 1px solid var(--brand-br);
       border-radius: var(--radius-sm);
       font-size: 0.82rem; color: var(--text);
@@ -1582,19 +1728,49 @@
       border-radius: var(--radius-sm); padding: 9px 12px; margin-bottom: 14px;
     }
 
-    /* Responsive: stack inspector below chat on narrow screens */
-    @media (max-width: 920px) {
+    /* ── Responsive: four tiers ───────────────────────────────────────────
+       >=1280  three zones (work column + side rail)
+       960..1279  same shape, narrower rails
+       640..959   stacked; the trace docks under the chat as a card GRID
+       <640    single column, sheet-like trace, 44px touch targets          */
+    @media (max-width: 1279px) {
+      .main { grid-template-columns: minmax(0, 1fr) 336px; }
+      #mode-bench, #mode-target { grid-template-columns: 320px minmax(0, 1fr); }
+      .messages, .chat-input-row { padding-left: 24px; padding-right: 24px; }
+      header, .context-bar, .scenarios-bar { padding-left: 22px; padding-right: 22px; }
+      .run-bar, .run-body { padding-left: 22px; padding-right: 22px; }
+    }
+
+    @media (max-width: 959px) {
       body { overflow: auto; height: auto; min-height: 100dvh; }
       .main { grid-template-columns: 1fr; overflow: visible; }
       #mode-bench, #mode-target { grid-template-columns: 1fr; overflow: visible; }
       .cfg-rail { border-right: none; border-bottom: 1px solid var(--border); overflow-y: visible; }
       .chat-panel { border-right: none; border-bottom: 1px solid var(--border); min-height: 60dvh; }
-      .message { max-width: 86%; }
+      .msg-row { max-width: 86%; }
+      /* A stacked inspector as one tall column buries CP3 below the fold, so the
+         checkpoint cards lay out side by side and the shared context spans. */
+      .inspector-panel {
+        display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+        align-items: start; gap: 12px; overflow-y: visible;
+      }
+      .inspector-title, .pipeline-flow, .cat-info-card, #scenario-info-card { grid-column: 1 / -1; }
     }
 
     /* Header collapses to its own rows on phones */
     @media (max-width: 640px) {
       header { flex-direction: column; align-items: stretch; gap: 11px; }
+      /* One card per row again, and the panel reads as a sheet under the chat. */
+      .inspector-panel {
+        grid-template-columns: 1fr;
+        border-radius: 18px 18px 0 0;
+        box-shadow: 0 -10px 30px rgba(0,0,0,0.35);
+      }
+      /* WCAG 2.5.5: every control in the dense bars clears the 44px floor. */
+      .ctl, .sp-btn, .cat-pill, .scenario-btn, #lang-select { min-height: 44px; }
+      .msg-row { max-width: 92%; }
+      .composer { padding: 10px; }
+      .composer #send-btn, .composer #clear-chat-btn { height: 44px; }
       .brand-text h1 { white-space: normal; }
       .header-controls { width: 100%; gap: 8px; }
       .header-controls > * { flex: 1 1 auto; }
@@ -1606,7 +1782,12 @@
       .doc-toggle > span { display: none; }
       #sp-mode-badge, #doc-mode-btn, #custom-docs-btn { flex: 1; justify-content: center; }
       .sp-inner, .cdocs-inner { margin: 12px 16px; }
-      .messages, .chat-input-row, .scenarios-bar { padding-left: 16px; padding-right: 16px; }
+      .messages, .chat-input-row, .scenarios-bar, .context-bar { padding-left: 16px; padding-right: 16px; }
+      /* Same full-width treatment the header controls get, so the state pills
+         stay thumb-sized instead of shrinking to fit one row. */
+      .context-bar > * { flex: 1 1 auto; }
+      .context-bar #env-switch { margin-left: 0; }
+      .context-bar .ctl { min-height: 44px; border-radius: var(--radius-sm); justify-content: center; }
       /* Three controls in one row is tight on a phone — keep Clear Chat as an
          icon-only button (the title/aria label still names it) so the textarea
          and Send keep their space. */
@@ -1697,38 +1878,43 @@
         <option value="ko">한국어</option>
       </select>
     </label>
-    <button id="env-switch" class="ctl" data-only="chat" onclick="Onboarding.toggleEnv()" title="Switch between Basic and Advanced views">
-      <svg class="ic"><use href="#i-sliders"></use></svg><span class="env-mode">Advanced</span>
-    </button>
     <button id="setup-btn" class="ctl" data-adv onclick="Onboarding.restart()" title="Re-run the setup wizard">
       <svg class="ic"><use href="#i-activity"></use></svg><span>Setup</span>
     </button>
-    <button id="sp-mode-badge" class="ctl" data-adv data-only="chat" onclick="toggleSpPanel()" data-i18n-title="sp.badgeTitle" title="Click to edit system prompt">
-      <svg class="ic"><use href="#i-sliders"></use></svg><span>Prompt: Default</span>
-    </button>
-    <button id="llm-mode-badge" class="ctl" data-only="chat bench" onclick="toggleLlmPanel()" data-i18n-title="llm.badgeTitle" title="Configure the LLM provider">
-      <svg class="ic"><use href="#i-cpu"></use></svg><span>LLM: OpenRouter</span>
-    </button>
-    <span id="target-badge" class="ctl tgt-state" data-only="target" aria-live="polite">
-      <svg class="ic"><use href="#i-plug"></use></svg><span id="target-badge-text" data-i18n="tgt.state.untested">Endpoint: untested</span>
-    </span>
     <button id="guard-toggle" class="ctl guard-on" data-only="chat" onclick="toggleGuard()" data-i18n-title="guard.toggleTitle" title="Turn Lakera Guard on/off for the chat">
       <svg class="ic"><use href="#i-shield-check"></use></svg><span id="guard-toggle-label">Guard: ON</span>
     </button>
     <button id="riskmap-btn" class="ctl" data-only="chat" onclick="openRiskMap()" data-i18n-title="rm.btnTitle" title="See which OWASP risks this session has exercised">
       <svg class="ic"><use href="#i-shield"></use></svg><span data-i18n="rm.btn">Risk Map</span>
     </button>
-    <div class="doc-toggle" data-adv data-only="chat">
-      <span data-i18n="header.knowledgeBase">Knowledge Base</span>
-      <button id="doc-mode-btn" class="ctl" onclick="toggleDocMode()">
-        <svg class="ic"><use href="#i-file-text"></use></svg><span>Clean Docs</span>
-      </button>
-      <button id="custom-docs-btn" class="ctl" onclick="toggleCustomDocsPanel()">
-        <svg class="ic"><use href="#i-folder"></use></svg><span data-i18n="header.uploadDocs">Upload Docs</span>
-      </button>
-    </div>
   </div>
 </header>
+
+<!-- Session state: what this run is currently configured with. The header above
+     carries identity, navigation and actions; this strip carries state. -->
+<div class="context-bar" role="group" aria-label="Session configuration">
+  <button id="sp-mode-badge" class="ctl" data-adv data-only="chat" onclick="toggleSpPanel()" data-i18n-title="sp.badgeTitle" title="Click to edit system prompt">
+    <svg class="ic"><use href="#i-sliders"></use></svg><span>Prompt: Default</span>
+  </button>
+  <button id="llm-mode-badge" class="ctl" data-only="chat bench" onclick="toggleLlmPanel()" data-i18n-title="llm.badgeTitle" title="Configure the LLM provider">
+    <svg class="ic"><use href="#i-cpu"></use></svg><span>LLM: OpenRouter</span>
+  </button>
+  <span id="target-badge" class="ctl tgt-state" data-only="target" aria-live="polite">
+    <svg class="ic"><use href="#i-plug"></use></svg><span id="target-badge-text" data-i18n="tgt.state.untested">Endpoint: untested</span>
+  </span>
+  <div class="doc-toggle" data-adv data-only="chat">
+    <span data-i18n="header.knowledgeBase">Knowledge Base</span>
+    <button id="doc-mode-btn" class="ctl" onclick="toggleDocMode()">
+      <svg class="ic"><use href="#i-file-text"></use></svg><span>Clean Docs</span>
+    </button>
+    <button id="custom-docs-btn" class="ctl" onclick="toggleCustomDocsPanel()">
+      <svg class="ic"><use href="#i-folder"></use></svg><span data-i18n="header.uploadDocs">Upload Docs</span>
+    </button>
+  </div>
+  <button id="env-switch" class="ctl" data-only="chat" onclick="Onboarding.toggleEnv()" title="Switch between Basic and Advanced views">
+    <svg class="ic"><use href="#i-sliders"></use></svg><span class="env-mode">Advanced</span>
+  </button>
+</div>
 
 <!-- One line per mode saying what this screen is for. Dismissible, and the
      dismissal is remembered — an orientation aid, not a permanent banner. -->
@@ -1906,20 +2092,30 @@
       <span data-i18n="guard.offBanner">Lakera Guard is OFF — messages go straight to the model, unscanned.</span>
     </div>
     <div class="messages" id="messages" role="log" aria-live="polite">
-      <div class="message assistant"><span data-i18n="chat.greeting">Hi! I'm ShopEase's AI customer service assistant. How can I help you today?</span></div>
+      <div class="msg-row assistant">
+        <span class="msg-meta"><span data-i18n="chat.roleAssistant">Assistant</span></span>
+        <div class="message assistant"><span data-i18n="chat.greeting">Hi! I'm ShopEase's AI customer service assistant. How can I help you today?</span></div>
+      </div>
     </div>
     <div class="chat-input-row">
+      <div class="composer">
       <textarea id="chat-input" rows="2" data-i18n-placeholder="chat.placeholder" placeholder="Type a message or pick a scenario above…"></textarea>
       <button id="clear-chat-btn" class="sp-btn" onclick="clearChat()" data-i18n-title="chat.clearTitle" title="Clear the conversation and reset the security trace">
         <svg class="ic"><use href="#i-x"></use></svg><span data-i18n="chat.clear">Clear Chat</span>
       </button>
       <button id="send-btn" onclick="sendFromInput()"><span data-i18n="chat.send">Send</span><svg class="ic"><use href="#i-send"></use></svg></button>
+      </div>
+      <div class="composer-hint">
+        <span class="mono-cps" id="composer-cps"></span>
+        <span class="sep">·</span>
+        <span data-i18n="chat.inputHint">Enter to send · Shift+Enter for a new line</span>
+      </div>
     </div>
   </div>
 
   <!-- Inspector panel -->
   <div class="inspector-panel">
-    <div class="inspector-title"><svg class="ic"><use href="#i-activity"></use></svg><span data-i18n="insp.title">Security Trace</span></div>
+    <div class="inspector-title"><svg class="ic"><use href="#i-activity"></use></svg><span data-i18n="insp.title">Security Trace</span><span class="trace-count" id="trace-msg"></span></div>
 
     <!-- Guard pipeline overview: the four Lakera checkpoints a message flows through -->
     <div class="pipeline-flow" aria-label="Lakera Guard pipeline">
@@ -1937,6 +2133,7 @@
         <span class="pf-arrow">›</span>
         <span class="pf-node io"><span class="pf-ico"><svg class="ic"><use href="#i-check"></use></svg></span><span data-i18n="pf.reply">Reply</span></span>
       </div>
+      <div class="pf-summary" id="pf-summary" hidden></div>
     </div>
 
     <!-- CP0 — persistent: shows the system-prompt scan state (default until customized) -->
@@ -2546,6 +2743,9 @@
         'bar.categories': 'Categories',
         'bar.scenarios': 'Scenarios',
         'chat.greeting': "Hi! I'm ShopEase's AI customer service assistant. How can I help you today?",
+        'chat.roleYou': 'You',
+        'chat.roleAssistant': 'Assistant',
+        'chat.inputHint': 'Enter to send · Shift+Enter for a new line',
         'chat.placeholder': 'Type a message or pick a scenario above…',
         'chat.send': 'Send',
         'chat.clear': 'Clear Chat',
@@ -3059,6 +3259,9 @@
         'bar.categories': '카테고리',
         'bar.scenarios': '시나리오',
         'chat.greeting': '안녕하세요! 저는 ShopEase의 AI 고객 서비스 어시스턴트입니다. 무엇을 도와드릴까요?',
+        'chat.roleYou': '사용자',
+        'chat.roleAssistant': '어시스턴트',
+        'chat.inputHint': 'Enter 전송 · Shift+Enter 줄바꿈',
         'chat.placeholder': '메시지를 입력하거나 위에서 시나리오를 선택하세요…',
         'chat.send': '전송',
         'chat.clear': '대화 지우기',
@@ -3551,6 +3754,9 @@
         'bar.categories': '類別',
         'bar.scenarios': '情境',
         'chat.greeting': '您好！我是 ShopEase 的 AI 客服助理。今天能為您做些什麼？',
+        'chat.roleYou': '您',
+        'chat.roleAssistant': '助理',
+        'chat.inputHint': 'Enter 送出 · Shift+Enter 換行',
         'chat.placeholder': '輸入訊息，或從上方挑選一個情境…',
         'chat.send': '送出',
         'chat.clear': '清除對話',
@@ -4119,6 +4325,9 @@
         'bar.categories': '类别',
         'bar.scenarios': '场景',
         'chat.greeting': '您好！我是 ShopEase 的 AI 客服助手。今天能为您做些什么？',
+        'chat.roleYou': '您',
+        'chat.roleAssistant': '助手',
+        'chat.inputHint': 'Enter 发送 · Shift+Enter 换行',
         'chat.placeholder': '输入消息，或从上方选择一个场景…',
         'chat.send': '发送',
         'chat.clear': '清除对话',
@@ -4687,6 +4896,9 @@
         'bar.categories': 'カテゴリ',
         'bar.scenarios': 'シナリオ',
         'chat.greeting': 'こんにちは！ShopEase の AI カスタマーサービス アシスタントです。本日はどのようなご用件でしょうか？',
+        'chat.roleYou': 'あなた',
+        'chat.roleAssistant': 'アシスタント',
+        'chat.inputHint': 'Enter で送信 · Shift+Enter で改行',
         'chat.placeholder': 'メッセージを入力するか、上のシナリオを選択してください…',
         'chat.send': '送信',
         'chat.clear': 'チャットを消去',
@@ -5695,6 +5907,16 @@
     updateFlowStrip();
     updateScanFlow();   // the docs panel shows CP2 as the retrieval-scan stage
   }
+  // Under the composer: the checkpoints this message will actually pass through.
+  function updateComposerHint() {
+    const el = document.getElementById('composer-cps');
+    if (!el) return;
+    const on = ['cp1', 'cp2', 'cp3'].filter(cp => guardEnabled && cpEnabled[cp]);
+    el.textContent = on.map(c => c.toUpperCase()).join(' · ');
+    el.classList.toggle('off', on.length === 0);
+    if (!on.length) el.textContent = 'CP1 · CP2 · CP3';
+  }
+
   // Paint each CP node in the flow strip: brand = active, dashed grey = off.
   // When the master guard is off the whole pipeline is bypassed, so all show off
   // and the toggles are disabled.
@@ -5713,6 +5935,7 @@
         ? t('cp.toggleGuardOff')
         : t(cpEnabled[cp] ? 'cp.toggleOff' : 'cp.toggleOn', { cp: name });
     });
+    updateComposerHint();
   }
 
   // ── Core send ────────────────────────────────────────────────────────────
@@ -5783,8 +6006,10 @@
 
     // Rebuild the greeting with its data-i18n hook so a later language switch
     // still re-translates it, exactly like the server-rendered markup.
-    box.innerHTML = '<div class="message assistant"><span data-i18n="chat.greeting">'
-      + esc(t('chat.greeting')) + '</span></div>';
+    box.innerHTML = '<div class="msg-row assistant"><span class="msg-meta"><span data-i18n="chat.roleAssistant">'
+      + esc(t('chat.roleAssistant')) + '</span></span>'
+      + '<div class="message assistant"><span data-i18n="chat.greeting">'
+      + esc(t('chat.greeting')) + '</span></div></div>';
 
     lastTrace = null;                   // no message to re-render on a language switch
     resetInspector();                   // CP1–CP3 back to pending
@@ -5811,9 +6036,32 @@
       p.textContent = text;
     }
     div.appendChild(p);
-    document.getElementById('messages').appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth' });
-    return div;
+
+    // The bubble sits in a row that also carries the speaker + time eyebrow, so
+    // a long transcript stays readable without colour being the only cue.
+    const row = document.createElement('div');
+    row.className = `msg-row ${role}`;
+    const meta = document.createElement('span');
+    meta.className = 'msg-meta';
+    const when = new Date();
+    meta.innerHTML = '<span>'
+      + esc(t(role === 'user' ? 'chat.roleYou' : 'chat.roleAssistant'))
+      + '</span><time>'
+      + String(when.getHours()).padStart(2, '0') + ':' + String(when.getMinutes()).padStart(2, '0')
+      + '</time>';
+    row.appendChild(meta);
+    row.appendChild(div);
+    document.getElementById('messages').appendChild(row);
+    if (role === 'user') { traceMsgCount += 1; updateTraceCount(); }
+    row.scrollIntoView({ behavior: 'smooth' });
+    return div;   // callers still get the bubble, not the row
+  }
+
+  // Which message the trace on the right belongs to.
+  let traceMsgCount = 0;
+  function updateTraceCount() {
+    const el = document.getElementById('trace-msg');
+    if (el) el.textContent = traceMsgCount ? '#' + traceMsgCount : '';
   }
 
   function appendThinking() {
@@ -5854,6 +6102,32 @@
     badge.className = `cp-badge badge-${type}`;
     const ic = { passed: 'check', blocked: 'x', redacted: 'scissors', skipped: 'minus', pending: 'clock', off: 'shield-off', disabled: 'shield-off', default: 'shield' }[type] || 'clock';
     badge.innerHTML = icon(ic) + '<span>' + t('badge.' + type) + '</span>';
+    updateTraceSummary();
+  }
+
+  // One line naming where the message stopped. It reads the verdict back off the
+  // badges so it reuses their already-translated wording rather than a second
+  // set of strings that could drift out of step with them.
+  function updateTraceSummary() {
+    const out = document.getElementById('pf-summary');
+    if (!out) return;
+    const rank = { blocked: 3, redacted: 2, passed: 1 };
+    let worst = null;
+    for (const id of ['cp1', 'cp2', 'cp3']) {
+      const badge = document.getElementById(id + '-badge');
+      if (!badge) continue;
+      const m = /badge-(\w+)/.exec(badge.className);
+      const kind = m && m[1];
+      if (!rank[kind]) continue;
+      if (!worst || rank[kind] > rank[worst.kind]) {
+        const label = document.querySelector('#' + id + '-card .cp-label');
+        worst = { kind, word: badge.textContent.trim(), label: label ? label.textContent.trim() : id.toUpperCase() };
+      }
+    }
+    if (!worst) { out.hidden = true; out.textContent = ''; return; }
+    out.hidden = false;
+    out.className = 'pf-summary s-' + worst.kind;
+    out.innerHTML = '<b>' + esc(worst.word) + '</b> · ' + esc(worst.label);
   }
 
   // Neutral "default prompt, not yet scanned" state for the persistent CP0 card.
@@ -8359,7 +8633,23 @@
   }
 
   function renderOneShotResults(d) {
-    document.getElementById('os-body').innerHTML = buildReportBody(d);
+    const body = document.getElementById('os-body');
+    body.innerHTML = buildReportBody(d);
+    groupHeadline(body);
+  }
+
+  // The detection hero and the guard-on/off comparison answer the same question,
+  // so they read as one headline block side by side. Done after render rather
+  // than inside the report string builder, which the exported HTML report shares.
+  function groupHeadline(root) {
+    const hero = root.querySelector(':scope > .os-hero');
+    const cmp = hero && hero.nextElementSibling;
+    if (!hero || !cmp || !cmp.classList.contains('os-compare')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'os-headline';
+    hero.parentNode.insertBefore(wrap, hero);
+    wrap.appendChild(hero);
+    wrap.appendChild(cmp);
   }
 
   // Click-to-reveal panel: the exact user prompt, any simulated output, and the
