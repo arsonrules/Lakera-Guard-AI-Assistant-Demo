@@ -1326,7 +1326,7 @@
     /* Idle isn't an error — it's the state you spend the most time looking at,
        so it gets a real panel rather than a line of grey text. */
     .os-empty {
-      display: flex; align-items: center; justify-content: center;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
       text-align: center; color: var(--muted);
       min-height: 260px; padding: 40px 32px;
       font-size: 0.92rem; line-height: 1.6;
@@ -1335,6 +1335,17 @@
       background: rgba(17, 26, 43, 0.4);
       max-width: 560px; margin: 8px auto;
     }
+    .os-empty-ico {
+      display: grid; place-items: center; width: 44px; height: 44px;
+      border: 1px solid var(--border); border-radius: 14px;
+      background: var(--panel-2); color: var(--muted);
+    }
+    .os-empty-ico .ic { width: 20px; height: 20px; }
+    .os-empty-title {
+      font-family: 'Lexend', sans-serif; font-size: 0.94rem; font-weight: 600;
+      letter-spacing: -0.005em; color: var(--heading);
+    }
+    .os-empty-body { font-size: 0.86rem; color: var(--dim); max-width: 400px; }
     /* Expandable per-scenario detail (click-to-reveal) */
     .os-table tr.os-row { cursor: pointer; }
     .os-table tr.os-row:hover td { background: var(--panel-2); }
@@ -1704,6 +1715,55 @@
       caret-color: var(--text);
     }
 
+    /* Probe + judge, side by side above the results — the run pane answers
+       "is the endpoint usable, and who is grading it?" before any row exists. */
+    .tgt-summary {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px; margin: 14px 26px 0;
+    }
+    @media (max-width: 1100px) { .tgt-summary { grid-template-columns: 1fr; gap: 12px; } }
+    .tgt-card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow-md);
+      padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0;
+    }
+    .tgt-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .tgt-card-title {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: 'Lexend', sans-serif; font-size: 0.88rem; font-weight: 600;
+      letter-spacing: -0.005em; color: var(--heading);
+    }
+    .tgt-card-title .ic { color: var(--brand); }
+    .tgt-kv {
+      display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px 16px;
+      font-family: 'JetBrains Mono', monospace; font-size: 0.76rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .tgt-kv dt, .tgt-kv .k { color: var(--dim); }
+    .tgt-kv dd, .tgt-kv .v { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+    .tgt-kv .v.ok { color: var(--pass); }
+    .tgt-kv .v.bad { color: var(--block); }
+    .tgt-kv .v.warn { color: var(--redact); }
+    .tgt-card-lbl {
+      font-family: 'Lexend', sans-serif; font-size: 0.66rem; font-weight: 600;
+      letter-spacing: 0.11em; text-transform: uppercase; color: var(--dim);
+    }
+    .tgt-card-raw { display: flex; flex-direction: column; gap: 6px; }
+    .tgt-card-raw[hidden] { display: none; }
+    .tgt-card-raw pre {
+      margin: 0; max-height: 132px; overflow: auto;
+      padding: 9px 11px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; line-height: 1.55;
+      color: var(--muted); white-space: pre-wrap; word-break: break-word;
+    }
+    .tgt-card-raw pre mark { background: var(--pass-bg); color: var(--pass); border-radius: 3px; padding: 0 3px; }
+    .tgt-card-note {
+      font-size: 0.78rem; line-height: 1.55; color: var(--muted);
+      padding: 10px 12px; border: 1px solid var(--border-soft);
+      border-radius: var(--radius-sm); background: var(--bg);
+    }
+
     /* ── Target Test: endpoint form + probe state ─────────────────────────── */
     .tgt-hdr-row { display: flex; align-items: center; gap: 6px; }
     .tgt-hdr-row input { flex: 1 1 0; min-width: 0; padding: 6px 9px; border: 1px solid var(--border);
@@ -1739,6 +1799,7 @@
       .messages, .chat-input-row { padding-left: 24px; padding-right: 24px; }
       header, .context-bar, .scenarios-bar { padding-left: 22px; padding-right: 22px; }
       .run-bar, .run-body { padding-left: 22px; padding-right: 22px; }
+      .tgt-summary, .tgt-note { margin-left: 22px; margin-right: 22px; }
     }
 
     @media (max-width: 959px) {
@@ -1783,6 +1844,8 @@
       #sp-mode-badge, #doc-mode-btn, #custom-docs-btn { flex: 1; justify-content: center; }
       .sp-inner, .cdocs-inner { margin: 12px 16px; }
       .messages, .chat-input-row, .scenarios-bar, .context-bar { padding-left: 16px; padding-right: 16px; }
+      .run-bar, .run-body { padding-left: 16px; padding-right: 16px; }
+      .tgt-summary, .tgt-note { margin-left: 16px; margin-right: 16px; }
       /* Same full-width treatment the header controls get, so the state pills
          stay thumb-sized instead of shrinking to fit one row. */
       .context-bar > * { flex: 1 1 auto; }
@@ -2505,8 +2568,37 @@
     <!-- CP0/CP2 are not applicable to a black box; saying so beats reporting zeroes.
          It sits outside #os-body so rendering a report never wipes it. -->
     <div class="tgt-note" data-only="target" style="margin:14px 20px 0" data-i18n="tgt.cpNote">CP0 and CP2 don't apply here: this endpoint owns its own system prompt and knowledge base.</div>
+    <!-- Target Test puts the probe result and the judge in the results pane, where
+         the run is actually read — the rail holds the form, not the outcome. It
+         sits outside #os-body for the same reason as the note above: rendering a
+         report never wipes it. -->
+    <div class="tgt-summary" data-only="target" id="tgt-summary">
+      <div class="tgt-card">
+        <div class="tgt-card-head">
+          <span class="tgt-card-title"><svg class="ic"><use href="#i-plug"></use></svg><span data-i18n="tgt.card.probe">Endpoint probe</span></span>
+          <span class="cp-badge badge-pending" id="tgt-card-badge"></span>
+        </div>
+        <div class="tgt-kv" id="tgt-card-kv"></div>
+        <div class="tgt-card-raw" id="tgt-card-raw" hidden>
+          <span class="tgt-card-lbl" data-i18n="tgt.card.raw">Raw response</span>
+          <pre id="tgt-card-rawbody"></pre>
+        </div>
+      </div>
+      <div class="tgt-card">
+        <div class="tgt-card-head">
+          <span class="tgt-card-title"><svg class="ic"><use href="#i-cpu"></use></svg><span data-i18n="tgt.step.judge">Judge</span></span>
+          <span class="cp-badge badge-default" data-i18n="tgt.card.independent">Independent</span>
+        </div>
+        <div class="tgt-kv" id="tgt-judge-kv"></div>
+        <div class="tgt-card-note" data-i18n="tgt.judgeHint">Grades what the endpoint returns.</div>
+      </div>
+    </div>
     <div class="run-body" id="os-body">
-      <div class="os-empty" id="os-idle" data-i18n="os.idle">Pick a scope and run the test to see how Lakera Guard handles every scenario.</div>
+      <div class="os-empty" id="os-idle">
+        <span class="os-empty-ico"><svg class="ic"><use href="#i-play"></use></svg></span>
+        <span class="os-empty-title" data-i18n="tgt.card.ready">Ready to run</span>
+        <span class="os-empty-body" data-i18n="os.idle">Pick a scope and run the test to see how Lakera Guard handles every scenario.</span>
+      </div>
     </div>
   </div>
 
@@ -2658,6 +2750,15 @@
         'tgt.timeout': 'Timeout (s)',
         'tgt.test': 'Test endpoint',
         'tgt.rawBody': 'Raw response body',
+        'tgt.card.probe': 'Endpoint probe',
+        'tgt.card.raw': 'Raw response',
+        'tgt.card.independent': 'Independent',
+        'tgt.card.status': 'Status',
+        'tgt.card.latency': 'Round trip',
+        'tgt.card.transport': 'Transport',
+        'tgt.card.path': 'Response path',
+        'tgt.card.ready': 'Ready to run',
+        'tgt.card.readyHint': 'Scenarios are sent to your endpoint and scored by the judge. Results and exports appear here.',
         'tgt.bodyHint': 'Use {{prompt}} where the user message goes. It is inserted JSON-encoded.',
         'tgt.wsHint': 'WebSocket target: the body below is sent as one frame, and the response path is looked up in each frame that comes back until one matches. Authentication and extra headers are sent on the handshake.',
         'tgt.headersNotSaved': 'Credentials are never saved — re-enter them after a reload.',
@@ -3174,6 +3275,15 @@
         'tgt.timeout': '타임아웃(초)',
         'tgt.test': '엔드포인트 테스트',
         'tgt.rawBody': '원본 응답 본문',
+        'tgt.card.probe': '엔드포인트 프로브',
+        'tgt.card.raw': '원시 응답',
+        'tgt.card.independent': '독립',
+        'tgt.card.status': '상태',
+        'tgt.card.latency': '왕복 시간',
+        'tgt.card.transport': '전송',
+        'tgt.card.path': '응답 경로',
+        'tgt.card.ready': '실행 준비 완료',
+        'tgt.card.readyHint': '시나리오가 엔드포인트로 전송되고 심판 모델이 채점합니다. 결과와 내보내기가 여기에 표시됩니다.',
         'tgt.bodyHint': '사용자 메시지가 들어갈 자리에 {{prompt}}를 쓰세요. JSON 인코딩되어 삽입됩니다.',
         'tgt.wsHint': 'WebSocket 대상: 아래 본문이 하나의 프레임으로 전송되며, 돌아오는 각 프레임에서 응답 경로를 찾아 일치하는 첫 프레임을 사용합니다. 인증과 추가 헤더는 핸드셰이크에 실려 전송됩니다.',
         'tgt.headersNotSaved': '자격 증명은 저장되지 않습니다 — 새로고침 후 다시 입력하세요.',
@@ -3669,6 +3779,15 @@
         'tgt.timeout': '逾時（秒）',
         'tgt.test': '測試端點',
         'tgt.rawBody': '原始回應內容',
+        'tgt.card.probe': '端點探測',
+        'tgt.card.raw': '原始回應',
+        'tgt.card.independent': '獨立',
+        'tgt.card.status': '狀態',
+        'tgt.card.latency': '往返時間',
+        'tgt.card.transport': '傳輸',
+        'tgt.card.path': '回應路徑',
+        'tgt.card.ready': '準備執行',
+        'tgt.card.readyHint': '情境將送往您的端點，並由評審模型評分。結果與匯出會顯示在這裡。',
         'tgt.bodyHint': '在使用者訊息的位置使用 {{prompt}}，系統會以 JSON 編碼插入。',
         'tgt.wsHint': 'WebSocket 端點：下方的內容會以單一訊框送出，並在每個回傳的訊框中尋找回應路徑，取第一個符合的。驗證與額外標頭會隨交握一起送出。',
         'tgt.headersNotSaved': '憑證永不儲存——重新載入後請再次輸入。',
@@ -4240,6 +4359,15 @@
         'tgt.timeout': '超时（秒）',
         'tgt.test': '测试端点',
         'tgt.rawBody': '原始响应体',
+        'tgt.card.probe': '端点探测',
+        'tgt.card.raw': '原始响应',
+        'tgt.card.independent': '独立',
+        'tgt.card.status': '状态',
+        'tgt.card.latency': '往返时间',
+        'tgt.card.transport': '传输',
+        'tgt.card.path': '响应路径',
+        'tgt.card.ready': '准备运行',
+        'tgt.card.readyHint': '场景将发送到您的端点，并由评审模型评分。结果与导出会显示在这里。',
         'tgt.bodyHint': '在用户消息的位置使用 {{prompt}}，系统会以 JSON 编码插入。',
         'tgt.wsHint': 'WebSocket 端点：下方的内容会作为单个帧发送，并在每个返回的帧中查找响应路径，取第一个匹配的。认证与额外请求头随握手一起发送。',
         'tgt.headersNotSaved': '凭证永不保存——重新加载后请再次输入。',
@@ -4811,6 +4939,15 @@
         'tgt.timeout': 'タイムアウト（秒）',
         'tgt.test': 'エンドポイントをテスト',
         'tgt.rawBody': '生のレスポンスボディ',
+        'tgt.card.probe': 'エンドポイント プローブ',
+        'tgt.card.raw': '生のレスポンス',
+        'tgt.card.independent': '独立',
+        'tgt.card.status': 'ステータス',
+        'tgt.card.latency': '往復時間',
+        'tgt.card.transport': 'トランスポート',
+        'tgt.card.path': 'レスポンス パス',
+        'tgt.card.ready': '実行の準備完了',
+        'tgt.card.readyHint': 'シナリオがエンドポイントに送信され、ジャッジ モデルが採点します。結果とエクスポートはここに表示されます。',
         'tgt.bodyHint': 'ユーザーメッセージが入る位置に {{prompt}} を書いてください。JSON エンコードされて挿入されます。',
         'tgt.wsHint': 'WebSocket ターゲット: 下のボディは 1 フレームとして送信され、返ってくる各フレームからレスポンスパスを探し、最初に一致したものを使います。認証と追加ヘッダーはハンドシェイクで送られます。',
         'tgt.headersNotSaved': '認証情報は保存されません — 再読み込み後に入力し直してください。',
@@ -6984,6 +7121,7 @@
     loadTargetLocal();
     initRunJudge();
     updateRunRecipe();
+    renderTargetSummary();   // paints the pane's cards before any probe has run
   }
 
   // Per-run Lakera Project ID override (defaults to the global Settings value),
@@ -7110,8 +7248,7 @@
     set('bench-sum-target', currentLlmCfg ? (currentLlmCfg.model || currentLlmCfg.provider || '') : '');
     // Before the first run the empty state IS the recipe — the reader should be
     // able to check what will happen without starting it.
-    const idle = document.getElementById('os-idle');
-    if (idle && !lastOneShot) idle.textContent = t(onTgt ? 'os.idleTarget' : 'os.idle') + ' — ' + recipe;
+    if (!lastOneShot) setIdleText(t(onTgt ? 'os.idleTarget' : 'os.idle') + ' — ' + recipe);
   }
 
   // ── Target Test: the endpoint under test ────────────────────────────────
@@ -7122,6 +7259,8 @@
   const TGT_DEFAULT_BODY = '{"prompt": {{prompt}}}';
   let targetHeaders = [];
   let targetProbe = 'untested';
+  let lastProbe = null;      // last /api/target/test payload, for the run-pane card
+  let lastProbeMs = null;    // its round trip, so a mode switch can re-render it
 
   const val = id => (document.getElementById(id) || {}).value || '';
 
@@ -7276,7 +7415,10 @@
       step.classList.toggle('done', state === 'ok');
       step.classList.toggle('todo', state !== 'ok');
     }
+    if (latencyMs != null) lastProbeMs = latencyMs;
+    if (state === 'untested') { lastProbe = null; lastProbeMs = null; }
     tgtStatus(state, detail || (state === 'untested' ? '' : label));
+    renderTargetSummary();
     if (state === 'untested') {
       const raw = document.getElementById('tgt-raw');
       if (raw) raw.style.display = 'none';
@@ -7296,6 +7438,64 @@
     const s = document.createElement('span');
     s.textContent = text;
     el.appendChild(s);
+  }
+
+  // The run pane's two cards: is the endpoint usable, and who is grading it.
+  // Everything shown here is already on screen somewhere in the rail — this is a
+  // read-only restatement in the place the run is actually read.
+  const TGT_BADGE = { ok: 'passed', failed: 'blocked', nopath: 'redacted', testing: 'pending', untested: 'pending' };
+
+  function renderTargetSummary() {
+    const kv = document.getElementById('tgt-card-kv');
+    if (!kv) return;
+    const badge = document.getElementById('tgt-card-badge');
+    if (badge) {
+      badge.className = 'cp-badge badge-' + (TGT_BADGE[targetProbe] || 'pending');
+      badge.textContent = t('tgt.state.' + targetProbe);
+    }
+
+    const row = (label, value, tone) =>
+      '<span class="k">' + esc(label) + '</span>'
+      + '<span class="v' + (tone ? ' ' + tone : '') + '">' + esc(value) + '</span>';
+
+    const url = val('tgt-url').trim();
+    let transport = '—';
+    try {
+      const scheme = new URL(url).protocol.replace(':', '');
+      transport = /^wss?$/.test(scheme) ? scheme + ' · websocket' : scheme;
+    } catch (e) { /* not a URL yet */ }
+
+    const path = val('tgt-path').trim();
+    const pathTone = targetProbe === 'ok' ? 'ok' : (targetProbe === 'nopath' ? 'bad' : '');
+    const pathText = path
+      ? path + (targetProbe === 'ok' ? ' · ' + t('badge.passed').toLowerCase() : '')
+      : '—';
+
+    kv.innerHTML =
+        row(t('tgt.card.latency'), lastProbeMs != null ? lastProbeMs + ' ms' : '—')
+      + row(t('tgt.card.transport'), transport)
+      + row(t('tgt.card.path'), pathText, pathTone);
+
+    const rawWrap = document.getElementById('tgt-card-raw');
+    const rawBody = document.getElementById('tgt-card-rawbody');
+    if (rawWrap && rawBody) {
+      const html = probeRawHtml(lastProbe);
+      rawWrap.hidden = !html;
+      rawBody.innerHTML = html;
+    }
+    renderJudgeSummary();
+  }
+
+  function renderJudgeSummary() {
+    const kv = document.getElementById('tgt-judge-kv');
+    if (!kv) return;
+    const sel = document.getElementById('tj-provider');
+    const provider = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].textContent : '—';
+    const row = (label, value) =>
+      '<span class="k">' + esc(label) + '</span><span class="v">' + esc(value || '—') + '</span>';
+    kv.innerHTML = row(t('llm.provider'), provider)
+      + row(t('llm.model'), val('tj-model').trim())
+      + row(t('llm.baseUrl'), val('tj-base-url').trim());
   }
 
   // Only Target Test gates the Run button — Benchmark has nothing to probe.
@@ -7319,6 +7519,7 @@
       let d = {};
       try { d = await res.json(); } catch (e) { /* non-JSON error page */ }
       if (!res.ok) { setTargetState('failed', d.detail || ('HTTP ' + res.status)); return; }
+      lastProbe = d;
       showTargetRaw(d);
       if (d.ok) setTargetState('ok', t('tgt.extracted', { text: String(d.extracted || '').slice(0, 160) }), d.latency_ms);
       else if (d.path_error) setTargetState('nopath', d.error || '', d.latency_ms);
@@ -7396,6 +7597,7 @@
 
   function onRunJudgeInput() {
     updateRunJudgeSummary();
+    renderJudgeSummary();
     try {
       // Same rule as the target: the shape is remembered, the credential is not.
       localStorage.setItem(LS_RUN_JUDGE, JSON.stringify({
@@ -7483,12 +7685,11 @@
   // The raw body, truncated and already scrubbed of configured secrets by the
   // server, with the extracted value highlighted — this is how a user picks a
   // response path instead of guessing at one.
-  function showTargetRaw(d) {
-    const wrap = document.getElementById('tgt-raw');
-    const pre = document.getElementById('tgt-raw-body');
-    if (!wrap || !pre) return;
-    const body = d.raw_body_preview || '';
-    if (!body) { wrap.style.display = 'none'; return; }
+  // The extracted value, highlighted inside the raw body — shared by the rail's
+  // details block and the run pane's probe card so they can never disagree.
+  function probeRawHtml(d) {
+    const body = (d && d.raw_body_preview) || '';
+    if (!body) return '';
     let html = esc(body);
     const value = d.extracted;
     if (value) {
@@ -7505,6 +7706,15 @@
         return true;
       });
     }
+    return html;
+  }
+
+  function showTargetRaw(d) {
+    const wrap = document.getElementById('tgt-raw');
+    const pre = document.getElementById('tgt-raw-body');
+    if (!wrap || !pre) return;
+    const html = probeRawHtml(d);
+    if (!html) { wrap.style.display = 'none'; return; }
     pre.innerHTML = html;
     wrap.style.display = '';
   }
@@ -7940,10 +8150,25 @@
   // One-line status inside the results pane. Replaces only the message, never the
   // whole pane — the "CP0/CP2 don't apply" note belongs to the mode, not the run.
   function showRunMessage(text) {
-    const idle = document.getElementById('os-idle');
+    if (setIdleText(text)) return;
     const body = document.getElementById('os-body');
-    if (idle) { idle.textContent = text; return; }
-    if (body) body.innerHTML = '<div class="os-empty" id="os-idle">' + esc(text) + '</div>';
+    if (body) body.innerHTML = idleHtml(text);
+  }
+
+  // The empty state is a titled panel, not a line of text, so a message replaces
+  // only its body slot — the icon and title stay put.
+  function setIdleText(text) {
+    const idle = document.getElementById('os-idle');
+    if (!idle) return false;
+    (idle.querySelector('.os-empty-body') || idle).textContent = text;
+    return true;
+  }
+
+  function idleHtml(text) {
+    return '<div class="os-empty" id="os-idle">'
+      + '<span class="os-empty-ico">' + icon('play') + '</span>'
+      + '<span class="os-empty-title">' + esc(t('tgt.card.ready')) + '</span>'
+      + '<span class="os-empty-body">' + esc(text) + '</span></div>';
   }
 
   // Comparing guard ON/OFF requires the judge, so force it on and lock it.
