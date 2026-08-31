@@ -114,6 +114,11 @@ def _init_llm_config() -> dict:
     }
 
 
+# CREDENTIAL SECURITY: Session-scoped credentials
+# These globals store credentials for the current request. A middleware (credential_clear_middleware)
+# automatically clears them after each request completes, preventing credential leakage between requests.
+# Credentials are set via api_set_llm_config() endpoint and live only during one request's lifetime.
+
 # Runtime-configurable LLM provider (OpenRouter / LM Studio / Ollama / oMLX / custom).
 _llm_config: dict = _init_llm_config()
 
@@ -654,6 +659,22 @@ async def security_middleware(request: Request, call_next):
     # Echo it back so a user can quote the id from a failed request.
     response.headers["X-Request-ID"] = rid
     return response
+
+@app.middleware("http")
+async def credential_clear_middleware(request: Request, call_next):
+    # Clear credentials after each request to enforce session-scoping.
+    # Credentials are loaded from .env at startup, then updated per-request via
+    # api_set_llm_config(). They live only for one request's duration.
+    global _llm_config, _judge_config
+    try:
+        response = await call_next(request)
+    finally:
+        # Reset to environment defaults after request completes. This ensures
+        # credentials set by one request don't leak to the next.
+        _llm_config = _init_llm_config()
+        _judge_config = _init_judge_config()
+    return response
+
 
 
 async def _handle_request(request: Request, call_next):
